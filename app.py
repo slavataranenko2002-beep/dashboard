@@ -84,6 +84,22 @@ def _ensure_design_tables():
                 # Добавляем колонки если таблицы уже существовали без них
                 cur.execute("ALTER TABLE design_tasks ADD COLUMN IF NOT EXISTS project TEXT")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS design_access BOOLEAN DEFAULT FALSE")
+                # Автор задачи (email) для уведомлений
+                cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by_email TEXT DEFAULT ''")
+                # Таблица уведомлений
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id          SERIAL PRIMARY KEY,
+                        user_email  TEXT NOT NULL,
+                        type        TEXT NOT NULL,
+                        title       TEXT NOT NULL,
+                        message     TEXT NOT NULL DEFAULT '',
+                        task_id     INTEGER,
+                        read        BOOLEAN DEFAULT FALSE,
+                        created_at  TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_notif_user_unread ON notifications(user_email, read) WHERE read = FALSE")
             conn.commit()
         logging.info("Design tables ready.")
     except Exception as e:
@@ -504,6 +520,79 @@ def api_today_done(task_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ─── Notifications API ────────────────────────────────────────────────────────
+
+def _push_notification(cur, user_email: str, notif_type: str, title: str, message: str = "", task_id: int | None = None):
+    """Создаёт запись уведомления в БД (вызывать внутри уже открытого cursor)."""
+    if not user_email:
+        return
+    cur.execute(
+        "INSERT INTO notifications (user_email, type, title, message, task_id) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (user_email, notif_type, title, message, task_id),
+    )
+
+def _email_by_name(cur, name: str) -> str | None:
+    """Ищет email пользователя по имени (users.name)."""
+    if not name:
+        return None
+    cur.execute("SELECT email FROM users WHERE name = %s LIMIT 1", (name,))
+    row = cur.fetchone()
+    return row["email"] if row else None
+
+@app.route("/api/notifications")
+@require_auth
+def api_notifications():
+    """Возвращает непрочитанные уведомления текущего пользователя."""
+    u = _session_user()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, type, title, message, task_id, created_at "
+                    "FROM notifications WHERE user_email=%s AND read=FALSE "
+                    "ORDER BY created_at ASC",
+                    (u["email"],),
+                )
+                rows = cur.fetchall()
+        return jsonify({"notifications": [
+            {
+                "id":         r["id"],
+                "type":       r["type"],
+                "title":      r["title"],
+                "message":    r["message"],
+                "task_id":    r["task_id"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/notifications/read", methods=["POST"])
+@require_auth
+def api_notifications_read():
+    """Помечает все уведомления текущего пользователя как прочитанные."""
+    u = _session_user()
+    ids = (request.json or {}).get("ids") or []
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                if ids:
+                    cur.execute(
+                        "UPDATE notifications SET read=TRUE WHERE user_email=%s AND id = ANY(%s)",
+                        (u["email"], ids),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE notifications SET read=TRUE WHERE user_email=%s",
+                        (u["email"],),
+                    )
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ─── Task API ─────────────────────────────────────────────────────────────────
 @app.route("/api/tasks")
 @require_auth
@@ -528,14 +617,24 @@ def api_add():
         # Seller может добавлять только в свои проекты
         if u["role"] == "seller" and project and project not in (u["projects"] or []):
             return jsonify({"error": "forbidden"}), 403
+        creator_email = u.get("email", "")
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO tasks (chat_id,title,priority,assignee,due,project) "
-                    "VALUES (%s,%s,%s,%s,%s,%s)",
+                    "INSERT INTO tasks (chat_id,title,priority,assignee,due,project,created_by_email) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (0, d["title"], d.get("priority", "med"),
-                     d.get("assignee"), d.get("due"), project),
+                     d.get("assignee"), d.get("due"), project, creator_email),
                 )
+                # Уведомление назначенному исполнителю
+                if d.get("assignee"):
+                    assignee_email = _email_by_name(cur, d["assignee"])
+                    if assignee_email and assignee_email != creator_email:
+                        _push_notification(
+                            cur, assignee_email, "task_assigned",
+                            f"Новая задача: {d['title']}",
+                            f"Назначена вам в проекте {project or '—'}",
+                        )
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -557,13 +656,26 @@ def api_done(task_id):
                 if not row or int(row["cnt"]) == 0:
                     return jsonify({"error": "Необходимо добавить комментарий или ссылку перед закрытием задачи"}), 400
                 cur.execute(
-                    "UPDATE tasks SET done=TRUE,done_at=NOW() WHERE id=%s", (task_id,)
+                    "UPDATE tasks SET done=TRUE,done_at=NOW() WHERE id=%s RETURNING title,created_by_email",
+                    (task_id,)
                 )
+                task_row = cur.fetchone()
                 cur.execute(
                     "INSERT INTO task_history (task_id,changed_by,field,old_value,new_value) "
                     "VALUES (%s,%s,%s,%s,%s)",
                     (task_id, changed_by, "Статус", "В работе", "Готово")
                 )
+                # Уведомление создателю задачи
+                if task_row:
+                    owner_email = task_row["created_by_email"] or ""
+                    u_email = (u.get("email") or "") if u else ""
+                    if owner_email and owner_email != u_email:
+                        _push_notification(
+                            cur, owner_email, "status_changed",
+                            f"Задача закрыта: {task_row['title']}",
+                            f"Отметил(а): {changed_by}",
+                            task_id,
+                        )
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -583,6 +695,7 @@ def api_update(task_id):
             "due":      "Срок",
             "project":  "Проект",
         }
+        u_email = u.get("email", "") if u else ""
         with get_conn() as conn:
             with conn.cursor() as cur:
                 # Читаем старые значения
@@ -608,6 +721,18 @@ def api_update(task_id):
                                 "VALUES (%s,%s,%s,%s,%s)",
                                 (task_id, changed_by, label,
                                  old.get(field), new.get(field))
+                            )
+                    # Уведомление новому исполнителю при смене
+                    new_assignee = new.get("assignee") or ""
+                    old_assignee = old.get("assignee") or ""
+                    if new_assignee and new_assignee != old_assignee:
+                        assignee_email = _email_by_name(cur, new_assignee)
+                        if assignee_email and assignee_email != u_email:
+                            _push_notification(
+                                cur, assignee_email, "task_assigned",
+                                f"Задача назначена вам: {new.get('title') or old.get('title')}",
+                                f"Назначил(а): {changed_by}",
+                                task_id,
                             )
                 cur.execute(
                     "UPDATE tasks SET title=%s,priority=%s,assignee=%s,due=%s,project=%s "
