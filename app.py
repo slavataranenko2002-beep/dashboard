@@ -86,6 +86,7 @@ def _ensure_design_tables():
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS design_access BOOLEAN DEFAULT FALSE")
                 # Автор задачи (email) для уведомлений
                 cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by_email TEXT DEFAULT ''")
+                cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_email TEXT DEFAULT ''")
                 # Таблица уведомлений
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS notifications (
@@ -522,6 +523,10 @@ def api_today_done(task_id):
 
 # ─── Notifications API ────────────────────────────────────────────────────────
 
+def _first_name(full_name: str) -> str:
+    """Возвращает первое слово из полного имени."""
+    return (full_name or "").strip().split()[0] if (full_name or "").strip() else (full_name or "")
+
 def _push_notification(cur, user_email: str, notif_type: str, title: str, message: str = "", task_id: int | None = None):
     """Создаёт запись уведомления в БД (вызывать внутри уже открытого cursor)."""
     if not user_email:
@@ -532,13 +537,24 @@ def _push_notification(cur, user_email: str, notif_type: str, title: str, messag
         (user_email, notif_type, title, message, task_id),
     )
 
-def _email_by_name(cur, name: str) -> str | None:
-    """Ищет email пользователя по имени (users.name)."""
-    if not name:
-        return None
-    cur.execute("SELECT email FROM users WHERE name = %s LIMIT 1", (name,))
-    row = cur.fetchone()
-    return row["email"] if row else None
+
+@app.route("/api/users")
+@require_auth
+def api_users():
+    """Список активных пользователей: email + first_name для выпадающего списка исполнителей."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT email, name FROM users WHERE role != 'pending' ORDER BY name"
+                )
+                rows = cur.fetchall()
+        return jsonify([
+            {"email": r["email"], "first_name": _first_name(r["name"])}
+            for r in rows
+        ])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/notifications")
 @require_auth
@@ -617,24 +633,24 @@ def api_add():
         # Seller может добавлять только в свои проекты
         if u["role"] == "seller" and project and project not in (u["projects"] or []):
             return jsonify({"error": "forbidden"}), 403
-        creator_email = u.get("email", "")
+        creator_email  = u.get("email", "")
+        assignee_email = d.get("assignee_email", "")
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO tasks (chat_id,title,priority,assignee,due,project,created_by_email) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                    "INSERT INTO tasks (chat_id,title,priority,assignee,assignee_email,due,project,created_by_email) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (0, d["title"], d.get("priority", "med"),
-                     d.get("assignee"), d.get("due"), project, creator_email),
+                     d.get("assignee"), assignee_email,
+                     d.get("due"), project, creator_email),
                 )
                 # Уведомление назначенному исполнителю
-                if d.get("assignee"):
-                    assignee_email = _email_by_name(cur, d["assignee"])
-                    if assignee_email and assignee_email != creator_email:
-                        _push_notification(
-                            cur, assignee_email, "task_assigned",
-                            f"Новая задача: {d['title']}",
-                            f"Назначена вам в проекте {project or '—'}",
-                        )
+                if assignee_email and assignee_email != creator_email:
+                    _push_notification(
+                        cur, assignee_email, "task_assigned",
+                        f"Новая задача: {d['title']}",
+                        f"Назначена вам в проекте {project or '—'}",
+                    )
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -695,12 +711,13 @@ def api_update(task_id):
             "due":      "Срок",
             "project":  "Проект",
         }
-        u_email = u.get("email", "") if u else ""
+        u_email        = u.get("email", "") if u else ""
+        new_assignee_email = d.get("assignee_email", "")
         with get_conn() as conn:
             with conn.cursor() as cur:
                 # Читаем старые значения
                 cur.execute(
-                    "SELECT title,priority,assignee,due,project FROM tasks WHERE id=%s",
+                    "SELECT title,priority,assignee,assignee_email,due,project FROM tasks WHERE id=%s",
                     (task_id,)
                 )
                 row = cur.fetchone()
@@ -723,22 +740,20 @@ def api_update(task_id):
                                  old.get(field), new.get(field))
                             )
                     # Уведомление новому исполнителю при смене
-                    new_assignee = new.get("assignee") or ""
-                    old_assignee = old.get("assignee") or ""
-                    if new_assignee and new_assignee != old_assignee:
-                        assignee_email = _email_by_name(cur, new_assignee)
-                        if assignee_email and assignee_email != u_email:
-                            _push_notification(
-                                cur, assignee_email, "task_assigned",
-                                f"Задача назначена вам: {new.get('title') or old.get('title')}",
-                                f"Назначил(а): {changed_by}",
-                                task_id,
-                            )
+                    old_assignee_email = row.get("assignee_email") or ""
+                    if new_assignee_email and new_assignee_email != old_assignee_email and new_assignee_email != u_email:
+                        _push_notification(
+                            cur, new_assignee_email, "task_assigned",
+                            f"Задача назначена вам: {new.get('title') or old.get('title')}",
+                            f"Назначил(а): {changed_by}",
+                            task_id,
+                        )
                 cur.execute(
-                    "UPDATE tasks SET title=%s,priority=%s,assignee=%s,due=%s,project=%s "
+                    "UPDATE tasks SET title=%s,priority=%s,assignee=%s,assignee_email=%s,due=%s,project=%s "
                     "WHERE id=%s",
                     (d.get("title"), d.get("priority", "med"),
-                     d.get("assignee"), d.get("due"), d.get("project"), task_id),
+                     d.get("assignee"), new_assignee_email,
+                     d.get("due"), d.get("project"), task_id),
                 )
             conn.commit()
         return jsonify({"ok": True})

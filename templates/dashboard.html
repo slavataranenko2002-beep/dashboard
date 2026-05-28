@@ -468,9 +468,9 @@ tr:hover td{background:rgba(128,128,255,.03)}
             <option value="low">🟢 Низкий</option>
           </select>
         </div>
-        <div class="aff" style="min-width:120px">
+        <div class="aff" style="min-width:130px">
           <label>Исполнитель</label>
-          <input class="ai" id="f-who" placeholder="@имя">
+          <select class="ai" id="f-who"><option value="">— не назначен —</option></select>
         </div>
         <div class="aff" style="min-width:130px">
           <label>Срок</label>
@@ -662,7 +662,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
     </div>
     <div class="mf">
       <label>Исполнитель</label>
-      <input id="e-who" type="text" placeholder="@имя">
+      <select id="e-who"><option value="">— не назначен —</option></select>
     </div>
     <div class="mf">
       <label>Срок выполнения</label>
@@ -731,6 +731,35 @@ tr:hover td{background:rgba(128,128,255,.03)}
 <script>
 let allTasks = [];
 let taskMap = {};
+let allUsers = []; // [{email, first_name}]
+
+async function loadUsers() {
+  try {
+    const r = await fetch('/api/users');
+    allUsers = await r.json();
+    _populateAssigneeSels();
+  } catch(e) {}
+}
+
+function _populateAssigneeSels() {
+  ['f-who','e-who'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— не назначен —</option>';
+    allUsers.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.email;
+      opt.textContent = u.first_name;
+      sel.appendChild(opt);
+    });
+    if (cur) sel.value = cur;
+  });
+}
+
+function _userByEmail(email) {
+  return allUsers.find(u => u.email === email) || null;
+}
 let curProject = {% if current_user.role == 'seller' and visible_projects %}{{ visible_projects[0].name | tojson }}{% else %}null{% endif %}; // null = все, '__none__' = без проекта, иначе имя
 let curStatus = 'active';
 let curView = 'tasks';  // 'tasks' | 'today'
@@ -1089,17 +1118,22 @@ function toggleForm(){
 async function addTask(){
   const title = document.getElementById('f-title').value.trim();
   if(!title) return;
+  const assigneeEmail = document.getElementById('f-who').value || null;
+  const assigneeUser  = assigneeEmail ? _userByEmail(assigneeEmail) : null;
   await fetch('/api/tasks',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       title,
-      project: document.getElementById('f-project').value||null,
-      priority: document.getElementById('f-prio').value,
-      assignee: document.getElementById('f-who').value.replace('@','').trim()||null,
-      due: document.getElementById('f-due').value||null
+      project:        document.getElementById('f-project').value||null,
+      priority:       document.getElementById('f-prio').value,
+      assignee:       assigneeUser ? assigneeUser.first_name : null,
+      assignee_email: assigneeEmail,
+      due:            document.getElementById('f-due').value||null
     })
   });
-  ['f-title','f-who','f-due'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('f-title').value='';
+  document.getElementById('f-who').value='';
+  document.getElementById('f-due').value='';
   document.getElementById('aform').classList.remove('open');
   load();
 }
@@ -1110,7 +1144,7 @@ function openEdit(id){
   document.getElementById('e-title').value=t.title;
   document.getElementById('e-project').value=t.project||'';
   document.getElementById('e-prio').value=t.priority||'med';
-  document.getElementById('e-who').value=t.assignee||'';
+  document.getElementById('e-who').value=t.assignee_email||'';
   document.getElementById('e-due').value=t.due||'';
   document.getElementById('overlay').classList.add('open');
   setTimeout(()=>document.getElementById('e-title').focus(),50);
@@ -1122,14 +1156,17 @@ async function saveEdit(){
   const id=document.getElementById('e-id').value;
   const title=document.getElementById('e-title').value.trim();
   if(!title) return;
+  const assigneeEmail = document.getElementById('e-who').value || null;
+  const assigneeUser  = assigneeEmail ? _userByEmail(assigneeEmail) : null;
   await fetch('/api/tasks/'+id,{
     method:'PUT', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       title,
-      project: document.getElementById('e-project').value||null,
-      priority: document.getElementById('e-prio').value,
-      assignee: document.getElementById('e-who').value.replace('@','').trim()||null,
-      due: document.getElementById('e-due').value||null
+      project:        document.getElementById('e-project').value||null,
+      priority:       document.getElementById('e-prio').value,
+      assignee:       assigneeUser ? assigneeUser.first_name : null,
+      assignee_email: assigneeEmail,
+      due:            document.getElementById('e-due').value||null
     })
   });
   closeModal(); load();
@@ -1267,6 +1304,7 @@ document.addEventListener('keydown', e=>{
 });
 
 load();
+loadUsers();
 setInterval(load,15000);
 
 // ── История изменений ─────────────────────────────────────────────────────────
