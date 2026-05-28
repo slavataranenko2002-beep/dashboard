@@ -103,6 +103,18 @@ def _ensure_design_tables():
                     )
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_notif_user_unread ON notifications(user_email, read) WHERE read = FALSE")
+                # Миграция: заполняем created_by_email для старых задач через task_history
+                cur.execute("""
+                    UPDATE tasks t
+                    SET created_by_email = u.email
+                    FROM users u,
+                         (SELECT DISTINCT ON (task_id) task_id, changed_by
+                          FROM task_history
+                          ORDER BY task_id, id ASC) first_hist
+                    WHERE t.id = first_hist.task_id
+                      AND u.name = first_hist.changed_by
+                      AND (t.created_by_email IS NULL OR t.created_by_email = '')
+                """)
             conn.commit()
         logging.info("Design tables ready.")
     except Exception as e:
@@ -529,6 +541,25 @@ def _first_name(full_name: str) -> str:
     """Возвращает первое слово из полного имени."""
     return (full_name or "").strip().split()[0] if (full_name or "").strip() else (full_name or "")
 
+def _resolve_owner_email(cur, task_id: int, stored_email: str) -> str:
+    """
+    Возвращает email создателя задачи.
+    Если stored_email пуст (старые задачи) — ищет первого автора в task_history,
+    затем находит его email по имени в таблице users.
+    """
+    if stored_email:
+        return stored_email
+    cur.execute(
+        "SELECT changed_by FROM task_history WHERE task_id=%s ORDER BY id ASC LIMIT 1",
+        (task_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        return ""
+    cur.execute("SELECT email FROM users WHERE name=%s LIMIT 1", (row["changed_by"],))
+    u = cur.fetchone()
+    return u["email"] if u else ""
+
 def _push_notification(cur, user_email: str, notif_type: str, title: str, message: str = "", task_id: int | None = None):
     """Создаёт запись уведомления в БД (вызывать внутри уже открытого cursor)."""
     if not user_email:
@@ -685,7 +716,7 @@ def api_done(task_id):
                 )
                 # Уведомление создателю задачи
                 if task_row:
-                    owner_email = task_row["created_by_email"] or ""
+                    owner_email = _resolve_owner_email(cur, task_id, task_row["created_by_email"] or "")
                     u_email = (u.get("email") or "") if u else ""
                     if owner_email and owner_email != u_email:
                         _push_notification(
@@ -758,7 +789,7 @@ def api_update(task_id):
                         notified.add(new_assignee_email)
 
                     # Уведомление создателю при любом изменении (кроме смены исполнителя)
-                    owner_email = row.get("created_by_email") or ""
+                    owner_email = _resolve_owner_email(cur, task_id, row.get("created_by_email") or "")
                     non_assignee_changes = [f for f in changed_fields if f != "Исполнитель"]
                     if non_assignee_changes and owner_email and owner_email != u_email and owner_email not in notified:
                         _push_notification(
@@ -1517,7 +1548,7 @@ def api_design_tasks_done(task_id):
                 )
                 row = cur.fetchone()
                 if row:
-                    owner_email = row.get("created_by_email") or ""
+                    owner_email = _resolve_owner_email(cur, task_id, row.get("created_by_email") or "")
                     if owner_email and owner_email != u_email:
                         _push_notification(cur, owner_email, "status_changed",
                             f"Задача дизайнеру закрыта: {row['title']}",
