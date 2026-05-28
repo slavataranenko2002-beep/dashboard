@@ -544,7 +544,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
           </div>
           <div class="aff" style="min-width:140px">
             <label>Исполнитель</label>
-            <input class="ai" id="df-who" placeholder="@имя дизайнера">
+            <select class="ai" id="df-who"><option value="">— не назначен —</option></select>
           </div>
           <div class="aff" style="min-width:130px">
             <label>Срок</label>
@@ -695,7 +695,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
     </div>
     <div class="mf">
       <label>Исполнитель</label>
-      <input id="de-who" type="text" placeholder="@имя">
+      <select id="de-who"><option value="">— не назначен —</option></select>
     </div>
     <div class="mf">
       <label>Срок выполнения</label>
@@ -739,7 +739,7 @@ async function loadUsers() {
 }
 
 function _populateAssigneeSels() {
-  ['f-who','e-who'].forEach(id => {
+  ['f-who','e-who','df-who','de-who'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const cur = sel.value;
@@ -1407,13 +1407,16 @@ async function addDesignTask(){
   let project = (document.getElementById('df-project')||{value:''}).value || null;
   if(USER_ROLE==='seller' && DESIGN_PROJECTS.length===1) project = DESIGN_PROJECTS[0];
   try{
+    const assigneeEmail = document.getElementById('df-who').value || null;
+    const assigneeUser  = assigneeEmail ? _userByEmail(assigneeEmail) : null;
     const r = await fetch('/api/design-tasks',{
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         title, project,
-        priority: document.getElementById('df-prio').value,
-        assignee: document.getElementById('df-who').value.replace('@','').trim()||null,
-        due: document.getElementById('df-due').value||null
+        priority:       document.getElementById('df-prio').value,
+        assignee:       assigneeUser ? assigneeUser.first_name : null,
+        assignee_email: assigneeEmail,
+        due:            document.getElementById('df-due').value||null
       })
     });
     if(r.status === 0){ alert('Нет связи с сервером. Попробуй ещё раз.'); return; }
@@ -1423,7 +1426,9 @@ async function addDesignTask(){
       alert('Ошибка создания задачи ('+r.status+'): '+(d.error||'неизвестная ошибка'));
       return;
     }
-    ['df-title','df-who','df-due'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('df-title').value='';
+    document.getElementById('df-who').value='';
+    document.getElementById('df-due').value='';
     document.getElementById('df-form').classList.remove('open');
     await loadDesign();
   } catch(e){ alert('Ошибка сети: '+e.message); }
@@ -1447,7 +1452,7 @@ function openDesignEdit(id){
   document.getElementById('de-id').value = id;
   document.getElementById('de-title').value = t.title || '';
   document.getElementById('de-prio').value = t.priority || 'med';
-  document.getElementById('de-who').value = t.assignee || '';
+  document.getElementById('de-who').value = t.assignee_email || '';
   document.getElementById('de-due').value = t.due ? t.due.slice(0,10) : '';
   // Populate project dropdown
   const sel = document.getElementById('de-project');
@@ -1469,12 +1474,15 @@ function dOverlayClick(e){
 
 async function saveDesignEdit(){
   const id = document.getElementById('de-id').value;
+  const assigneeEmail = document.getElementById('de-who').value || null;
+  const assigneeUser  = assigneeEmail ? _userByEmail(assigneeEmail) : null;
   const body = {
-    title:    document.getElementById('de-title').value.trim(),
-    priority: document.getElementById('de-prio').value,
-    assignee: document.getElementById('de-who').value.trim() || null,
-    due:      document.getElementById('de-due').value || null,
-    project:  document.getElementById('de-project').value || null,
+    title:          document.getElementById('de-title').value.trim(),
+    priority:       document.getElementById('de-prio').value,
+    assignee:       assigneeUser ? assigneeUser.first_name : null,
+    assignee_email: assigneeEmail,
+    due:            document.getElementById('de-due').value || null,
+    project:        document.getElementById('de-project').value || null,
   };
   if(!body.title){ alert('Введите название задачи'); return; }
   const r = await fetch('/api/design-tasks/'+id, {

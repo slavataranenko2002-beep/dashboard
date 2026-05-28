@@ -84,6 +84,8 @@ def _ensure_design_tables():
                 # Добавляем колонки если таблицы уже существовали без них
                 cur.execute("ALTER TABLE design_tasks ADD COLUMN IF NOT EXISTS project TEXT")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS design_access BOOLEAN DEFAULT FALSE")
+                cur.execute("ALTER TABLE design_tasks ADD COLUMN IF NOT EXISTS assignee_email TEXT DEFAULT ''")
+                cur.execute("ALTER TABLE design_tasks ADD COLUMN IF NOT EXISTS created_by_email TEXT DEFAULT ''")
                 # Автор задачи (email) для уведомлений
                 cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by_email TEXT DEFAULT ''")
                 cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_email TEXT DEFAULT ''")
@@ -1422,16 +1424,27 @@ def api_design_tasks_create():
     if allowed is not None and project and project not in allowed:
         return jsonify({"error": "forbidden"}), 403
     try:
+        creator_email  = u.get("email", "")
+        assignee_email = d.get("assignee_email", "")
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO design_tasks (title, description, priority, assignee, due, project, created_by) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                    "INSERT INTO design_tasks "
+                    "(title, description, priority, assignee, assignee_email, due, project, created_by, created_by_email) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
                     (title, d.get("description", ""), d.get("priority", "med"),
-                     d.get("assignee") or None, d.get("due") or None,
-                     project, u.get("name", ""))
+                     d.get("assignee") or None, assignee_email,
+                     d.get("due") or None, project,
+                     _first_name(u.get("name", "")), creator_email)
                 )
                 new_id = cur.fetchone()["id"]
+                if assignee_email and assignee_email != creator_email:
+                    _push_notification(
+                        cur, assignee_email, "task_assigned",
+                        f"Новая задача дизайнеру: {title}",
+                        f"Назначена вам в проекте {project or '—'}",
+                        new_id,
+                    )
             conn.commit()
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
@@ -1449,15 +1462,39 @@ def api_design_tasks_update(task_id):
     if allowed is not None and project and project not in allowed:
         return jsonify({"error": "forbidden"}), 403
     try:
+        u_email            = u.get("email", "") if u else ""
+        changed_by         = _first_name(u.get("name", "")) if u else "unknown"
+        new_assignee_email = d.get("assignee_email", "")
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE design_tasks SET title=%s, priority=%s, assignee=%s, due=%s, project=%s "
+                    "SELECT title, assignee_email, created_by_email FROM design_tasks WHERE id=%s",
+                    (task_id,)
+                )
+                row = cur.fetchone()
+                cur.execute(
+                    "UPDATE design_tasks SET title=%s, priority=%s, assignee=%s, assignee_email=%s, due=%s, project=%s "
                     "WHERE id=%s",
                     (d.get("title","").strip() or None, d.get("priority","med"),
-                     d.get("assignee") or None, d.get("due") or None,
-                     project, task_id)
+                     d.get("assignee") or None, new_assignee_email,
+                     d.get("due") or None, project, task_id)
                 )
+                if row:
+                    notified = set()
+                    old_assignee_email = row.get("assignee_email") or ""
+                    owner_email        = row.get("created_by_email") or ""
+                    task_title         = d.get("title") or row.get("title") or ""
+                    # Новый исполнитель
+                    if new_assignee_email and new_assignee_email != old_assignee_email and new_assignee_email != u_email:
+                        _push_notification(cur, new_assignee_email, "task_assigned",
+                            f"Задача дизайнеру назначена вам: {task_title}",
+                            f"Назначил(а): {changed_by}", task_id)
+                        notified.add(new_assignee_email)
+                    # Создателю при любом изменении
+                    if owner_email and owner_email != u_email and owner_email not in notified:
+                        _push_notification(cur, owner_email, "task_updated",
+                            f"Задача дизайнеру изменена: {task_title}",
+                            f"Изменил(а): {changed_by}", task_id)
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -1470,11 +1507,21 @@ def api_design_tasks_done(task_id):
     if not _design_auth(u):
         return jsonify({"error": "forbidden"}), 403
     try:
+        u_email    = u.get("email", "") if u else ""
+        changed_by = _first_name(u.get("name", "")) if u else "unknown"
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE design_tasks SET done=TRUE, done_at=NOW() WHERE id=%s", (task_id,)
+                    "UPDATE design_tasks SET done=TRUE, done_at=NOW() WHERE id=%s RETURNING title, created_by_email",
+                    (task_id,)
                 )
+                row = cur.fetchone()
+                if row:
+                    owner_email = row.get("created_by_email") or ""
+                    if owner_email and owner_email != u_email:
+                        _push_notification(cur, owner_email, "status_changed",
+                            f"Задача дизайнеру закрыта: {row['title']}",
+                            f"Закрыл(а): {changed_by}", task_id)
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
