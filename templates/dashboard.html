@@ -185,6 +185,25 @@ tr:hover td{background:rgba(128,128,255,.03)}
 .cp-send-btn:hover{opacity:.85}
 .cp-send-btn:disabled{opacity:.4;cursor:not-allowed}
 
+/* Close-task modal */
+.done-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:110;backdrop-filter:blur(4px)}
+.done-modal-overlay.open{display:flex}
+.done-modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px 30px;width:480px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(0,0,0,.5)}
+.done-modal-title{font-size:17px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.done-modal-sub{font-size:13px;color:var(--text2);margin-bottom:22px;line-height:1.5}
+.done-modal-sub span{font-weight:600;color:var(--text)}
+.done-ta{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:11px 14px;border-radius:8px;font-size:15px;outline:none;resize:none;height:100px;font-family:inherit;line-height:1.5;transition:border .15s;margin-bottom:12px}
+.done-ta:focus{border-color:var(--green)}
+.done-url{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 13px;border-radius:8px;font-size:15px;outline:none;transition:border .15s;margin-bottom:6px}
+.done-url:focus{border-color:var(--blue)}
+.done-url-label{font-size:12px;color:var(--text2);margin-bottom:7px;display:block;text-transform:uppercase;letter-spacing:.05em}
+.done-or{text-align:center;font-size:12px;color:var(--text3);margin:4px 0 10px}
+.done-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+.done-cancel{background:none;border:1px solid var(--border);color:var(--text2);padding:10px 18px;border-radius:8px;font-size:15px;cursor:pointer}
+.done-submit{background:var(--green);color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600;transition:opacity .15s}
+.done-submit:hover:not(:disabled){opacity:.85}
+.done-submit:disabled{opacity:.35;cursor:not-allowed}
+
 /* Design section */
 .design-view{display:none}
 .design-view.active{display:block}
@@ -652,6 +671,23 @@ tr:hover td{background:rgba(128,128,255,.03)}
   </div>
 </div>
 
+<!-- Close-task modal -->
+<div class="done-modal-overlay" id="done-overlay" onclick="if(event.target===this)closeDoneModal()">
+  <div class="done-modal">
+    <div class="done-modal-title">✅ Закрыть задачу</div>
+    <div class="done-modal-sub" id="done-modal-sub">Задача: <span id="done-task-name"></span></div>
+    <label class="done-url-label">Комментарий <span style="color:var(--red)">*</span></label>
+    <textarea class="done-ta" id="done-comment" placeholder="Опишите что сделано..." oninput="checkDoneReady()"></textarea>
+    <div class="done-or">— или приложи ссылку —</div>
+    <label class="done-url-label">Ссылка (необязательно)</label>
+    <input type="url" class="done-url" id="done-url" placeholder="https://..." oninput="checkDoneReady()">
+    <div class="done-actions">
+      <button class="done-cancel" onclick="closeDoneModal()">Отмена</button>
+      <button class="done-submit" id="done-submit-btn" disabled onclick="submitDone()">Закрыть задачу</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let allTasks = [];
 let taskMap = {};
@@ -945,7 +981,55 @@ async function load(){
   }
 }
 
-async function done(id){ await fetch('/api/tasks/'+id+'/done',{method:'POST'}); load(); }
+// ── Close-task modal ──────────────────────────────────────────────────────────
+let _doneTaskId = null;
+
+function done(id){
+  const task = taskMap[id];
+  _doneTaskId = id;
+  document.getElementById('done-task-name').textContent = task ? task.title : '#'+id;
+  document.getElementById('done-comment').value = '';
+  document.getElementById('done-url').value = '';
+  document.getElementById('done-submit-btn').disabled = true;
+  document.getElementById('done-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('done-comment').focus(), 80);
+}
+
+function closeDoneModal(){
+  document.getElementById('done-overlay').classList.remove('open');
+  _doneTaskId = null;
+}
+
+function checkDoneReady(){
+  const hasComment = document.getElementById('done-comment').value.trim().length > 0;
+  const hasUrl     = document.getElementById('done-url').value.trim().length > 0;
+  document.getElementById('done-submit-btn').disabled = !(hasComment || hasUrl);
+}
+
+async function submitDone(){
+  if(!_doneTaskId) return;
+  const comment = document.getElementById('done-comment').value.trim();
+  const url     = document.getElementById('done-url').value.trim();
+  const btn     = document.getElementById('done-submit-btn');
+  btn.disabled = true; btn.textContent = 'Сохраняю...';
+  try {
+    // Строим текст комментария
+    let text = comment;
+    if(url) text = text ? text + '\n\nСсылка: ' + url : 'Ссылка: ' + url;
+    // Сохраняем комментарий
+    await fetch('/api/tasks/'+_doneTaskId+'/comments', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({author: USER_NAME, text})
+    });
+    // Закрываем задачу
+    await fetch('/api/tasks/'+_doneTaskId+'/done', {method:'POST'});
+    closeDoneModal();
+    load();
+  } catch(e) {
+    alert('Ошибка: '+e.message);
+    btn.disabled = false; btn.textContent = 'Закрыть задачу';
+  }
+}
 async function del(id){
   if(!confirm('Удалить задачу?')) return;
   await fetch('/api/tasks/'+id,{method:'DELETE'}); load();

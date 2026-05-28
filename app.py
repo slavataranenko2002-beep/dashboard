@@ -549,6 +549,13 @@ def api_done(task_id):
         changed_by = (u.get("name") or u.get("email", "unknown")) if u else "unknown"
         with get_conn() as conn:
             with conn.cursor() as cur:
+                # Проверяем наличие комментария — обязательное условие закрытия
+                cur.execute(
+                    "SELECT COUNT(*) AS cnt FROM comments WHERE task_id=%s", (task_id,)
+                )
+                row = cur.fetchone()
+                if not row or int(row["cnt"]) == 0:
+                    return jsonify({"error": "Необходимо добавить комментарий или ссылку перед закрытием задачи"}), 400
                 cur.execute(
                     "UPDATE tasks SET done=TRUE,done_at=NOW() WHERE id=%s", (task_id,)
                 )
