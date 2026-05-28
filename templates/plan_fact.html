@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>План-Факт</title>
+<style>
+:root{
+  --bg:#0f1117;--bg2:#161b22;--bg3:#1c2333;--bg4:#21262d;
+  --border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;
+  --purple:#a371f7;--orange:#f0883e;
+}
+[data-theme="light"]{
+  --bg:#f6f8fa;--bg2:#fff;--bg3:#f0f2f5;--bg4:#e8ebf0;
+  --border:#d0d7de;--text:#24292f;--text2:#656d76;--text3:#8c959f;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px;min-height:100vh}
+a{color:var(--blue);text-decoration:none}
+
+/* Header */
+.hdr{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:20}
+.hdr-logo{font-weight:700;font-size:15px;letter-spacing:.5px}
+.hdr-sep{flex:1}
+.hbtn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:13px;transition:all .15s}
+.hbtn:hover{background:var(--bg4);color:var(--text)}
+.theme-btn{width:32px;height:32px;padding:0;display:flex;align-items:center;justify-content:center}
+
+/* Controls bar */
+.controls{display:flex;align-items:center;gap:12px;padding:20px 24px 0}
+.ctrl-label{font-size:13px;color:var(--text2)}
+.ctrl-select{padding:7px 12px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer}
+.ctrl-select:focus{outline:none;border-color:var(--blue)}
+.ctrl-input{padding:7px 12px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px;width:130px}
+.ctrl-input:focus{outline:none;border-color:var(--blue)}
+.load-btn{padding:7px 18px;border-radius:7px;border:none;
+  background:var(--blue);color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.load-btn:hover{opacity:.85}
+.load-btn:disabled{opacity:.5;cursor:default}
+.save-btn{padding:7px 18px;border-radius:7px;border:none;
+  background:var(--green);color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s;display:none}
+.save-btn:hover{opacity:.85}
+.xl-btn{padding:7px 14px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;transition:all .15s;display:none}
+.xl-btn:hover{border-color:var(--green);color:var(--green)}
+.xl-upload{display:none}
+.ctrl-sep{width:1px;height:24px;background:var(--border);margin:0 4px}
+
+/* KPI cards */
+.kpi-bar{display:flex;gap:14px;padding:20px 24px;flex-wrap:wrap}
+.kpi-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:14px 18px;min-width:180px;flex:1}
+.kpi-label{font-size:12px;color:var(--text2);margin-bottom:6px}
+.kpi-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.kpi-fact{font-size:20px;font-weight:700}
+.kpi-plan{font-size:13px;color:var(--text2)}
+.kpi-pct{font-size:13px;font-weight:600;padding:2px 8px;border-radius:20px}
+.kpi-pct.ok{background:rgba(63,185,80,.15);color:var(--green)}
+.kpi-pct.warn{background:rgba(210,153,34,.15);color:var(--yellow)}
+.kpi-pct.bad{background:rgba(248,81,73,.15);color:var(--red)}
+.kpi-pct.none{background:var(--bg3);color:var(--text3)}
+.kpi-status{font-size:12px;margin-top:4px;color:var(--text2)}
+
+/* Table wrap */
+.table-wrap{padding:0 24px 8px}
+.table-box{
+  height:calc(100vh - 310px);
+  min-height:320px;
+  overflow:auto;
+  border:1px solid var(--border);
+  border-radius:10px 10px 0 0;
+  position:relative;
+}
+.table-footer{
+  border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;
+  background:var(--bg2);overflow-x:auto;
+}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:var(--bg3);color:var(--text2);font-weight:500;
+  padding:9px 10px;text-align:right;white-space:nowrap;
+  position:sticky;z-index:10}
+thead th:first-child,thead th:nth-child(2){text-align:left}
+/* Summary row (first row in thead) */
+thead tr.thead-sum th{top:0;background:var(--bg4);font-size:11px;font-weight:600;
+  border-bottom:1px solid var(--border);padding:6px 10px}
+/* Column names row (second row in thead) */
+thead tr.thead-cols th{top:32px;border-bottom:2px solid var(--border)}
+thead th.grp-plan{border-bottom:2px solid var(--purple);color:var(--purple)}
+thead th.grp-fact{border-bottom:2px solid var(--blue);color:var(--blue)}
+thead th.grp-exec{border-bottom:2px solid var(--green);color:var(--green)}
+thead th.grp-prognoz{border-bottom:2px solid var(--orange);color:var(--orange)}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:hover{background:var(--bg3)}
+tbody td{padding:8px 10px;text-align:right;vertical-align:middle}
+tbody td:first-child,tbody td:nth-child(2){text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.foot-table tfoot td{padding:9px 10px;text-align:right;font-weight:600;border-top:2px solid var(--border);background:var(--bg2);color:var(--text)}
+.foot-table tfoot td:first-child,.foot-table tfoot td:nth-child(2){text-align:left}
+.art-code{font-weight:600;color:var(--text)}
+.art-title{font-size:11px;color:var(--text2);margin-top:2px;white-space:normal;max-width:150px}
+.badge-pct{display:inline-block;padding:2px 7px;border-radius:12px;font-weight:600;font-size:12px}
+.badge-ok{background:rgba(63,185,80,.15);color:var(--green)}
+.badge-warn{background:rgba(210,153,34,.15);color:var(--yellow)}
+.badge-bad{background:rgba(248,81,73,.15);color:var(--red)}
+.badge-none{color:var(--text3)}
+/* Editable plan cells */
+.plan-cell{background:rgba(163,113,247,.07);cursor:pointer;border-radius:4px;position:relative}
+.plan-cell:hover{background:rgba(163,113,247,.15)}
+.plan-input{width:100%;background:var(--bg4);border:1px solid var(--purple);
+  border-radius:4px;color:var(--text);font-size:13px;padding:2px 6px;text-align:right;outline:none}
+.sub{font-size:11px;color:var(--text2)}
+/* Pagination */
+.pagination{display:flex;align-items:center;gap:10px;padding:10px 24px 24px}
+.pg-btn{padding:6px 14px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:13px;transition:all .15s}
+.pg-btn:hover:not(:disabled){background:var(--bg4);color:var(--text);border-color:var(--blue)}
+.pg-btn:disabled{opacity:.35;cursor:default}
+.pg-info{font-size:13px;color:var(--text2)}
+.pg-info b{color:var(--text)}
+
+/* Empty / loading */
+.empty-state{text-align:center;padding:80px 0;color:var(--text2)}
+.empty-ic{font-size:40px;margin-bottom:14px}
+.spinner{display:inline-block;width:28px;height:28px;border:3px solid var(--border);
+  border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-msg{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);
+  border-radius:8px;padding:14px 18px;color:var(--red);margin:16px 24px}
+
+/* Season column */
+thead th.season-th{text-align:left;color:var(--purple)}
+tbody td.season-cell{text-align:left !important;width:150px;min-width:150px;padding:4px 8px;white-space:normal;word-break:break-word}
+.season-select{width:100%;min-width:138px;background:var(--bg4);border:1px solid var(--border);
+  border-radius:4px;color:var(--text);font-size:12px;padding:2px 4px;cursor:pointer;font-family:inherit;
+  white-space:normal;word-break:break-word}
+.season-select:focus{outline:none;border-color:var(--purple)}
+
+/* Season modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;
+  display:flex;align-items:center;justify-content:center}
+.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  width:480px;max-width:95vw;max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-hdr{display:flex;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);gap:10px;flex-shrink:0}
+.modal-hdr h3{flex:1;font-size:15px;font-weight:600}
+.modal-close{background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;
+  padding:2px 8px;border-radius:4px;line-height:1}
+.modal-close:hover{background:var(--bg3);color:var(--text)}
+.modal-body{overflow-y:auto;padding:14px 20px;display:flex;flex-direction:column;gap:8px;flex:1}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;flex-shrink:0}
+.sn-row{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg3);border-radius:7px}
+.sn-name{flex:1;font-size:13px;font-weight:600;color:var(--text)}
+.sn-coeff{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.sn-coeff-inp{width:68px;padding:4px 8px;border-radius:5px;border:1px solid var(--border);
+  background:var(--bg4);color:var(--text);font-size:13px;text-align:right}
+.sn-coeff-inp:focus{outline:none;border-color:var(--purple)}
+.sn-del{background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;
+  padding:2px 6px;border-radius:4px;line-height:1;flex-shrink:0}
+.sn-del:hover{color:var(--red);background:rgba(248,81,73,.1)}
+.sn-add-row{display:flex;gap:8px;padding:0 20px 14px;flex-shrink:0}
+.sn-add-inp{flex:1;padding:7px 10px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg4);color:var(--text);font-size:13px}
+.sn-add-inp:focus{outline:none;border-color:var(--purple)}
+.sn-add-btn{padding:7px 14px;border-radius:6px;border:none;background:var(--purple);
+  color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.sn-add-btn:hover{opacity:.85}
+.sn-empty{color:var(--text3);font-size:13px;text-align:center;padding:24px 0}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-logo">📊 План-Факт</div>
+  <div class="hdr-sep"></div>
+  <a href="/" class="hbtn">← Задачи</a>
+  <button class="hbtn theme-btn" id="theme-btn" onclick="toggleTheme()" title="Тема">🌙</button>
+</div>
+
+<div class="controls">
+  <span class="ctrl-label">Кабинет:</span>
+  <select class="ctrl-select" id="cabinet-sel">
+    {% for p in projects %}
+    <option value="{{ p }}">{{ project_emoji.get(p,'⚪') }} {{ p }}</option>
+    {% endfor %}
+  </select>
+  <span class="ctrl-label">Месяц:</span>
+  <input type="month" class="ctrl-input" id="month-inp" value="">
+  <button class="load-btn" id="load-btn" onclick="loadData()">Загрузить</button>
+  <div class="ctrl-sep"></div>
+  <button class="save-btn" id="save-btn" onclick="savePlan()">💾 Сохранить план</button>
+  <button class="xl-btn" id="xl-down-btn" onclick="downloadTemplate()" title="Скачать шаблон Excel с текущими значениями плана">📥 Excel шаблон</button>
+  <label class="xl-btn" id="xl-up-btn" title="Загрузить заполненный Excel с планом">
+    📤 Загрузить план
+    <input type="file" class="xl-upload" id="xl-upload" accept=".xlsx,.xls" onchange="uploadTemplate(event)">
+  </label>
+  <button class="xl-btn" id="season-btn" onclick="openSeasonModal()" style="display:none">🌸 Сезонность</button>
+</div>
+
+<div id="kpi-bar" class="kpi-bar" style="display:none"></div>
+<div id="error-msg" class="error-msg" style="display:none"></div>
+
+<div class="table-wrap">
+  <div class="table-box" id="table-box">
+    <div id="content">
+      <div class="empty-state">
+        <div class="empty-ic">📋</div>
+        Выберите кабинет и месяц, нажмите «Загрузить»
+      </div>
+    </div>
+  </div>
+  <div class="table-footer" id="table-footer" style="display:none">
+    <div id="totals-row"></div>
+  </div>
+</div>
+<div class="pagination" id="pagination" style="display:none">
+  <button class="pg-btn" id="pg-prev" onclick="changePage(-1)">◀ Пред.</button>
+  <span class="pg-info" id="pg-info"></span>
+  <button class="pg-btn" id="pg-next" onclick="changePage(1)">След. ▶</button>
+</div>
+
+<!-- Season modal -->
+<div class="modal-overlay" id="season-modal" style="display:none" onclick="if(event.target===this)closeSeasonModal()">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <h3>🌸 Сезонность</h3>
+      <button class="modal-close" onclick="closeSeasonModal()">✕</button>
+    </div>
+    <div class="modal-body" id="season-modal-body"></div>
+    <div class="sn-add-row" id="sn-add-row" style="display:none">
+      <input type="text" class="sn-add-inp" id="sn-add-inp" placeholder="Название нового сезона"
+        onkeydown="if(event.key==='Enter')addSeason()">
+      <button class="sn-add-btn" onclick="addSeason()">+ Добавить</button>
+    </div>
+    <div class="modal-footer">
+      <button class="load-btn" id="auto-calc-btn"
+        style="background:var(--orange);padding:6px 14px;font-size:13px;display:none"
+        onclick="autoCalcPlan()">⚡ Авто-расчёт плана</button>
+      <button class="load-btn" id="save-coeff-btn"
+        style="padding:6px 14px;font-size:13px;display:none"
+        onclick="saveSeasonCoeffs()">💾 Сохранить коэффициенты</button>
+      <button class="hbtn" onclick="closeSeasonModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const USER_ROLE = {{ current_user.role | tojson }};
+const CAN_EDIT  = {{ can_edit | tojson }};
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('theme-btn').textContent = t==='light'?'🌙':'☀️';
+  localStorage.setItem('theme', t);
+}
+function toggleTheme(){
+  applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light');
+}
+applyTheme(localStorage.getItem('theme')||'dark');
+
+// ── Sync horizontal scroll: table-box <-> table-footer ───────────────────────
+(function(){
+  let syncing = false;
+  function sync(src, dst){
+    if(syncing) return;
+    syncing = true;
+    dst.scrollLeft = src.scrollLeft;
+    syncing = false;
+  }
+  const box    = document.getElementById('table-box');
+  const footer = document.getElementById('table-footer');
+  box.addEventListener('scroll',    () => sync(box, footer));
+  footer.addEventListener('scroll', () => sync(footer, box));
+})();
+
+// ── Init month picker ────────────────────────────────────────────────────────
+(function(){
+  const d = new Date();
+  document.getElementById('month-inp').value =
+    d.getFullYear()+'-'+(String(d.getMonth()+1).padStart(2,'0'));
+})();
+
+// ── Formatting ───────────────────────────────────────────────────────────────
+function fmt(n, suffix=''){
+  if(n===null||n===undefined) return '—';
+  return Math.round(n).toLocaleString('ru-RU') + suffix;
+}
+function pctBadge(p){
+  if(p===null||p===undefined) return '<span class="badge-none">—</span>';
+  const cls = p>=100?'badge-ok':p>=70?'badge-warn':'badge-bad';
+  return `<span class="badge-pct ${cls}">${Math.round(p)}%</span>`;
+}
+function pctClass(p){
+  if(p===null||p===undefined) return 'none';
+  return p>=100?'ok':p>=70?'warn':'bad';
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+const PAGE_SIZE = 30;
+let currentData = null;
+let currentCabinet = '';
+let currentMonth = '';
+let planEdits = {};
+let currentPage = 0;
+let seasonList = []; // [{name, coeff}]
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+async function loadData(){
+  const cabinet = document.getElementById('cabinet-sel').value;
+  const month   = document.getElementById('month-inp').value;
+  if(!month){ alert('Выберите месяц'); return; }
+
+  currentCabinet = cabinet;
+  currentMonth   = month;
+  planEdits      = {};
+  currentPage    = 0;
+  seasonList     = [];
+
+  const btn = document.getElementById('load-btn');
+  btn.disabled = true; btn.textContent = 'Загрузка...';
+  document.getElementById('error-msg').style.display='none';
+  document.getElementById('kpi-bar').style.display='none';
+  document.getElementById('save-btn').style.display='none';
+  document.getElementById('season-btn').style.display='none';
+  document.getElementById('content').innerHTML =
+    '<div class="empty-state"><div class="spinner"></div><br>Загружаем данные из WB...</div>';
+
+  try {
+    const r = await fetch(`/api/plan-fact?cabinet=${encodeURIComponent(cabinet)}&month=${month}`);
+    const data = await r.json();
+    if(data.error){ showError(data.error); return; }
+    currentData = data;
+    buildSeasonList(data);
+    renderKpi(data);
+    renderTable(data);
+    if(CAN_EDIT) document.getElementById('save-btn').style.display='inline-block';
+    document.getElementById('xl-down-btn').style.display='inline-block';
+    if(CAN_EDIT) document.getElementById('xl-up-btn').style.display='inline-flex';
+    document.getElementById('season-btn').style.display='inline-block';
+  } catch(e){
+    showError('Ошибка соединения: '+e.message);
+  } finally {
+    btn.disabled=false; btn.textContent='Загрузить';
+  }
+}
+
+function showError(msg){
+  document.getElementById('error-msg').textContent='Ошибка: '+msg;
+  document.getElementById('error-msg').style.display='block';
+  document.getElementById('content').innerHTML=
+    '<div class="empty-state"><div class="empty-ic">❌</div>Не удалось загрузить данные</div>';
+  document.getElementById('table-footer').style.display='none';
+  document.getElementById('pagination').style.display='none';
+  document.getElementById('season-btn').style.display='none';
+  document.getElementById('xl-down-btn').style.display='none';
+  document.getElementById('xl-up-btn').style.display='none';
+}
+
+// ── DRR color helpers ─────────────────────────────────────────────────────────
+function drrOrdStyle(v){
+  if(v===null||v===undefined) return 'color:var(--text3)';
+  if(v<=1.5)  return 'color:var(--green)';
+  if(v<=2.5)  return 'color:var(--yellow)';
+  if(v<5)     return 'color:var(--red)';
+  return 'color:var(--red);font-weight:800;text-shadow:0 0 8px rgba(248,81,73,.5)'; // очень плохо
+}
+function drrSalStyle(v){
+  if(v===null||v===undefined) return 'color:var(--text3)';
+  if(v<=4)    return 'color:var(--green)';
+  if(v<=9)    return 'color:var(--yellow)';
+  if(v<15)    return 'color:var(--red)';
+  return 'color:var(--red);font-weight:800;text-shadow:0 0 8px rgba(248,81,73,.5)'; // очень плохо
+}
+
+// ── KPI bar ───────────────────────────────────────────────────────────────────
+const MONTHS_RU = ['ЯНВАРЬ','ФЕВРАЛЬ','МАРТ','АПРЕЛЬ','МАЙ','ИЮНЬ','ИЮЛЬ','АВГУСТ','СЕНТЯБРЬ','ОКТЯБРЬ','НОЯБРЬ','ДЕКАБРЬ'];
+
+function renderKpi(data){
+  const t = data.totals, m = data.meta;
+  const status = m.pct_orders===null ? '—' :
+                 m.pct_orders>=100 ? '✅ План выполнен' :
+                 m.pct_orders>=70  ? '🟡 В работе' : '🔴 Отстаём от плана';
+
+  // Forecast for totals
+  const de = m.days_elapsed || 1;
+  const dm = m.days_in_month || de;
+  const k  = dm / de;
+  const fOrdRub = Math.round(t.orders_rub_fact * k);
+  const fOrdQty = Math.round(t.orders_qty_fact * k);
+  const fSalRub = Math.round(t.sales_rub_fact  * k);
+  const fSalQty = Math.round(t.sales_qty_fact  * k);
+  const pFOrd   = t.orders_rub_plan > 0 ? Math.round(fOrdRub / t.orders_rub_plan * 100) : null;
+  const pFSal   = t.sales_rub_plan  > 0 ? Math.round(fSalRub / t.sales_rub_plan  * 100) : null;
+
+  // Period month name
+  const monthNum  = parseInt(m.d_from.split('-')[1]) - 1;
+  const monthName = MONTHS_RU[monthNum] || m.d_from;
+
+  const bar = document.getElementById('kpi-bar');
+  bar.style.display='flex';
+  bar.innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Заказы (руб.)</div>
+      <div class="kpi-row">
+        <div class="kpi-fact">${fmt(t.orders_rub_fact,' ₽')}</div>
+        <div class="kpi-pct ${pctClass(m.pct_orders)}">${m.pct_orders!==null?Math.round(m.pct_orders)+'%':'—'}</div>
+      </div>
+      <div class="kpi-status">план: ${fmt(t.orders_rub_plan,' ₽')}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Продажи (руб.)</div>
+      <div class="kpi-row">
+        <div class="kpi-fact">${fmt(t.sales_rub_fact,' ₽')}</div>
+        <div class="kpi-pct ${pctClass(m.pct_sales)}">${m.pct_sales!==null?Math.round(m.pct_sales)+'%':'—'}</div>
+      </div>
+      <div class="kpi-status">план: ${fmt(t.sales_rub_plan,' ₽')}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Заказы (шт.)</div>
+      <div class="kpi-row">
+        <div class="kpi-fact">${fmt(t.orders_qty_fact)}</div>
+        ${t.orders_qty_plan ? `<span class="kpi-plan">/ ${fmt(t.orders_qty_plan)} план</span>` : ''}
+      </div>
+      <div class="kpi-status">в день: ${(t.orders_qty_fact/Math.max(1,m.days_elapsed)).toFixed(1)} шт</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Остаток на складе</div>
+      <div class="kpi-row"><div class="kpi-fact">${fmt(t.stocks,' шт')}</div></div>
+      <div class="kpi-status">${status}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Расход на РК</div>
+      <div class="kpi-row"><div class="kpi-fact" style="color:var(--orange)">${fmt(m.adv_spend,' ₽')}</div></div>
+      <div class="kpi-status">за период</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">ДРР по заказам</div>
+      <div class="kpi-row"><div class="kpi-fact" style="${drrOrdStyle(m.drr_orders)}">${m.drr_orders !== null ? m.drr_orders+'%' : '—'}</div></div>
+      <div class="kpi-status">расход / заказы</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">ДРР по продажам</div>
+      <div class="kpi-row"><div class="kpi-fact" style="${drrSalStyle(m.drr_sales)}">${m.drr_sales !== null ? m.drr_sales+'%' : '—'}</div></div>
+      <div class="kpi-status">расход / продажи</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(240,136,62,.4)">
+      <div class="kpi-label" style="color:var(--orange)">📈 Прогноз заказы</div>
+      <div class="kpi-row">
+        <div class="kpi-fact" style="color:var(--orange)">${fmt(fOrdRub,' ₽')}</div>
+        <div class="kpi-pct ${pctClass(pFOrd)}">${pFOrd!==null?pFOrd+'%':'—'}</div>
+      </div>
+      <div class="kpi-status">${fmt(fOrdQty)} шт · план: ${fmt(t.orders_rub_plan,' ₽')}</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(240,136,62,.4)">
+      <div class="kpi-label" style="color:var(--orange)">📈 Прогноз продажи</div>
+      <div class="kpi-row">
+        <div class="kpi-fact" style="color:var(--orange)">${fmt(fSalRub,' ₽')}</div>
+        <div class="kpi-pct ${pctClass(pFSal)}">${pFSal!==null?pFSal+'%':'—'}</div>
+      </div>
+      <div class="kpi-status">${fmt(fSalQty)} шт · план: ${fmt(t.sales_rub_plan,' ₽')}</div>
+    </div>
+    <div class="kpi-card" style="border-color:rgba(240,136,62,.4)">
+      <div class="kpi-label" style="color:var(--orange)">🎯 % выполнения прогноза</div>
+      <div class="kpi-row" style="gap:16px">
+        <div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:2px">Заказы</div>
+          <div class="kpi-fact" style="font-size:22px">${pFOrd!==null?`<span class="kpi-pct ${pctClass(pFOrd)}" style="font-size:18px;padding:4px 12px">${pFOrd}%</span>`:'<span style="color:var(--text3)">—</span>'}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:2px">Продажи</div>
+          <div class="kpi-fact" style="font-size:22px">${pFSal!==null?`<span class="kpi-pct ${pctClass(pFSal)}" style="font-size:18px;padding:4px 12px">${pFSal}%</span>`:'<span style="color:var(--text3)">—</span>'}</div>
+        </div>
+      </div>
+      <div class="kpi-status">к концу месяца vs план</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Период</div>
+      <div class="kpi-row"><div class="kpi-fact" style="font-size:22px;font-weight:800">${monthName}</div></div>
+      <div class="kpi-status">${m.days_elapsed} дн. прошло · ${m.days_remaining} дн. осталось</div>
+    </div>`;
+}
+
+// ── Table headers + summary row ───────────────────────────────────────────────
+function buildTableHead(arts){
+  const n   = arts.length || 1;
+  const s   = (f) => arts.reduce((acc,a) => acc + (Number(a[f])||0), 0);
+  const de  = currentData.meta.days_elapsed || 1;
+  const dm  = currentData.meta.days_in_month || de;
+  const k   = dm / de;
+
+  // Forecast totals (from all arts)
+  const fOrdRub = Math.round(s('orders_rub_fact') * k);
+  const fOrdQty = Math.round(s('orders_qty_fact') * k);
+  const fSalRub = Math.round(s('sales_rub_fact')  * k);
+  const fSalQty = Math.round(s('sales_qty_fact')  * k);
+  const ordPlan = s('orders_rub_plan');
+  const salPlan = s('sales_rub_plan');
+  const pFOrd   = ordPlan > 0 ? Math.round(fOrdRub / ordPlan * 100) : null;
+  const pFSal   = salPlan > 0 ? Math.round(fSalRub / salPlan * 100) : null;
+
+  // Weighted % выполнения
+  const pctOrd = ordPlan > 0 ? Math.round(s('orders_rub_fact') / ordPlan * 100) : null;
+  const pctSal = salPlan > 0 ? Math.round(s('sales_rub_fact')  / salPlan * 100) : null;
+
+  // Averages (non-zero)
+  const nzAvg = (arr) => { const v=arr.filter(x=>x>0); return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
+  const avgPrice  = nzAvg(arts.map(a=>a.avg_price||0));
+  const avgBuyout = nzAvg(arts.map(a=>parseFloat(a.buyout_pct)||0));
+  const sumPerDay = arts.reduce((acc,a)=>acc+(parseFloat(a.orders_per_day)||0),0).toFixed(1);
+
+  const S = (v,orange=false) =>
+    `<th class="thead-sum"${orange?' style="color:var(--orange)"':''}>${v}</th>`;
+
+  return `<thead>
+  <tr class="thead-sum">
+    <th class="thead-sum" colspan="3" style="text-align:left">ИТОГО / сред. (${n} арт.)</th>
+    ${S(fmt(s('orders_rub_plan')))}
+    ${S(fmt(s('orders_qty_plan')))}
+    ${S(fmt(s('sales_rub_plan')))}
+    ${S(fmt(s('sales_qty_plan')))}
+    ${S(fmt(s('stocks')))}
+    ${S(avgPrice!==null?fmt(Math.round(avgPrice)):' —')}
+    ${S(avgBuyout!==null?Math.round(avgBuyout)+'%':'—')}
+    ${S(fmt(s('orders_rub_fact')))}
+    ${S(fmt(s('orders_qty_fact')))}
+    ${S(sumPerDay)}
+    ${S(fmt(s('needed_per_day')))}
+    ${S(fmt(s('sales_rub_fact')))}
+    ${S(fmt(s('sales_qty_fact')))}
+    ${S(pctOrd!==null?pctBadge(pctOrd):'—')}
+    ${S(pctSal!==null?pctBadge(pctSal):'—')}
+    ${S(fmt(fOrdRub),true)}
+    ${S(fmt(fOrdQty),true)}
+    ${S(fmt(fSalRub),true)}
+    ${S(fmt(fSalQty),true)}
+    ${S(pFOrd!==null?pctBadge(pFOrd):'—')}
+    ${S(pFSal!==null?pctBadge(pFSal):'—')}
+  </tr>
+  <tr class="thead-cols">
+    <th>Артикул</th>
+    <th>Название</th>
+    <th class="season-th">Сезон</th>
+    <th class="grp-plan">Заказы ₽ ПЛАН</th>
+    <th class="grp-plan">Заказы шт ПЛАН</th>
+    <th class="grp-plan">Прод. ₽ ПЛАН</th>
+    <th class="grp-plan">Прод. шт ПЛАН</th>
+    <th>Остаток</th>
+    <th>Ср.цена</th>
+    <th>% выкупа</th>
+    <th class="grp-fact">Заказы ₽ ФАКТ</th>
+    <th class="grp-fact">Заказы шт ФАКТ</th>
+    <th class="grp-fact">В день</th>
+    <th class="grp-fact">Нужно/день</th>
+    <th class="grp-fact">Прод. ₽ ФАКТ</th>
+    <th class="grp-fact">Прод. шт ФАКТ</th>
+    <th class="grp-exec">%Вып. заказы</th>
+    <th class="grp-exec">%Вып. продажи</th>
+    <th class="grp-prognoz">Прогноз заказы ₽</th>
+    <th class="grp-prognoz">Прогноз заказы шт</th>
+    <th class="grp-prognoz">Прогноз прод. ₽</th>
+    <th class="grp-prognoz">Прогноз прод. шт</th>
+    <th class="grp-prognoz">%Прогноз заказы</th>
+    <th class="grp-prognoz">%Прогноз продажи</th>
+  </tr>
+  </thead>`;
+}
+
+function calcForecast(a){
+  const de = currentData.meta.days_elapsed || 1;
+  const dm = currentData.meta.days_in_month || de;
+  const k  = dm / de;
+  const fOrdRub = Math.round(a.orders_rub_fact * k);
+  const fOrdQty = Math.round(a.orders_qty_fact * k);
+  const fSalRub = Math.round(a.sales_rub_fact  * k);
+  const fSalQty = Math.round(a.sales_qty_fact  * k);
+  const pFOrd   = a.orders_rub_plan > 0 ? Math.round(fOrdRub / a.orders_rub_plan * 100) : null;
+  const pFSal   = a.sales_rub_plan  > 0 ? Math.round(fSalRub / a.sales_rub_plan  * 100) : null;
+  return { fOrdRub, fOrdQty, fSalRub, fSalQty, pFOrd, pFSal };
+}
+
+function makeRow(a){
+  const vc = a.vendor_code;
+  const f  = calcForecast(a);
+  const sn = a.season_name || '';
+  const snOpts = ['<option value="">—</option>']
+    .concat(seasonList.map(s => `<option value="${esc(s.name)}"${sn===s.name?' selected':''}>${esc(s.name)}</option>`))
+    .join('');
+  const seasonCell = CAN_EDIT
+    ? `<td class="season-cell"><select class="season-select" data-vc="${esc(vc)}" onchange="onSeasonChange(this,'${esc(vc)}')">${snOpts}</select></td>`
+    : `<td class="season-cell">${sn ? `<span style="color:var(--purple);font-size:12px">${esc(sn)}</span>` : '<span style="color:var(--text3);font-size:11px">—</span>'}</td>`;
+  return `<tr data-vc="${esc(vc)}">
+    <td class="art-code">${esc(vc)}</td>
+    <td><div class="art-title">${esc(a.title||'')}</div></td>
+    ${seasonCell}
+    <td>${fmt(a.orders_rub_plan)}</td>
+    <td class="${CAN_EDIT?'plan-cell':''}" ${CAN_EDIT?`onclick="editCell(this,'${esc(vc)}','orders_qty_plan')"`:''}>${fmt(a.orders_qty_plan)}</td>
+    <td>${fmt(a.sales_rub_plan)}</td>
+    <td>${fmt(a.sales_qty_plan)}</td>
+    <td>${fmt(a.stocks)}</td>
+    <td>${fmt(a.avg_price)}</td>
+    <td>${a.buyout_pct}%</td>
+    <td style="font-weight:600">${fmt(a.orders_rub_fact)}</td>
+    <td>${fmt(a.orders_qty_fact)}</td>
+    <td class="sub">${a.orders_per_day}</td>
+    <td class="sub">${a.needed_per_day>0?`<span style="color:var(--yellow)">${a.needed_per_day}</span>`:'<span style="color:var(--text3)">0</span>'}</td>
+    <td style="font-weight:600">${fmt(a.sales_rub_fact)}</td>
+    <td>${fmt(a.sales_qty_fact)}</td>
+    <td>${pctBadge(a.pct_orders)}</td>
+    <td>${pctBadge(a.pct_sales)}</td>
+    <td style="color:var(--orange);font-weight:600">${fmt(f.fOrdRub)}</td>
+    <td style="color:var(--orange)">${fmt(f.fOrdQty)}</td>
+    <td style="color:var(--orange);font-weight:600">${fmt(f.fSalRub)}</td>
+    <td style="color:var(--orange)">${fmt(f.fSalQty)}</td>
+    <td>${pctBadge(f.pFOrd)}</td>
+    <td>${pctBadge(f.pFSal)}</td>
+  </tr>`;
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+function renderTable(data){
+  const arts = data.articles;
+  const t    = data.totals;
+
+  if(!arts.length){
+    document.getElementById('content').innerHTML=
+      '<div class="empty-state"><div class="empty-ic">📭</div>Нет данных за период</div>';
+    document.getElementById('table-footer').style.display='none';
+    document.getElementById('pagination').style.display='none';
+    return;
+  }
+
+  renderPage();
+  renderTotals(data);
+
+  // Show/hide pagination
+  const totalPages = Math.ceil(arts.length / PAGE_SIZE);
+  const pgEl = document.getElementById('pagination');
+  pgEl.style.display = totalPages > 1 ? 'flex' : 'none';
+  updatePagination(arts.length);
+}
+
+function renderPage(){
+  if(!currentData) return;
+  const arts = currentData.articles;
+  const start = currentPage * PAGE_SIZE;
+  const pageArts = arts.slice(start, start + PAGE_SIZE);
+
+  const rows = pageArts.map(makeRow).join('');
+  document.getElementById('content').innerHTML =
+    `<table>${buildTableHead(currentData.articles)}<tbody>${rows}</tbody></table>`;
+
+  // Scroll table box to top on page change
+  document.getElementById('table-box').scrollTop = 0;
+  updatePagination(arts.length);
+}
+
+function renderTotals(data){
+  document.getElementById('totals-row').innerHTML =
+    `<div style="padding:8px 16px;font-size:13px;color:var(--text2)">ИТОГО: <strong style="color:var(--text)">${data.articles.length} артикулов</strong></div>`;
+  document.getElementById('table-footer').style.display='block';
+}
+
+function updatePagination(total){
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const start = currentPage * PAGE_SIZE + 1;
+  const end   = Math.min((currentPage + 1) * PAGE_SIZE, total);
+  document.getElementById('pg-info').innerHTML =
+    `<b>${start}–${end}</b> из <b>${total}</b> артикулов · страница <b>${currentPage+1}</b> из <b>${totalPages}</b>`;
+  document.getElementById('pg-prev').disabled = currentPage === 0;
+  document.getElementById('pg-next').disabled = currentPage >= totalPages - 1;
+}
+
+function changePage(dir){
+  const total = currentData ? currentData.articles.length : 0;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  currentPage = Math.max(0, Math.min(totalPages - 1, currentPage + dir));
+  renderPage();
+}
+
+// ── Inline editing ────────────────────────────────────────────────────────────
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function editCell(td, vc, field){
+  if(td.querySelector('input')) return; // already editing
+  const orig = (getPlanValue(vc, field)||0);
+  const inp = document.createElement('input');
+  inp.type='number'; inp.min='0'; inp.className='plan-input';
+  inp.value=orig;
+  td.textContent='';
+  td.appendChild(inp);
+  inp.focus(); inp.select();
+  function commit(){
+    const val = parseFloat(inp.value)||0;
+    if(!planEdits[vc]) planEdits[vc]={};
+    planEdits[vc][field]=val;
+    // Update in currentData too
+    const art = currentData.articles.find(a=>a.vendor_code===vc);
+    if(art) art[field]=val;
+    td.textContent = fmt(val);
+    // Auto-calculate plan fields
+    if(art && field==='orders_qty_plan'){
+      const price   = art.avg_price || 0;
+      const buyout  = parseFloat(art.buyout_pct) / 100 || 0;
+      const ordRub  = Math.round(val * price);
+      const salQty  = Math.round(val * buyout);
+      const salRub  = Math.round(salQty * price);
+      art.orders_rub_plan = ordRub;  planEdits[vc].orders_rub_plan = ordRub;
+      art.sales_qty_plan  = salQty;  planEdits[vc].sales_qty_plan  = salQty;
+      art.sales_rub_plan  = salRub;  planEdits[vc].sales_rub_plan  = salRub;
+      setTimeout(()=>renderPage(), 0);
+    } else if(art && field==='sales_qty_plan'){
+      const salRub = Math.round(val * (art.avg_price || 0));
+      art.sales_rub_plan  = salRub;  planEdits[vc].sales_rub_plan  = salRub;
+      setTimeout(()=>renderPage(), 0);
+    }
+  }
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter') inp.blur(); if(e.key==='Escape'){ td.textContent=fmt(orig); } });
+}
+
+function getPlanValue(vc, field){
+  if(planEdits[vc] && planEdits[vc][field]!==undefined) return planEdits[vc][field];
+  const art = currentData && currentData.articles.find(a=>a.vendor_code===vc);
+  return art ? art[field] : 0;
+}
+
+// ── Excel download template ───────────────────────────────────────────────────
+function downloadTemplate(){
+  if(!currentData) return;
+  const headers = ['Артикул','Заказы ₽ ПЛАН','Заказы шт ПЛАН','Прод. ₽ ПЛАН','Прод. шт ПЛАН'];
+  const rows = currentData.articles.map(a=>[
+    a.vendor_code,
+    a.orders_rub_plan || 0,
+    a.orders_qty_plan || 0,
+    a.sales_rub_plan  || 0,
+    a.sales_qty_plan  || 0,
+  ]);
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  // Ширина колонок
+  ws['!cols'] = [{wch:20},{wch:16},{wch:16},{wch:16},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws, 'План');
+  const fname = `план_${currentCabinet}_${currentMonth}.xlsx`;
+  XLSX.writeFile(wb, fname);
+}
+
+// ── Excel upload plan ─────────────────────────────────────────────────────────
+function uploadTemplate(e){
+  const file = e.target.files[0];
+  if(!file || !currentData){ e.target.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    try{
+      const wb   = XLSX.read(ev.target.result, {type:'binary'});
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:0});
+      let updated = 0;
+      for(let i=1; i<rows.length; i++){
+        const [vc, ordRub, ordQty, salRub, salQty] = rows[i];
+        if(!vc) continue;
+        const art = currentData.articles.find(a=>a.vendor_code===String(vc).trim());
+        if(art){
+          art.orders_rub_plan = Number(ordRub)||0;
+          art.orders_qty_plan = Number(ordQty)||0;
+          art.sales_rub_plan  = Number(salRub)||0;
+          art.sales_qty_plan  = Number(salQty)||0;
+          updated++;
+        }
+      }
+      // Пересчитываем totals планов
+      const t = currentData.totals;
+      t.orders_rub_plan = currentData.articles.reduce((s,a)=>s+(a.orders_rub_plan||0),0);
+      t.orders_qty_plan = currentData.articles.reduce((s,a)=>s+(a.orders_qty_plan||0),0);
+      t.sales_rub_plan  = currentData.articles.reduce((s,a)=>s+(a.sales_rub_plan||0), 0);
+      t.sales_qty_plan  = currentData.articles.reduce((s,a)=>s+(a.sales_qty_plan||0), 0);
+      renderPage();
+      renderTotals(currentData);
+      alert(`✅ Загружено ${updated} артикулов из файла. Нажмите «Сохранить план» чтобы применить.`);
+    } catch(err){
+      alert('Ошибка чтения файла: '+err.message);
+    }
+    e.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+// ── Season: build list ────────────────────────────────────────────────────────
+
+function buildSeasonList(data) {
+  const coeffs = data.season_coefficients || {};
+  const names  = new Set();
+  (data.season_names   || []).forEach(n => { if(n) names.add(n); });
+  (data.articles       || []).forEach(a => { if(a.season_name) names.add(a.season_name); });
+  Object.keys(coeffs).forEach(n => { if(n) names.add(n); });
+  seasonList = Array.from(names).sort().map(name => ({
+    name,
+    coeff: coeffs[name] !== undefined ? coeffs[name] : 0,
+  }));
+}
+
+// ── Season modal ──────────────────────────────────────────────────────────────
+
+function openSeasonModal() {
+  renderSeasonModal();
+  if(CAN_EDIT) {
+    document.getElementById('sn-add-row').style.display    = 'flex';
+    document.getElementById('auto-calc-btn').style.display = 'inline-block';
+    document.getElementById('save-coeff-btn').style.display= 'inline-block';
+  }
+  document.getElementById('season-modal').style.display = 'flex';
+}
+
+function closeSeasonModal() {
+  document.getElementById('season-modal').style.display = 'none';
+}
+
+function renderSeasonModal() {
+  const body = document.getElementById('season-modal-body');
+  if(!seasonList.length) {
+    body.innerHTML = '<div class="sn-empty">Нет сезонов. Добавьте ниже.</div>';
+    return;
+  }
+  body.innerHTML = seasonList.map((s, i) => `
+    <div class="sn-row">
+      <span class="sn-name">${esc(s.name)}</span>
+      <div class="sn-coeff">
+        <span style="font-size:12px;color:var(--text2)">коэф.:</span>
+        ${CAN_EDIT
+          ? `<input type="number" class="sn-coeff-inp" data-idx="${i}"
+               value="${s.coeff}" step="1" min="-999" max="999">`
+          : `<span style="font-weight:600">${s.coeff}</span>`}
+        <span style="font-size:12px;color:var(--text2)">%</span>
+      </div>
+      ${CAN_EDIT ? `<button class="sn-del" onclick="removeSeason(${i})" title="Удалить">✕</button>` : ''}
+    </div>`).join('');
+  body.querySelectorAll('.sn-coeff-inp').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const idx = parseInt(inp.dataset.idx);
+      if(!isNaN(idx) && seasonList[idx]) seasonList[idx].coeff = parseFloat(inp.value) || 0;
+    });
+  });
+}
+
+function addSeason() {
+  const inp  = document.getElementById('sn-add-inp');
+  const name = inp.value.trim();
+  if(!name) return;
+  if(seasonList.find(s => s.name === name)) { inp.value = ''; return; }
+  seasonList.push({name, coeff: 0});
+  seasonList.sort((a, b) => a.name.localeCompare(b.name));
+  inp.value = '';
+  renderSeasonModal();
+  updateAllSeasonSelects();
+}
+
+function removeSeason(idx) {
+  const name = seasonList[idx] && seasonList[idx].name;
+  if(!name) return;
+  if(!confirm(`Удалить сезон «${name}»?`)) return;
+  seasonList.splice(idx, 1);
+  // Сбрасываем этот сезон у артикулов и сохраняем в БД
+  if(currentData) {
+    currentData.articles.forEach(a => {
+      if(a.season_name === name) {
+        a.season_name = '';
+        if(CAN_EDIT && currentCabinet) {
+          fetch('/api/article-seasons', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cabinet: currentCabinet, vendor_code: a.vendor_code, season_name: ''})
+          }).catch(()=>{});
+        }
+      }
+    });
+  }
+  renderSeasonModal();
+  updateAllSeasonSelects();
+}
+
+function updateAllSeasonSelects() {
+  document.querySelectorAll('.season-select').forEach(sel => {
+    const vc  = sel.dataset.vc;
+    const art = currentData && currentData.articles.find(a => a.vendor_code === vc);
+    const cur = art ? (art.season_name || '') : '';
+    sel.innerHTML = ['<option value="">—</option>']
+      .concat(seasonList.map(s =>
+        `<option value="${esc(s.name)}"${cur === s.name ? ' selected' : ''}>${esc(s.name)}</option>`
+      )).join('');
+  });
+}
+
+function onSeasonChange(sel, vc) {
+  const val = sel.value;
+  const art = currentData && currentData.articles.find(a => a.vendor_code === vc);
+  if(art) art.season_name = val;
+  if(CAN_EDIT && currentCabinet) {
+    fetch('/api/article-seasons', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cabinet: currentCabinet, vendor_code: vc, season_name: val})
+    }).catch(()=>{});
+  }
+}
+
+function autoCalcPlan() {
+  if(!currentData) return;
+  let count = 0;
+  currentData.articles.forEach(a => {
+    if((a.orders_qty_plan || 0) !== 0) return;
+    const past = a.orders_qty_past || 0;
+    if(!past) return;
+    const sn    = (a.season_name || '').trim();
+    const snObj = sn ? seasonList.find(s => s.name === sn) : null;
+    const coeff = snObj ? snObj.coeff : 0;
+    const newPlan = Math.round(past * (1 + coeff / 100));
+    const price   = a.avg_price || 0;
+    const buyout  = parseFloat(a.buyout_pct) / 100 || 0;
+    a.orders_qty_plan = newPlan;
+    a.orders_rub_plan = Math.round(newPlan * price);
+    a.sales_qty_plan  = Math.round(newPlan * buyout);
+    a.sales_rub_plan  = Math.round(a.sales_qty_plan * price);
+    count++;
+  });
+  if(!count) { alert('Нет артикулов без плана для авто-расчёта.'); return; }
+  const t = currentData.totals;
+  t.orders_rub_plan = currentData.articles.reduce((s, a) => s + (a.orders_rub_plan || 0), 0);
+  t.orders_qty_plan = currentData.articles.reduce((s, a) => s + (a.orders_qty_plan || 0), 0);
+  t.sales_rub_plan  = currentData.articles.reduce((s, a) => s + (a.sales_rub_plan  || 0), 0);
+  t.sales_qty_plan  = currentData.articles.reduce((s, a) => s + (a.sales_qty_plan  || 0), 0);
+  renderPage();
+  renderKpi(currentData);
+  closeSeasonModal();
+  alert(`⚡ Авто-расчёт: заполнено ${count} арт. Нажмите «Сохранить план».`);
+}
+
+async function saveSeasonCoeffs() {
+  if(!CAN_EDIT || !currentCabinet || !currentMonth) return;
+  // Синхронизируем инпуты → seasonList
+  document.querySelectorAll('.sn-coeff-inp').forEach(inp => {
+    const idx = parseInt(inp.dataset.idx);
+    if(!isNaN(idx) && seasonList[idx]) seasonList[idx].coeff = parseFloat(inp.value) || 0;
+  });
+  const coefficients = {};
+  seasonList.forEach(s => { coefficients[s.name] = s.coeff; });
+  const btn = document.getElementById('save-coeff-btn');
+  btn.disabled = true; btn.textContent = 'Сохраняю...';
+  try {
+    const r = await fetch('/api/season-coefficients', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cabinet: currentCabinet, month: currentMonth, coefficients})
+    });
+    const d = await r.json();
+    if(d.ok) {
+      btn.textContent = '✅ Сохранено';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '💾 Сохранить коэффициенты'; }, 2000);
+    } else {
+      alert('Ошибка: ' + d.error);
+      btn.disabled = false; btn.textContent = '💾 Сохранить коэффициенты';
+    }
+  } catch(e) {
+    alert('Ошибка соединения');
+    btn.disabled = false; btn.textContent = '💾 Сохранить коэффициенты';
+  }
+}
+
+// ── Save plan ─────────────────────────────────────────────────────────────────
+async function savePlan(){
+  if(!currentData) return;
+  const btn = document.getElementById('save-btn');
+  btn.disabled=true; btn.textContent='Сохраняю...';
+  // Build plans array from all articles (with any edits applied)
+  const plans = currentData.articles.map(a=>({
+    vendor_code:     a.vendor_code,
+    orders_rub_plan: a.orders_rub_plan || 0,
+    orders_qty_plan: a.orders_qty_plan || 0,
+    sales_rub_plan:  a.sales_rub_plan  || 0,
+    sales_qty_plan:  a.sales_qty_plan  || 0,
+    season_name:     a.season_name     || '',
+  }));
+  try{
+    const r = await fetch('/api/plan-fact', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({cabinet: currentCabinet, month: currentMonth, plans})
+    });
+    const d = await r.json();
+    if(d.ok){
+      btn.textContent='✅ Сохранено';
+      setTimeout(()=>{ btn.disabled=false; btn.textContent='💾 Сохранить план'; }, 2000);
+    } else {
+      alert('Ошибка: '+d.error);
+      btn.disabled=false; btn.textContent='💾 Сохранить план';
+    }
+  } catch(e){
+    alert('Ошибка соединения');
+    btn.disabled=false; btn.textContent='💾 Сохранить план';
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WB · Еженедельные отчёты</title>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root { --bg:#0e0f14; --surface:#161820; --border:#2a2d3e; --accent:#7c6af7; --text:#e8eaf6; --muted:#7b7f9e; --tr:background .25s,color .25s,border-color .25s }
+:root.light { --bg:#f3f5f9; --surface:#ffffff; --border:#dde1ea; --accent:#6450e6; --text:#1a1d2e; --muted:#5a6072 }
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;padding:48px 32px;transition:var(--tr)}
+.theme-btn{position:fixed;top:18px;right:18px;z-index:100;background:var(--surface);border:1px solid var(--border);color:var(--muted);width:38px;height:38px;border-radius:10px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:var(--tr),transform .15s;box-shadow:0 2px 12px rgba(0,0,0,.15)}
+.theme-btn:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
+.wrap{max-width:880px;margin:0 auto}
+h1{font-family:'Unbounded',sans-serif;font-size:24px;font-weight:900;margin-bottom:24px}
+h1 span{color:var(--accent)}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;align-items:flex-end}
+.fld{display:flex;flex-direction:column;gap:6px}
+.fld label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+input[type=date],select{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:13px;outline:none;transition:var(--tr)}
+.btn{background:var(--accent);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500;transition:opacity .15s}
+.btn:hover{opacity:.9}
+.cab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.cab{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;transition:var(--tr)}
+.cab h3{font-family:'Unbounded',sans-serif;font-size:14px;margin-bottom:10px}
+.cab .status{font-size:12px;color:var(--muted);margin-bottom:14px}
+.cab .status.ok{color:#48bb78}
+.cab a{display:inline-block;background:var(--accent);color:#fff;padding:7px 14px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:500}
+.cab a.dis{background:var(--border);color:var(--muted);cursor:not-allowed;pointer-events:none}
+.back{display:inline-block;margin-bottom:20px;color:var(--muted);text-decoration:none;font-size:12px}
+.back:hover{color:var(--text)}
+</style></head><body>
+<button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Сменить тему">🌙</button>
+<script>
+function applyTheme(t){
+  document.documentElement.classList.toggle('light', t==='light');
+  var b=document.getElementById('theme-btn'); if(b) b.textContent=t==='light'?'🌙':'☀️';
+}
+function toggleTheme(){
+  var n=document.documentElement.classList.contains('light')?'dark':'light';
+  try{localStorage.setItem('theme',n);}catch(e){} applyTheme(n);
+}
+try{applyTheme(localStorage.getItem('theme')||'dark');}catch(e){applyTheme('dark');}
+</script>
+<div class="wrap">
+<a href="/" class="back">← к задачам Wblions</a>
+<h1>🛍 Wildberries · <span>Еженедельные отчёты</span></h1>
+
+<form class="row" method="get" action="/wb/loading" id="wb-form">
+  <div class="fld">
+    <label>Кабинет</label>
+    <select name="cabinet" required>{{ cabinet_options | safe }}</select>
+  </div>
+  <div class="fld">
+    <label>С</label>
+    <input type="date" name="from" value="{{ default_from }}">
+  </div>
+  <div class="fld">
+    <label>По</label>
+    <input type="date" name="to" value="{{ default_to }}">
+  </div>
+  <button class="btn" type="submit" id="wb-submit">Сформировать отчёт →</button>
+</form>
+<script>
+// Не даём пользователю кликать кнопку повторно после отправки
+document.getElementById('wb-form').addEventListener('submit', function(){
+  var b = document.getElementById('wb-submit');
+  b.disabled = true; b.textContent = 'Открываем…'; b.style.opacity = .6;
+});
+</script>
+
+<div class="cab-grid">{{ cab_cards | safe }}</div>
+
+</div></body></html>

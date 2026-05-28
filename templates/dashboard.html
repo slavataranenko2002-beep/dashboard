@@ -1,0 +1,1542 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="google" content="notranslate">
+<title>🦁 Wblions</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#0f0f13;--bg2:#1a1a24;--bg3:#22222f;--bg4:#2d2d3f;
+  --border:#252535;--text:#e8e8f0;--text2:#8080a8;--text3:#505070;
+  --blue:#4a9eff;--green:#4ade80;--red:#f87171;--yellow:#fbbf24;--purple:#a78bfa;
+  --header-bg:rgba(15,15,19,.95);--tr:background .25s,color .25s,border-color .25s
+}
+:root.light{
+  --bg:#f0f2f5;--bg2:#ffffff;--bg3:#f4f5f8;--bg4:#e8eaef;
+  --border:#dde1ea;--text:#1a1d2e;--text2:#6b7280;--text3:#9ca3af;
+  --blue:#2563eb;--green:#16a34a;--red:#dc2626;--yellow:#d97706;--purple:#7c3aed;
+  --header-bg:rgba(240,242,245,.95)
+}
+
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;min-height:100vh;transition:var(--tr)}
+
+/* Header */
+.header{padding:16px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--header-bg);backdrop-filter:blur(8px);z-index:30;transition:var(--tr)}
+.logo{font-size:17px;font-weight:600}.logo em{color:var(--blue);font-style:normal}
+.hright{display:flex;align-items:center;gap:14px}
+.clock{font-size:14px;color:var(--text2);font-variant-numeric:tabular-nums}
+.status{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text2)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.theme-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text2);width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.theme-btn:hover{border-color:var(--blue);color:var(--blue)}
+
+/* Layout */
+.layout{display:flex;min-height:calc(100vh - 57px)}
+
+/* Sidebar */
+.sidebar{width:224px;flex-shrink:0;border-right:1px solid var(--border);padding:20px 14px;position:sticky;top:57px;height:calc(100vh - 57px);overflow-y:auto;transition:var(--tr)}
+.sidebar-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;padding:0 8px;margin-bottom:10px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:15px;color:var(--text2);border:none;background:none;width:100%;text-align:left;transition:all .15s;margin-bottom:3px}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:var(--bg4);color:var(--text);font-weight:500}
+.nav-sep{height:1px;background:var(--border);margin:12px 0}
+.nav-count{margin-left:auto;font-size:12px;background:var(--bg4);padding:2px 8px;border-radius:10px;color:var(--text2)}
+
+/* Main */
+.main{flex:1;padding:24px 28px;min-width:0;overflow:hidden}
+
+/* Metrics */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.metric{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden;transition:var(--tr)}
+.metric::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--ac,var(--blue))}
+.metric.m-t{--ac:var(--blue)}.metric.m-d{--ac:var(--green)}.metric.m-p{--ac:var(--yellow)}.metric.m-u{--ac:var(--red)}
+.mlabel{font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+.mval{font-size:32px;font-weight:700}.mval.blue{color:var(--blue)}.mval.green{color:var(--green)}.mval.yellow{color:var(--yellow)}.mval.red{color:var(--red)}
+.prog{height:4px;background:var(--border);border-radius:2px;margin-top:12px;overflow:hidden}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:2px;transition:width .7s}
+
+/* Toolbar */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.ftabs{display:flex;gap:2px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:3px}
+.tab{padding:7px 15px;border-radius:6px;font-size:14px;font-weight:500;cursor:pointer;color:var(--text2);border:none;background:none;transition:all .15s;white-space:nowrap}
+.tab.active{background:var(--bg4);color:var(--text)}
+.tab:hover:not(.active){color:var(--text)}
+.psel{background:var(--bg2);border:1px solid var(--border);color:var(--text2);padding:7px 12px;border-radius:8px;font-size:14px;cursor:pointer;outline:none}
+.sp{flex:1}
+.add-btn{background:var(--blue);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:500;white-space:nowrap}
+.add-btn:hover{opacity:.85}
+
+/* Card & table */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:var(--tr)}
+.aform{padding:14px 18px;border-bottom:1px solid var(--border);display:none;flex-wrap:wrap;gap:10px;align-items:flex-end;background:var(--bg3)}
+.aform.open{display:flex}
+.aff{display:flex;flex-direction:column;gap:5px}
+.aff.grow{flex:1;min-width:200px}
+.aff label{font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em}
+.ai{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:15px;outline:none;width:100%;transition:border .15s}
+.ai:focus{border-color:var(--blue)}
+.af-acts{display:flex;gap:8px;align-items:flex-end}
+.sbtn{background:var(--blue);color:#fff;border:none;padding:9px 16px;border-radius:6px;font-size:15px;cursor:pointer;font-weight:500}
+.cbtn{background:none;border:1px solid var(--border);color:var(--text2);padding:9px 12px;border-radius:6px;font-size:15px;cursor:pointer}
+
+table{width:100%;border-collapse:collapse}
+th{padding:11px 16px;text-align:left;font-size:12px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:13px 16px;font-size:15px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(128,128,255,.03)}
+.done-row td{opacity:.4}.done-title{text-decoration:line-through}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;font-size:13px;padding:3px 9px;border-radius:4px;font-weight:500;white-space:nowrap}
+.badge.high{background:rgba(248,113,113,.12);color:var(--red)}
+.badge.med{background:rgba(251,191,36,.12);color:var(--yellow)}
+.badge.low{background:rgba(74,222,128,.12);color:var(--green)}
+.badge.bdone{background:rgba(74,222,128,.1);color:var(--green)}
+.badge.bpend{background:rgba(74,158,255,.1);color:var(--blue)}
+
+/* Project badges */
+.proj-badge{display:inline-flex;align-items:center;gap:5px;font-size:13px;padding:3px 10px;border-radius:4px;font-weight:500;white-space:nowrap}
+
+/* Due */
+.due-ok{color:var(--text2)}.due-soon{color:var(--yellow);font-weight:500}.due-over{color:var(--red);font-weight:500}
+
+/* Actions */
+.acts{display:flex;gap:3px;justify-content:flex-end}
+.ab{background:none;border:1px solid transparent;color:var(--text3);padding:5px 9px;border-radius:5px;font-size:13px;cursor:pointer;transition:all .15s}
+.ab:hover.ok{border-color:var(--green);color:var(--green)}
+.ab:hover.ed{border-color:var(--blue);color:var(--blue)}
+.ab:hover.dl{border-color:var(--red);color:var(--red)}
+
+/* Empty */
+.empty{padding:56px;text-align:center;color:var(--text2);font-size:15px}
+.empty-ic{font-size:38px;margin-bottom:12px;opacity:.5}
+
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(3px)}
+.overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:30px;width:500px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(0,0,0,.4);transition:var(--tr)}
+.modal-title{font-size:17px;font-weight:600;margin-bottom:22px}
+.mf{margin-bottom:16px}
+.mf label{display:block;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.mf input,.mf select{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 13px;border-radius:8px;font-size:15px;outline:none;transition:border .15s}
+.mf input:focus,.mf select:focus{border-color:var(--blue)}
+.macts{display:flex;gap:10px;margin-top:22px;justify-content:flex-end}
+.m-cancel{background:none;border:1px solid var(--border);color:var(--text2);padding:10px 18px;border-radius:8px;font-size:15px;cursor:pointer}
+.m-save{background:var(--blue);color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:500}
+.m-save:hover{opacity:.85}
+
+/* Comment button */
+.cb{background:none;border:1px solid transparent;color:var(--text3);padding:5px 9px;border-radius:5px;font-size:13px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.cb:hover{border-color:var(--purple);color:var(--purple)}
+.cb.has-comments{color:var(--purple);border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.07)}
+
+/* History modal */
+.hist-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:none;backdrop-filter:blur(2px)}
+.hist-overlay.open{display:block}
+.hist-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-60%);width:520px;max-width:95vw;max-height:80vh;background:var(--bg2);border:1px solid var(--border);border-radius:14px;z-index:70;display:none;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.4);overflow:hidden}
+.hist-modal.open{display:flex;transform:translate(-50%,-50%)}
+.hist-head{padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-shrink:0}
+.hist-title{font-size:16px;font-weight:600}
+.hist-sub{font-size:13px;color:var(--text2);margin-top:3px}
+.hist-body{flex:1;overflow-y:auto;padding:16px 22px;display:flex;flex-direction:column;gap:10px}
+.hist-row{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)}
+.hist-icon{font-size:18px;flex-shrink:0;margin-top:1px}
+.hist-info{flex:1;min-width:0}
+.hist-field{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.hist-change{font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hist-old{text-decoration:line-through;opacity:.7}
+.hist-arr{opacity:.5}
+.hist-new{color:var(--green);font-weight:500}
+.hist-meta{font-size:12px;color:var(--text3);margin-top:4px}
+.hist-empty{text-align:center;color:var(--text2);font-size:15px;padding:40px 0;opacity:.6}
+
+/* Comment panel */
+.cp-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;backdrop-filter:blur(2px)}
+.cp-overlay.open{display:block}
+.cp{position:fixed;top:0;right:-480px;width:460px;max-width:100vw;height:100vh;background:var(--bg2);border-left:1px solid var(--border);z-index:50;display:flex;flex-direction:column;transition:right .3s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.3)}
+.cp.open{right:0}
+.cp-head{padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:14px;flex-shrink:0}
+.cp-head-info{flex:1;min-width:0}
+.cp-task-name{font-size:16px;font-weight:600;line-height:1.4;margin-bottom:5px;word-break:break-word}
+.cp-task-meta{font-size:13px;color:var(--text2)}
+.cp-close{background:none;border:1px solid var(--border);color:var(--text2);width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.cp-close:hover{border-color:var(--red);color:var(--red)}
+.cp-list{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:14px}
+.cp-empty{text-align:center;color:var(--text2);font-size:15px;padding:48px 0;opacity:.6}
+.comment{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.comment-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.comment-author{font-size:14px;font-weight:600;color:var(--blue)}
+.comment-date{font-size:12px;color:var(--text3)}
+.comment-text{font-size:15px;line-height:1.6;word-break:break-word;white-space:pre-wrap}
+.comment-text a{color:var(--blue);text-decoration:none}
+.comment-text a:hover{text-decoration:underline}
+.cp-form{padding:18px 22px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg2)}
+.cp-form-author{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.cp-form-author input{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:7px;font-size:15px;outline:none;transition:border .15s}
+.cp-form-author input:focus{border-color:var(--blue)}
+.cp-textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:11px 14px;border-radius:8px;font-size:15px;outline:none;resize:none;height:90px;font-family:inherit;transition:border .15s;line-height:1.5}
+.cp-textarea:focus{border-color:var(--blue)}
+.cp-send{margin-top:12px;display:flex;justify-content:flex-end}
+.cp-send-btn{background:var(--blue);color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:500;transition:opacity .15s}
+.cp-send-btn:hover{opacity:.85}
+.cp-send-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* Design section */
+.design-view{display:none}
+.design-view.active{display:block}
+.design-header{font-size:16px;font-weight:600;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:10px}
+
+/* Attachment sidebar */
+.dsp-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;backdrop-filter:blur(2px)}
+.dsp-overlay.open{display:block}
+.dsp{position:fixed;top:0;right:-520px;width:500px;max-width:100vw;height:100vh;background:var(--bg2);border-left:1px solid var(--border);z-index:50;display:flex;flex-direction:column;transition:right .3s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.3)}
+.dsp.open{right:0}
+.dsp-head{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:14px;flex-shrink:0}
+.dsp-head-info{flex:1;min-width:0}
+.dsp-task-name{font-size:16px;font-weight:600;line-height:1.4;margin-bottom:4px;word-break:break-word}
+.dsp-task-meta{font-size:13px;color:var(--text2)}
+.dsp-body{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:22px}
+.dsp-section{display:flex;flex-direction:column;gap:10px}
+.dsp-section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);padding-bottom:6px;border-bottom:1px solid var(--border)}
+.dsp-section-title.brief{color:var(--blue)}
+.dsp-section-title.result{color:var(--green)}
+.att-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px}
+.att-icon{font-size:18px;flex-shrink:0}
+.att-info{flex:1;min-width:0}
+.att-name{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.att-meta{font-size:12px;color:var(--text3);margin-top:2px}
+.att-btn{background:none;border:1px solid var(--border);color:var(--text2);padding:5px 10px;border-radius:5px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .15s;text-decoration:none;display:inline-block}
+.att-btn:hover{border-color:var(--blue);color:var(--blue)}
+.att-del{background:none;border:none;color:var(--text3);padding:4px 7px;border-radius:4px;font-size:13px;cursor:pointer;margin-left:2px;transition:color .15s}
+.att-del:hover{color:var(--red)}
+.att-empty{font-size:13px;color:var(--text3);font-style:italic;padding:4px 0}
+.dsp-add{display:flex;flex-direction:column;gap:8px;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px}
+.dsp-add-tabs{display:flex;gap:4px;margin-bottom:4px}
+.dsp-tab{background:none;border:1px solid var(--border);color:var(--text3);padding:4px 12px;border-radius:5px;font-size:13px;cursor:pointer;transition:all .15s}
+.dsp-tab.active{background:var(--bg4);color:var(--text);border-color:var(--border)}
+.dsp-row{display:flex;gap:8px;align-items:center}
+.dsp-input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 11px;border-radius:6px;font-size:14px;outline:none;transition:border .15s}
+.dsp-input:focus{border-color:var(--blue)}
+.dsp-file-label{display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--bg4);border:1px dashed var(--border);border-radius:6px;font-size:13px;color:var(--text2);cursor:pointer;transition:all .15s}
+.dsp-file-label:hover{border-color:var(--blue);color:var(--blue)}
+.dsp-sbtn{background:var(--blue);color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.dsp-sbtn:hover{opacity:.85}
+.dsp-sbtn.green{background:var(--green);color:#000}
+.dsp-sbtn.green:hover{opacity:.85}
+
+/* Responsive */
+@media(max-width:900px){
+  .sidebar{display:none}
+  .metrics{grid-template-columns:1fr 1fr}
+}
+@media(max-width:600px){
+  .main{padding:12px}
+  th:nth-child(4),td:nth-child(4),th:nth-child(5),td:nth-child(5){display:none}
+  .cp{width:100vw}
+}
+
+/* PIN overlay */
+@keyframes pin-shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+.pin-shake{animation:pin-shake .35s ease}
+.pin-input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:11px 14px;border-radius:10px;font-size:22px;text-align:center;outline:none;letter-spacing:.3em;transition:border .15s;font-family:inherit}
+.pin-input:focus{border-color:var(--blue)}
+.pin-submit{width:100%;background:var(--blue);color:#fff;border:none;padding:11px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-top:10px;transition:opacity .15s;font-family:inherit}
+.pin-submit:hover{opacity:.85}
+
+/* User info in header */
+.user-info{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)}
+.user-avatar{width:28px;height:28px;border-radius:50%;object-fit:cover;border:1px solid var(--border)}
+.user-name-h{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbtn{font-size:12px;color:var(--text2);text-decoration:none;padding:5px 10px;border:1px solid var(--border);border-radius:7px;transition:all .15s;white-space:nowrap}
+.hbtn:hover{border-color:var(--blue);color:var(--blue)}
+.hbtn.admin-btn:hover{border-color:var(--purple);color:var(--purple)}
+.hbtn.logout-btn:hover{border-color:var(--red);color:var(--red)}
+
+/* «Беру сегодня» — кнопка на строке задачи */
+.ab.claim{color:var(--text3)}
+.ab.claim:hover{border-color:var(--green);color:var(--green)}
+.ab.claim.is-mine{color:var(--green);border-color:rgba(74,222,128,.35);background:rgba(74,222,128,.07)}
+.ab.claim.is-mine:hover{border-color:var(--red);color:var(--red)}
+.ab.claim.is-taken{color:var(--text3);opacity:.5;cursor:default}
+
+/* Вид «Сегодня» */
+.today-view{display:none}
+.today-view.active{display:block}
+.today-header{font-size:16px;font-weight:600;color:var(--text);margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.today-date{font-size:13px;color:var(--text2);font-weight:400}
+.today-empty{text-align:center;padding:56px;color:var(--text2);font-size:15px}
+.today-empty-ic{font-size:38px;margin-bottom:12px;opacity:.5}
+.emp-block{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:14px;transition:var(--tr)}
+.emp-name{font-size:15px;font-weight:600;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.emp-name-you{font-size:11px;font-weight:500;background:rgba(74,158,255,.12);color:var(--blue);padding:2px 8px;border-radius:10px}
+.today-task{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.today-task:last-child{border-bottom:none}
+.today-cb{width:18px;height:18px;border-radius:4px;border:2px solid var(--border);cursor:pointer;flex-shrink:0;accent-color:var(--green)}
+.today-cb:disabled{opacity:.35;cursor:default}
+.today-task-title{flex:1;font-size:15px;line-height:1.4}
+.today-task-title.done-title{text-decoration:line-through;opacity:.5}
+.today-task-proj{font-size:12px;color:var(--text2)}
+.today-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;padding:2px 6px;border-radius:4px;line-height:1;transition:color .15s}
+.today-remove:hover{color:var(--red)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">🦁 <em>Wblions</em></div>
+  <div class="hright">
+    {% if show_wb %}
+    <a href="/wb" class="hbtn" title="Отчёты Wildberries">🛍 WB-отчёты</a>
+    {% endif %}
+    {% if current_user.role in ('admin', 'employee') or current_user.planfact_projects %}
+    <a href="/plan-fact" class="hbtn" title="План-Факт продаж">📊 План-Факт</a>
+    {% endif %}
+    {% if current_user.role == 'admin' %}
+    <a href="/admin" class="hbtn admin-btn">⚙️ Пользователи</a>
+    {% endif %}
+    <div class="clock" id="clock"></div>
+    <div class="status"><div class="dot"></div>онлайн</div>
+    <div class="user-info">
+      {% if current_user.picture %}
+      <img class="user-avatar" src="{{ current_user.picture }}" alt="">
+      {% endif %}
+      <span class="user-name-h">{{ current_user.name }}</span>
+    </div>
+    <a href="/auth/logout" class="hbtn logout-btn">Выйти</a>
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Тема">🌙</button>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    {% if current_user.role in ('admin', 'employee') %}
+    <button class="nav-item" onclick="setView('today',this)" id="nav-today">
+      📋 Сегодня <span class="nav-count" id="cnt-today">—</span>
+    </button>
+    <div class="nav-sep"></div>
+    {% endif %}
+    <div class="sidebar-title">Проекты</div>
+    {% if current_user.role != 'seller' %}
+    <button class="nav-item active" onclick="setView('tasks',this);setProject(null,this)" id="nav-all">
+      ⚪ Все проекты <span class="nav-count" id="cnt-all">—</span>
+    </button>
+    <div class="nav-sep"></div>
+    {% endif %}
+    {% for p in visible_projects %}
+    <button class="nav-item{% if current_user.role == 'seller' and loop.first %} active{% endif %}" onclick="setView('tasks',this);setProject('{{ p.name }}',this)" id="nav-{{ p.name }}" translate="no">
+      {{ p.emoji }} {{ p.name }} <span class="nav-count" id="cnt-{{ p.name }}">—</span>
+    </button>
+    {% endfor %}
+    {% if current_user.role != 'seller' %}
+    <div class="nav-sep"></div>
+    <button class="nav-item" onclick="setView('tasks',this);setProject('__none__',this)" id="nav-__none__">
+      ⚪ Без проекта <span class="nav-count" id="cnt-__none__">—</span>
+    </button>
+    {% endif %}
+    {% if show_design %}
+    <div class="nav-sep"></div>
+    <button class="nav-item" onclick="setView('design',this)" id="nav-design">
+      🎨 Дизайнеру <span class="nav-count" id="cnt-design">—</span>
+    </button>
+    {% endif %}
+  </div>
+
+  <!-- Main content -->
+  <div class="main">
+    <div class="metrics">
+      <div class="metric m-t">
+        <div class="mlabel">Всего задач</div>
+        <div class="mval blue" id="m-total">—</div>
+        <div class="prog"><div class="prog-fill" id="m-prog" style="width:0%"></div></div>
+      </div>
+      <div class="metric m-d">
+        <div class="mlabel">Выполнено</div>
+        <div class="mval green" id="m-done">—</div>
+      </div>
+      <div class="metric m-p">
+        <div class="mlabel">В работе</div>
+        <div class="mval yellow" id="m-pend">—</div>
+      </div>
+      <div class="metric m-u">
+        <div class="mlabel">Срочных</div>
+        <div class="mval red" id="m-urg">—</div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="ftabs">
+        <button class="tab active" onclick="setStatus('active',this)">В работе</button>
+        <button class="tab" onclick="setStatus('done',this)">Выполнено</button>
+        <button class="tab" onclick="setStatus('all',this)">Все</button>
+      </div>
+      {% if current_user.role in ('admin', 'employee') %}
+      <select class="psel" id="assignee-sel" onchange="render()">
+        <option value="">Все исполнители</option>
+      </select>
+      {% endif %}
+      <div class="sp"></div>
+      <button class="add-btn" onclick="toggleForm()">+ Добавить задачу</button>
+    </div>
+
+    <div class="card">
+      <div class="aform" id="aform">
+        <div class="aff grow">
+          <label>Название</label>
+          <input class="ai" id="f-title" placeholder="Название задачи...">
+        </div>
+        <div class="aff" style="min-width:120px">
+          <label>Проект</label>
+          <select class="ai" id="f-project">
+            <option value="">Без проекта</option>
+            <option value="KSF">🔵 KSF</option>
+            <option value="KLIFE">🟣 KLIFE</option>
+            <option value="BERKUT">🦅 BERKUT</option>
+            <option value="PA">🟢 PA</option>
+            <option value="PIELE">🟡 PIELE</option>
+            <option value="Визенкова">🟠 Визенкова</option>
+          </select>
+        </div>
+        <div class="aff" style="min-width:120px">
+          <label>Приоритет</label>
+          <select class="ai" id="f-prio">
+            <option value="med">🟡 Обычная</option>
+            <option value="high">🔴 Срочная</option>
+            <option value="low">🟢 Низкий</option>
+          </select>
+        </div>
+        <div class="aff" style="min-width:120px">
+          <label>Исполнитель</label>
+          <input class="ai" id="f-who" placeholder="@имя">
+        </div>
+        <div class="aff" style="min-width:130px">
+          <label>Срок</label>
+          <input class="ai" id="f-due" type="date">
+        </div>
+        <div class="af-acts">
+          <button class="sbtn" onclick="addTask()">Создать</button>
+          <button class="cbtn" onclick="toggleForm()">✕</button>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:32px">#</th>
+            <th>Задача</th>
+            <th>Проект</th>
+            <th>Приоритет</th>
+            {% if current_user.role != 'seller' %}<th>Исполнитель</th>{% endif %}
+            <th>Срок</th>
+            <th>Статус</th>
+            <th style="width:100px"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="{{ 7 if current_user.role == 'seller' else 8 }}" class="empty"><div class="empty-ic">⏳</div>Загрузка...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Вид «Сегодня» -->
+    <div id="today-view" class="today-view">
+      <div class="today-header">
+        📋 Сегодня
+        <span class="today-date" id="today-date"></span>
+      </div>
+      <div id="today-body"></div>
+    </div>
+
+    <!-- Вид «Дизайнеру» -->
+    <div id="design-view" class="design-view">
+      <div class="design-header">🎨 Задачи дизайнеру</div>
+      <div class="toolbar" id="design-toolbar">
+        <div class="ftabs">
+          <button class="tab active" onclick="setDesignStatus('active',this)">В работе</button>
+          <button class="tab" onclick="setDesignStatus('done',this)">Выполнено</button>
+          <button class="tab" onclick="setDesignStatus('all',this)">Все</button>
+        </div>
+        <div class="sp"></div>
+        <button class="add-btn" onclick="toggleDesignForm()">+ Добавить задачу</button>
+      </div>
+      <div class="card" id="design-card">
+        <div class="aform" id="df-form">
+          <div class="aff grow">
+            <label>Название</label>
+            <input class="ai" id="df-title" placeholder="Название задачи...">
+          </div>
+          <div class="aff" style="min-width:140px" id="df-proj-wrap">
+            <label>Проект</label>
+            <select class="ai" id="df-project">
+              <option value="">— без проекта —</option>
+            </select>
+          </div>
+          <div class="aff" style="min-width:130px">
+            <label>Приоритет</label>
+            <select class="ai" id="df-prio">
+              <option value="med">🟡 Обычная</option>
+              <option value="high">🔴 Срочная</option>
+              <option value="low">🟢 Низкий</option>
+            </select>
+          </div>
+          <div class="aff" style="min-width:140px">
+            <label>Исполнитель</label>
+            <input class="ai" id="df-who" placeholder="@имя дизайнера">
+          </div>
+          <div class="aff" style="min-width:130px">
+            <label>Срок</label>
+            <input class="ai" id="df-due" type="date">
+          </div>
+          <div class="af-acts">
+            <button class="sbtn" onclick="addDesignTask()">Создать</button>
+            <button class="cbtn" onclick="toggleDesignForm()">✕</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:32px">#</th>
+              <th>Задача</th>
+              <th>Проект</th>
+              <th>Приоритет</th>
+              <th>Исполнитель</th>
+              <th>Срок</th>
+              <th>Статус</th>
+              <th style="width:120px"></th>
+            </tr>
+          </thead>
+          <tbody id="design-tbody">
+            <tr><td colspan="8" class="empty"><div class="empty-ic">⏳</div>Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Design Attachment Sidebar -->
+<div class="dsp-overlay" id="dsp-overlay" onclick="closeDsp()"></div>
+<div class="dsp" id="dsp">
+  <div class="dsp-head">
+    <div class="dsp-head-info">
+      <div class="dsp-task-name" id="dsp-task-name">Задача</div>
+      <div class="dsp-task-meta" id="dsp-task-meta"></div>
+    </div>
+    <button class="cp-close" onclick="closeDsp()">✕</button>
+  </div>
+  <div class="dsp-body" id="dsp-body">
+    <!-- Sections rendered by JS -->
+  </div>
+</div>
+
+<!-- Comment Panel -->
+<div class="cp-overlay" id="cp-overlay" onclick="closeComments()"></div>
+<div class="cp" id="cp">
+  <div class="cp-head">
+    <div class="cp-head-info">
+      <div class="cp-task-name" id="cp-task-name">Задача</div>
+      <div class="cp-task-meta" id="cp-task-meta"></div>
+    </div>
+    <button class="cp-close" onclick="closeComments()">✕</button>
+  </div>
+  <div class="cp-list" id="cp-list">
+    <div class="cp-empty">Комментариев пока нет</div>
+  </div>
+  <div class="cp-form">
+    <div class="cp-form-author">
+      <input id="cp-author" placeholder="Ваше имя" maxlength="60">
+    </div>
+    <textarea class="cp-textarea" id="cp-text" placeholder="Напиши комментарий или вставь ссылку..."></textarea>
+    <div class="cp-send">
+      <button class="cp-send-btn" id="cp-send-btn" onclick="sendComment()">Отправить →</button>
+    </div>
+  </div>
+</div>
+
+<!-- History Modal -->
+<div class="hist-overlay" id="hist-overlay" onclick="closeHistory()"></div>
+<div class="hist-modal" id="hist-modal">
+  <div class="hist-head">
+    <div>
+      <div class="hist-title">🕐 История изменений</div>
+      <div class="hist-sub" id="hist-sub"></div>
+    </div>
+    <button class="cp-close" onclick="closeHistory()">✕</button>
+  </div>
+  <div class="hist-body" id="hist-body">
+    <div class="cp-empty">Загрузка...</div>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="overlay" id="overlay" onclick="overlayClick(event)">
+  <div class="modal">
+    <div class="modal-title">✏️ Редактировать задачу</div>
+    <input type="hidden" id="e-id">
+    <div class="mf">
+      <label>Название</label>
+      <input id="e-title" type="text" placeholder="Название задачи">
+    </div>
+    <div class="mf">
+      <label>Проект</label>
+      <select id="e-project">
+        <option value="">Без проекта</option>
+        <option value="KSF">🔵 KSF</option>
+        <option value="KLIFE">🟣 KLIFE</option>
+        <option value="BERKUT">🦅 BERKUT</option>
+        <option value="PA">🟢 PA</option>
+        <option value="PIELE">🟡 PIELE</option>
+        <option value="Визенкова">🟠 Визенкова</option>
+      </select>
+    </div>
+    <div class="mf">
+      <label>Приоритет</label>
+      <select id="e-prio">
+        <option value="med">🟡 Обычная</option>
+        <option value="high">🔴 Срочная</option>
+        <option value="low">🟢 Низкий</option>
+      </select>
+    </div>
+    <div class="mf">
+      <label>Исполнитель</label>
+      <input id="e-who" type="text" placeholder="@имя">
+    </div>
+    <div class="mf">
+      <label>Срок выполнения</label>
+      <input id="e-due" type="date">
+    </div>
+    <div class="macts">
+      <button class="m-cancel" onclick="closeModal()">Отмена</button>
+      <button class="m-save" onclick="saveEdit()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Design Edit Modal -->
+<div class="overlay" id="d-overlay" onclick="dOverlayClick(event)">
+  <div class="modal">
+    <div class="modal-title">✏️ Редактировать задачу дизайнеру</div>
+    <input type="hidden" id="de-id">
+    <div class="mf">
+      <label>Название</label>
+      <input id="de-title" type="text" placeholder="Название задачи">
+    </div>
+    <div class="mf">
+      <label>Проект</label>
+      <select id="de-project"></select>
+    </div>
+    <div class="mf">
+      <label>Приоритет</label>
+      <select id="de-prio">
+        <option value="med">🟡 Обычная</option>
+        <option value="high">🔴 Срочная</option>
+        <option value="low">🟢 Низкий</option>
+      </select>
+    </div>
+    <div class="mf">
+      <label>Исполнитель</label>
+      <input id="de-who" type="text" placeholder="@имя">
+    </div>
+    <div class="mf">
+      <label>Срок выполнения</label>
+      <input id="de-due" type="date">
+    </div>
+    <div class="macts">
+      <button class="m-cancel" onclick="closeDesignModal()">Отмена</button>
+      <button class="m-save" onclick="saveDesignEdit()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allTasks = [];
+let taskMap = {};
+let curProject = {% if current_user.role == 'seller' and visible_projects %}{{ visible_projects[0].name | tojson }}{% else %}null{% endif %}; // null = все, '__none__' = без проекта, иначе имя
+let curStatus = 'active';
+let curView = 'tasks';  // 'tasks' | 'today'
+let todayClaims = {};   // task_id → {id, task_id, user_name, title, project, done}
+
+const USER_ROLE = {{ current_user.role | tojson }};
+const USER_NAME = {{ current_user.name | tojson }};
+
+const PROJ_COLORS = {
+  KSF:'#4a9eff', KLIFE:'#a78bfa', BERKUT:'#f87171',
+  PA:'#4ade80', PIELE:'#fbbf24', 'Визенкова':'#fb923c'
+};
+const PROJ_EMOJI = {
+  KSF:'🔵', KLIFE:'🟣', BERKUT:'🦅', PA:'🟢', PIELE:'🟡', 'Визенкова':'🟠'
+};
+const PRIO = {high:'🔴 Срочно', med:'🟡 Обычная', low:'🟢 Низкий'};
+const MON = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+
+// Тема
+function applyTheme(t){
+  document.documentElement.classList.toggle('light', t==='light');
+  document.getElementById('theme-btn').textContent = t==='light' ? '🌙' : '☀️';
+}
+function toggleTheme(){
+  const n = document.documentElement.classList.contains('light') ? 'dark' : 'light';
+  localStorage.setItem('theme', n); applyTheme(n);
+}
+applyTheme(localStorage.getItem('theme')||'dark');
+
+// Часы МСК
+function tickClock(){
+  const d = new Date(new Date().toLocaleString('en-US',{timeZone:'Europe/Moscow'}));
+  document.getElementById('clock').textContent =
+    String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0')+' МСК';
+}
+tickClock(); setInterval(tickClock,1000);
+
+function setView(v, el){
+  curView = v;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  el.classList.add('active');
+  const taskCard = document.querySelector('.main > .card');
+  const todayView = document.getElementById('today-view');
+  const designView = document.getElementById('design-view');
+  const toolbar = document.querySelector('.toolbar');
+  const metrics = document.querySelector('.metrics');
+  // Сбрасываем все
+  taskCard.style.display = 'none';
+  toolbar.style.display = 'none';
+  metrics.style.display = 'none';
+  todayView.classList.remove('active');
+  designView.classList.remove('active');
+  if(v === 'today'){
+    todayView.classList.add('active');
+    renderToday();
+  } else if(v === 'design'){
+    designView.classList.add('active');
+    loadDesign();
+  } else {
+    taskCard.style.display = '';
+    toolbar.style.display = '';
+    metrics.style.display = '';
+    render();
+  }
+}
+
+function setProject(p, el){
+  curProject = p;
+  render();
+}
+function setStatus(s, el){
+  curStatus = s;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  render();
+}
+
+function projBadge(p){
+  if(!p) return '<span style="color:var(--text3);font-size:13px">—</span>';
+  const c = PROJ_COLORS[p]||'#888';
+  const e = PROJ_EMOJI[p]||'⚪';
+  return `<span class="proj-badge" style="background:${c}22;color:${c}">${e} ${esc(p)}</span>`;
+}
+
+function fmtDate(d){
+  if(!d) return '—';
+  const dt = new Date(d);
+  if(isNaN(dt.getTime())) return d;
+  return dt.getDate()+' '+MON[dt.getMonth()];
+}
+function dueClass(due, done){
+  if(!due||done) return 'due-ok';
+  const d = new Date(due); if(isNaN(d.getTime())) return 'due-ok';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((d-today)/86400000);
+  return diff<0 ? 'due-over' : diff<=2 ? 'due-soon' : 'due-ok';
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+function render(){
+  const asel = document.getElementById('assignee-sel');
+  const af = asel ? asel.value : '';
+  let tasks = allTasks;
+
+  // Фильтр проекта
+  if(curProject === '__none__') tasks = tasks.filter(t=>!t.project);
+  else if(curProject) tasks = tasks.filter(t=>t.project===curProject);
+
+  // Фильтр статуса
+  if(curStatus==='active') tasks = tasks.filter(t=>!t.done);
+  else if(curStatus==='done') tasks = tasks.filter(t=>t.done);
+
+  // Фильтр исполнителя (только admin/employee)
+  if(af) tasks = tasks.filter(t=>(t.assignee||'')===af);
+
+  const tbody = document.getElementById('tbody');
+  if(!tasks.length){
+    tbody.innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:8}" class="empty"><div class="empty-ic">📭</div>Задач нет</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = tasks.map((t,i)=>{
+    const dc = dueClass(t.due, t.done);
+    const cr = new Date(t.created_at);
+    const cc = t.comment_count || 0;
+    const cbClass = cc > 0 ? 'cb has-comments' : 'cb';
+    const cbLabel = cc > 0 ? `💬 ${cc}` : '💬';
+    // Кнопка «Беру сегодня»
+    let claimBtn = '';
+    if((USER_ROLE==='employee'||USER_ROLE==='admin') && !t.done){
+      const cl = todayClaims[t.id];
+      if(!cl){
+        claimBtn = `<button class="ab claim" onclick="claimTask(${t.id})" title="Беру сегодня">📋</button>`;
+      } else if(cl.user_name===USER_NAME){
+        claimBtn = `<button class="ab claim is-mine" onclick="unclaimTask(${t.id})" title="Снять (${esc(cl.user_name)})">📋✓</button>`;
+      } else {
+        claimBtn = `<button class="ab claim is-taken" disabled title="Взял: ${esc(cl.user_name)}">📋</button>`;
+      }
+    }
+    const histBtn = USER_ROLE==='admin' ? `<button class="ab" onclick="openHistory(${t.id},${JSON.stringify(esc(t.title))})" title="История изменений">🕐</button>` : '';
+    const acts = t.done
+      ? `<div class="acts">${claimBtn}<button class="${cbClass}" onclick="openComments(${t.id})">${cbLabel}</button><button class="ab ed" onclick="openEdit(${t.id})">✏️</button>${histBtn}<button class="ab dl" onclick="del(${t.id})">🗑</button></div>`
+      : `<div class="acts"><button class="ab ok" onclick="done(${t.id})">✓</button>${claimBtn}<button class="${cbClass}" onclick="openComments(${t.id})">${cbLabel}</button><button class="ab ed" onclick="openEdit(${t.id})">✏️</button>${histBtn}<button class="ab dl" onclick="del(${t.id})">🗑</button></div>`;
+    return `<tr class="${t.done?'done-row':''}" translate="no">
+      <td style="color:var(--text3);font-size:13px">${i+1}</td>
+      <td style="font-weight:500;max-width:280px" class="${t.done?'done-title':''}">${esc(t.title)}</td>
+      <td>${projBadge(t.project)}</td>
+      <td><span class="badge ${t.priority}">${PRIO[t.priority]||t.priority}</span></td>
+      ${USER_ROLE !== 'seller' ? `<td style="color:var(--text2);font-size:14px">${t.assignee?'@'+esc(t.assignee):'—'}</td>` : ''}
+      <td><span class="${dc}" style="font-size:14px">${fmtDate(t.due)}</span></td>
+      <td><span class="badge ${t.done?'bdone':'bpend'}">${t.done?'✓ Готово':'● В работе'}</span></td>
+      <td>${acts}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateSidebar(){
+  const projects = {{ projects_json | safe }};
+  const total = allTasks.length;
+  const none = allTasks.filter(t=>!t.project).length;
+  const elAll = document.getElementById('cnt-all');
+  if(elAll) elAll.textContent = total;
+  const elNone = document.getElementById('cnt-__none__');
+  if(elNone) elNone.textContent = none;
+  projects.forEach(p=>{
+    const el = document.getElementById('cnt-'+p);
+    if(el) el.textContent = allTasks.filter(t=>t.project===p).length;
+  });
+}
+
+function updateAssigneeFilter(){
+  const sel = document.getElementById('assignee-sel');
+  if(!sel) return; // seller — элемента нет
+  const prev = sel.value;
+  // Уникальные исполнители из текущих задач (непустые)
+  const names = [...new Set(allTasks.map(t=>t.assignee).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Все исполнители</option>' +
+    names.map(n=>`<option value="${esc(n)}"${n===prev?' selected':''}>${esc('@'+n)}</option>`).join('');
+}
+
+// ── «Беру сегодня» ────────────────────────────────────────────────────────────
+async function claimTask(taskId){
+  const r = await fetch('/api/today/claim',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({task_id: taskId})
+  });
+  const d = await r.json();
+  if(d.ok) load();
+  else if(d.error==='already_claimed') alert('Эта задача уже взята другим сотрудником');
+}
+
+async function removeFromToday(claimId){
+  await fetch('/api/today/remove',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({claim_id: claimId})
+  });
+  load();
+}
+
+async function unclaimTask(taskId){
+  await fetch('/api/today/unclaim',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({task_id: taskId})
+  });
+  load();
+}
+
+async function todayDone(taskId){
+  await fetch('/api/today/'+taskId+'/done', {method:'POST'});
+  load();
+}
+
+function renderToday(){
+  const body = document.getElementById('today-body');
+  const dateEl = document.getElementById('today-date');
+  const now = new Date();
+  const days = ['вс','пн','вт','ср','чт','пт','сб'];
+  dateEl.textContent = `${now.getDate()} ${['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][now.getMonth()]}, ${days[now.getDay()]}`;
+
+  const claims = Object.values(todayClaims);
+  if(!claims.length){
+    body.innerHTML = `<div class="today-empty"><div class="today-empty-ic">☀️</div>Никто ещё не взял задачи на сегодня.<br>Нажми 📋 на задаче в списке.</div>`;
+    return;
+  }
+
+  // Группируем по имени сотрудника
+  const byEmp = {};
+  claims.forEach(c=>{ (byEmp[c.user_name]||(byEmp[c.user_name]=[])).push(c); });
+
+  body.innerHTML = Object.keys(byEmp).sort((a,b)=>{
+    // Сначала свои задачи
+    if(a===USER_NAME) return -1; if(b===USER_NAME) return 1; return a.localeCompare(b);
+  }).map(name=>{
+    const tasks = byEmp[name];
+    const isMe = name===USER_NAME;
+    const taskRows = tasks.map(c=>{
+      const proj = c.project ? `<span class="today-task-proj">${esc(c.project)}</span>` : '';
+      const cb = isMe && !c.done
+        ? `<input type="checkbox" class="today-cb" onchange="todayDone(${c.task_id})" title="Отметить выполненным">`
+        : `<input type="checkbox" class="today-cb" disabled ${c.done?'checked':''}>`;
+      const canRemove = USER_ROLE==='admin' || isMe;
+      const removeBtn = canRemove
+        ? `<button class="today-remove" onclick="removeFromToday(${c.id})" title="Убрать из списка сегодня">✕</button>`
+        : '';
+      return `<div class="today-task">
+        ${cb}
+        <div class="today-task-title ${c.done?'done-title':''}">${esc(c.title)} ${proj}</div>
+        ${removeBtn}
+      </div>`;
+    }).join('');
+    return `<div class="emp-block">
+      <div class="emp-name">👤 ${esc(name)} ${isMe?'<span class="emp-name-you">я</span>':''}</div>
+      ${taskRows}
+    </div>`;
+  }).join('');
+}
+
+async function load(){
+  try{
+    const fetches = [fetch('/api/tasks')];
+    if(USER_ROLE==='employee'||USER_ROLE==='admin') fetches.push(fetch('/api/today'));
+    const [tasksRes, todayRes] = await Promise.all(fetches);
+
+    allTasks = await tasksRes.json();
+    taskMap = {}; allTasks.forEach(t=>taskMap[t.id]=t);
+
+    if(todayRes){
+      const claims = await todayRes.json();
+      todayClaims = {};
+      claims.forEach(c=>todayClaims[c.task_id]=c);
+      const el = document.getElementById('cnt-today');
+      if(el) el.textContent = claims.filter(c=>!c.done).length || '—';
+    }
+
+    const total = allTasks.length;
+    const dn = allTasks.filter(t=>t.done).length;
+    const urg = allTasks.filter(t=>!t.done&&t.priority==='high').length;
+    document.getElementById('m-total').textContent = total;
+    document.getElementById('m-done').textContent = dn;
+    document.getElementById('m-pend').textContent = total-dn;
+    document.getElementById('m-urg').textContent = urg;
+    document.getElementById('m-prog').style.width = (total?Math.round(dn/total*100):0)+'%';
+
+    updateSidebar();
+    updateAssigneeFilter();
+    if(curView==='tasks') render(); else renderToday();
+  } catch(e){
+    document.getElementById('tbody').innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:8}" class="empty">Ошибка загрузки</td></tr>`;
+  }
+}
+
+async function done(id){ await fetch('/api/tasks/'+id+'/done',{method:'POST'}); load(); }
+async function del(id){
+  if(!confirm('Удалить задачу?')) return;
+  await fetch('/api/tasks/'+id,{method:'DELETE'}); load();
+}
+
+function toggleForm(){
+  const f=document.getElementById('aform');
+  f.classList.toggle('open');
+  // Если есть активный проект — предвыбрать
+  if(f.classList.contains('open')){
+    const sel = document.getElementById('f-project');
+    if(curProject && curProject!=='__none__') sel.value=curProject; else sel.value='';
+    setTimeout(()=>document.getElementById('f-title').focus(),50);
+  }
+}
+
+async function addTask(){
+  const title = document.getElementById('f-title').value.trim();
+  if(!title) return;
+  await fetch('/api/tasks',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      title,
+      project: document.getElementById('f-project').value||null,
+      priority: document.getElementById('f-prio').value,
+      assignee: document.getElementById('f-who').value.replace('@','').trim()||null,
+      due: document.getElementById('f-due').value||null
+    })
+  });
+  ['f-title','f-who','f-due'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('aform').classList.remove('open');
+  load();
+}
+
+function openEdit(id){
+  const t=taskMap[id]; if(!t) return;
+  document.getElementById('e-id').value=t.id;
+  document.getElementById('e-title').value=t.title;
+  document.getElementById('e-project').value=t.project||'';
+  document.getElementById('e-prio').value=t.priority||'med';
+  document.getElementById('e-who').value=t.assignee||'';
+  document.getElementById('e-due').value=t.due||'';
+  document.getElementById('overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('e-title').focus(),50);
+}
+function closeModal(){ document.getElementById('overlay').classList.remove('open'); }
+function overlayClick(e){ if(e.target===document.getElementById('overlay')) closeModal(); }
+
+async function saveEdit(){
+  const id=document.getElementById('e-id').value;
+  const title=document.getElementById('e-title').value.trim();
+  if(!title) return;
+  await fetch('/api/tasks/'+id,{
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      title,
+      project: document.getElementById('e-project').value||null,
+      priority: document.getElementById('e-prio').value,
+      assignee: document.getElementById('e-who').value.replace('@','').trim()||null,
+      due: document.getElementById('e-due').value||null
+    })
+  });
+  closeModal(); load();
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&document.getElementById('overlay').classList.contains('open')) saveEdit();
+  if(e.key==='Enter'&&document.getElementById('d-overlay').classList.contains('open')) saveDesignEdit();
+  if(e.key==='Escape'&&document.getElementById('d-overlay').classList.contains('open')) closeDesignModal();
+});
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('f-title').addEventListener('keydown',e=>{
+    if(e.key==='Enter') addTask();
+    if(e.key==='Escape') toggleForm();
+  });
+});
+
+// ── Комментарии ───────────────────────────────────────────────
+let curCommentTaskId = null;
+
+function linkify(text){
+  const urlRe = /(https?:\/\/[^\s<>"]+)/g;
+  return esc(text).replace(urlRe, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+function fmtCommentDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('ru',{day:'numeric',month:'short'}) + ' ' +
+         d.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'});
+}
+
+async function openComments(taskId){
+  curCommentTaskId = taskId;
+  const t = taskMap[taskId];
+  if(!t) return;
+
+  // Заполняем шапку
+  document.getElementById('cp-task-name').textContent = t.title;
+  const meta = [
+    t.project || '',
+    t.assignee ? '@'+t.assignee : '',
+    t.done ? '✓ Готово' : '● В работе'
+  ].filter(Boolean).join(' · ');
+  document.getElementById('cp-task-meta').textContent = meta;
+
+  // Открываем панель
+  document.getElementById('cp-overlay').classList.add('open');
+  document.getElementById('cp').classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  await loadComments(taskId);
+  setTimeout(()=>document.getElementById('cp-author').focus(), 300);
+}
+
+function closeComments(){
+  document.getElementById('cp-overlay').classList.remove('open');
+  document.getElementById('cp').classList.remove('open');
+  document.body.style.overflow = '';
+  curCommentTaskId = null;
+}
+
+async function loadComments(taskId){
+  const list = document.getElementById('cp-list');
+  list.innerHTML = '<div class="cp-empty">Загрузка...</div>';
+  try{
+    const r = await fetch('/api/tasks/'+taskId+'/comments');
+    const comments = await r.json();
+    if(!comments.length){
+      list.innerHTML = '<div class="cp-empty">Комментариев пока нет.<br>Будь первым 👇</div>';
+      return;
+    }
+    list.innerHTML = comments.map(c=>`
+      <div class="comment">
+        <div class="comment-head">
+          <span class="comment-author">${esc(c.author||'Аноним')}</span>
+          <span class="comment-date">${fmtCommentDate(c.created_at)}</span>
+        </div>
+        <div class="comment-text">${linkify(c.text)}</div>
+      </div>
+    `).join('');
+    // Скролл вниз к новым
+    list.scrollTop = list.scrollHeight;
+  } catch(e){
+    list.innerHTML = '<div class="cp-empty">Ошибка загрузки</div>';
+  }
+}
+
+async function sendComment(){
+  if(!curCommentTaskId) return;
+  const author = document.getElementById('cp-author').value.trim() || 'Аноним';
+  const text = document.getElementById('cp-text').value.trim();
+  if(!text) return;
+
+  const btn = document.getElementById('cp-send-btn');
+  btn.disabled = true;
+  try{
+    await fetch('/api/tasks/'+curCommentTaskId+'/comments', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({author, text})
+    });
+    document.getElementById('cp-text').value = '';
+    await loadComments(curCommentTaskId);
+    await load(); // обновить счётчик комментариев в таблице
+  } finally{
+    btn.disabled = false;
+    document.getElementById('cp-text').focus();
+  }
+}
+
+// Enter в textarea — Shift+Enter новая строка, просто Enter отправляет
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('cp-text').addEventListener('keydown', e=>{
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendComment(); }
+  });
+  // Сохраняем имя автора в localStorage
+  const savedAuthor = localStorage.getItem('cp-author');
+  if(savedAuthor) document.getElementById('cp-author').value = savedAuthor;
+  document.getElementById('cp-author').addEventListener('input', e=>{
+    localStorage.setItem('cp-author', e.target.value);
+  });
+  // Enter в форме дизайн-задачи
+  const dfTitle = document.getElementById('df-title');
+  if(dfTitle) dfTitle.addEventListener('keydown', e=>{
+    if(e.key==='Enter') addDesignTask();
+    if(e.key==='Escape') toggleDesignForm();
+  });
+});
+
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    if(document.getElementById('cp').classList.contains('open')) closeComments();
+    else closeModal();
+  }
+});
+
+load();
+setInterval(load,15000);
+
+// ── История изменений ─────────────────────────────────────────────────────────
+const FIELD_ICON = {
+  'Статус': '🔄', 'Название': '📝', 'Исполнитель': '👤',
+  'Приоритет': '🚦', 'Срок': '📅', 'Проект': '📁',
+};
+const PRIO_RU = { high: '🔴 Срочный', med: '🟡 Обычный', low: '🟢 Низкий' };
+
+function fmtHistDate(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'short'}) + ' ' +
+         d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+}
+function fmtVal(field, val){
+  if(val===null||val===undefined||val==='') return '—';
+  if(field==='Приоритет') return PRIO_RU[val]||val;
+  if(field==='Статус') return val;
+  return esc(val);
+}
+
+async function openHistory(taskId, taskTitle){
+  document.getElementById('hist-sub').textContent = taskTitle;
+  document.getElementById('hist-body').innerHTML = '<div class="hist-empty">Загрузка...</div>';
+  document.getElementById('hist-overlay').classList.add('open');
+  document.getElementById('hist-modal').classList.add('open');
+
+  try {
+    const r = await fetch('/api/tasks/'+taskId+'/history');
+    const rows = await r.json();
+    const body = document.getElementById('hist-body');
+    if(!rows.length){
+      body.innerHTML = '<div class="hist-empty">Изменений пока нет</div>';
+      return;
+    }
+    body.innerHTML = rows.map(h => {
+      const icon = FIELD_ICON[h.field] || '📌';
+      const oldV = fmtVal(h.field, h.old_value);
+      const newV = fmtVal(h.field, h.new_value);
+      return `<div class="hist-row">
+        <div class="hist-icon">${icon}</div>
+        <div class="hist-info">
+          <div class="hist-field">${h.field}</div>
+          <div class="hist-change">
+            <span class="hist-old">${oldV}</span>
+            <span class="hist-arr">→</span>
+            <span class="hist-new">${newV}</span>
+          </div>
+          <div class="hist-meta">${esc(h.changed_by)} · ${fmtHistDate(h.changed_at)}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e){
+    document.getElementById('hist-body').innerHTML = '<div class="hist-empty">Ошибка загрузки</div>';
+  }
+}
+
+function closeHistory(){
+  document.getElementById('hist-overlay').classList.remove('open');
+  document.getElementById('hist-modal').classList.remove('open');
+}
+
+// ── Дизайнерские задачи ───────────────────────────────────────────────────────
+let designTasks = [];
+let designTaskMap = {};
+let designStatus = 'active';
+let curDspTaskId = null;
+const DESIGN_PROJECTS = {{ design_projects_json | safe }};
+const SHOW_DESIGN = {{ show_design | tojson }};
+// Состояние форм добавления вложений
+let dspBriefTab = 'file';  // 'file' | 'link'
+let dspResultTab = 'file';
+
+function setDesignStatus(s, el){
+  designStatus = s;
+  document.querySelectorAll('#design-toolbar .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderDesign();
+}
+
+function toggleDesignForm(){
+  const f = document.getElementById('df-form');
+  f.classList.toggle('open');
+  if(f.classList.contains('open')){
+    // Заполняем список проектов
+    const sel = document.getElementById('df-project');
+    if(sel && DESIGN_PROJECTS.length){
+      sel.innerHTML = (USER_ROLE==='seller' ? '' : '<option value="">— без проекта —</option>') +
+        DESIGN_PROJECTS.map(p=>`<option value="${esc(p)}">${esc(PROJ_EMOJI[p]||'⚪')} ${esc(p)}</option>`).join('');
+      // Если у селлера один проект — скрываем поле (авто-выбор)
+      if(USER_ROLE==='seller' && DESIGN_PROJECTS.length===1){
+        document.getElementById('df-proj-wrap').style.display='none';
+      }
+    }
+    setTimeout(()=>document.getElementById('df-title').focus(),50);
+  }
+}
+
+async function addDesignTask(){
+  const title = document.getElementById('df-title').value.trim();
+  if(!title) return;
+  // Для селлера с одним проектом — берём автоматически
+  let project = (document.getElementById('df-project')||{value:''}).value || null;
+  if(USER_ROLE==='seller' && DESIGN_PROJECTS.length===1) project = DESIGN_PROJECTS[0];
+  try{
+    const r = await fetch('/api/design-tasks',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        title, project,
+        priority: document.getElementById('df-prio').value,
+        assignee: document.getElementById('df-who').value.replace('@','').trim()||null,
+        due: document.getElementById('df-due').value||null
+      })
+    });
+    if(r.status === 0){ alert('Нет связи с сервером. Попробуй ещё раз.'); return; }
+    let d = {};
+    try{ d = await r.json(); } catch(_){}
+    if(!r.ok || d.error){
+      alert('Ошибка создания задачи ('+r.status+'): '+(d.error||'неизвестная ошибка'));
+      return;
+    }
+    ['df-title','df-who','df-due'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('df-form').classList.remove('open');
+    await loadDesign();
+  } catch(e){ alert('Ошибка сети: '+e.message); }
+}
+
+async function doneDesign(id){
+  await fetch('/api/design-tasks/'+id+'/done',{method:'POST'});
+  loadDesign();
+}
+
+async function delDesign(id){
+  if(!confirm('Удалить задачу дизайнеру?')) return;
+  await fetch('/api/design-tasks/'+id,{method:'DELETE'});
+  loadDesign();
+}
+
+// ── Design Edit Modal ─────────────────────────────────────────────────────────
+function openDesignEdit(id){
+  const t = designTaskMap[id];
+  if(!t) return;
+  document.getElementById('de-id').value = id;
+  document.getElementById('de-title').value = t.title || '';
+  document.getElementById('de-prio').value = t.priority || 'med';
+  document.getElementById('de-who').value = t.assignee || '';
+  document.getElementById('de-due').value = t.due ? t.due.slice(0,10) : '';
+  // Populate project dropdown
+  const sel = document.getElementById('de-project');
+  const projs = DESIGN_PROJECTS.length ? DESIGN_PROJECTS : Object.keys(PROJ_COLORS);
+  sel.innerHTML = '<option value="">— без проекта —</option>' +
+    projs.map(p=>`<option value="${esc(p)}">${esc(PROJ_EMOJI[p]||'⚪')} ${esc(p)}</option>`).join('');
+  sel.value = t.project || '';
+  document.getElementById('d-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('de-title').focus(),50);
+}
+
+function closeDesignModal(){
+  document.getElementById('d-overlay').classList.remove('open');
+}
+
+function dOverlayClick(e){
+  if(e.target.id==='d-overlay') closeDesignModal();
+}
+
+async function saveDesignEdit(){
+  const id = document.getElementById('de-id').value;
+  const body = {
+    title:    document.getElementById('de-title').value.trim(),
+    priority: document.getElementById('de-prio').value,
+    assignee: document.getElementById('de-who').value.trim() || null,
+    due:      document.getElementById('de-due').value || null,
+    project:  document.getElementById('de-project').value || null,
+  };
+  if(!body.title){ alert('Введите название задачи'); return; }
+  const r = await fetch('/api/design-tasks/'+id, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok || d.error){ alert('Ошибка сохранения: '+(d.error||r.status)); return; }
+  closeDesignModal();
+  loadDesign();
+}
+
+async function loadDesign(){
+  try{
+    const r = await fetch('/api/design-tasks');
+    const data = await r.json();
+    if(!r.ok || data.error){
+      console.error('loadDesign API error:', data);
+      const tbody = document.getElementById('design-tbody');
+      if(tbody) tbody.innerHTML=`<tr><td colspan="8" class="empty">Ошибка: ${data.error||r.status}</td></tr>`;
+      return;
+    }
+    designTasks = data;
+    designTaskMap = {};
+    designTasks.forEach(t=>designTaskMap[t.id]=t);
+    const active = designTasks.filter(t=>!t.done).length;
+    const cnt = document.getElementById('cnt-design');
+    if(cnt) cnt.textContent = active || '—';
+    renderDesign();
+  } catch(e){
+    console.error('loadDesign exception:', e);
+    const tbody = document.getElementById('design-tbody');
+    if(tbody) tbody.innerHTML=`<tr><td colspan="8" class="empty">Ошибка загрузки</td></tr>`;
+  }
+}
+
+function renderDesign(){
+  const tbody = document.getElementById('design-tbody');
+  if(!tbody) return;
+  let tasks = designTasks;
+  if(designStatus==='active') tasks = tasks.filter(t=>!t.done);
+  else if(designStatus==='done') tasks = tasks.filter(t=>t.done);
+
+  if(!tasks.length){
+    tbody.innerHTML='<tr><td colspan="8" class="empty"><div class="empty-ic">🎨</div>Задач нет</td></tr>';
+    return;
+  }
+  tbody.innerHTML = tasks.map((t,i)=>{
+    const dc = dueClass(t.due, t.done);
+    const briefC = t.brief_count||0;
+    const resultC = t.result_count||0;
+    const attLabel = (briefC||resultC)
+      ? `📎 ${briefC>0?briefC+'ТЗ':''}${briefC>0&&resultC>0?' · ':''}${resultC>0?resultC+'✓':''}`
+      : '📎';
+    const attCls = (briefC||resultC) ? 'ab' : 'ab';
+    const attStyle = (briefC||resultC) ? 'border-color:rgba(167,139,250,.4);color:var(--purple)' : '';
+    return `<tr class="${t.done?'done-row':''}" translate="no">
+      <td style="color:var(--text3);font-size:13px">${i+1}</td>
+      <td style="font-weight:500;max-width:240px" class="${t.done?'done-title':''}">${esc(t.title)}</td>
+      <td>${t.project ? projBadge(t.project) : '<span style="color:var(--text3);font-size:13px">—</span>'}</td>
+      <td><span class="badge ${t.priority}">${PRIO[t.priority]||t.priority}</span></td>
+      <td style="color:var(--text2);font-size:14px">${t.assignee?'@'+esc(t.assignee):'—'}</td>
+      <td><span class="${dc}" style="font-size:14px">${fmtDate(t.due)}</span></td>
+      <td><span class="badge ${t.done?'bdone':'bpend'}">${t.done?'✓ Готово':'● В работе'}</span></td>
+      <td><div class="acts">
+        ${!t.done?`<button class="ab ok" onclick="doneDesign(${t.id})" title="Отметить выполненным">✓</button>`:''}
+        <button class="ab ed" onclick="openDesignEdit(${t.id})" title="Редактировать">✏️</button>
+        <button class="${attCls}" style="${attStyle}" onclick="openDsp(${t.id})" title="Файлы и ссылки">${attLabel}</button>
+        <button class="ab dl" onclick="delDesign(${t.id})" title="Удалить">🗑</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Attachment Sidebar ────────────────────────────────────────────────────────
+async function openDsp(taskId){
+  curDspTaskId = taskId;
+  const t = designTaskMap[taskId];
+  if(!t) return;
+  document.getElementById('dsp-task-name').textContent = t.title;
+  const meta = [
+    t.assignee ? '@'+t.assignee : '',
+    t.done ? '✓ Готово' : '● В работе',
+    t.due ? 'до '+fmtDate(t.due) : ''
+  ].filter(Boolean).join(' · ');
+  document.getElementById('dsp-task-meta').textContent = meta;
+  document.getElementById('dsp-overlay').classList.add('open');
+  document.getElementById('dsp').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  await renderDspBody(taskId);
+}
+
+function closeDsp(){
+  document.getElementById('dsp-overlay').classList.remove('open');
+  document.getElementById('dsp').classList.remove('open');
+  document.body.style.overflow = '';
+  curDspTaskId = null;
+}
+
+async function renderDspBody(taskId){
+  const body = document.getElementById('dsp-body');
+  body.innerHTML = '<div style="color:var(--text3);font-size:14px;padding:20px 0">Загрузка...</div>';
+  try{
+    const r = await fetch('/api/design-tasks/'+taskId+'/attachments');
+    const atts = await r.json();
+    const briefs = atts.filter(a=>a.attach_role==='brief');
+    const results = atts.filter(a=>a.attach_role==='result');
+
+    body.innerHTML = `
+      ${renderDspSection('brief', '📋 Техническое задание', briefs)}
+      ${renderDspSection('result', '✅ Готовые работы', results)}
+    `;
+    // Вешаем обработчики на file input-ы
+    ['brief','result'].forEach(role=>{
+      const inp = document.getElementById('dsp-file-'+role);
+      if(inp) inp.addEventListener('change', ()=>uploadDspFile(role));
+    });
+  } catch(e){
+    body.innerHTML = '<div style="color:var(--red);font-size:14px;padding:20px 0">Ошибка загрузки</div>';
+  }
+}
+
+function renderDspSection(role, title, atts){
+  const isResult = role==='result';
+  const attList = atts.length
+    ? atts.map(a=>{
+        const icon = a.attach_type==='file' ? '📄' : '🔗';
+        const action = a.attach_type==='file'
+          ? `<a class="att-btn" href="/api/design-attachments/${a.id}/download" target="_blank">⬇ Скачать</a>`
+          : `<a class="att-btn" href="${esc(a.url)}" target="_blank" rel="noopener">↗ Открыть</a>`;
+        const by = a.created_by ? ` · ${esc(a.created_by)}` : '';
+        return `<div class="att-item">
+          <span class="att-icon">${icon}</span>
+          <div class="att-info">
+            <div class="att-name" title="${esc(a.name)}">${esc(a.name)}</div>
+            <div class="att-meta">${fmtCommentDate(a.created_at)}${by}</div>
+          </div>
+          ${action}
+          <button class="att-del" onclick="delDspAtt(${a.id})" title="Удалить">✕</button>
+        </div>`;
+      }).join('')
+    : `<div class="att-empty">Нет прикреплённых файлов</div>`;
+
+  const tabState = role==='brief' ? dspBriefTab : dspResultTab;
+  const btnColor = isResult ? 'green' : '';
+
+  return `<div class="dsp-section">
+    <div class="dsp-section-title ${role}">${title}</div>
+    ${attList}
+    <div class="dsp-add">
+      <div class="dsp-add-tabs">
+        <button class="dsp-tab ${tabState==='file'?'active':''}" onclick="setDspTab('${role}','file',this)">📄 Файл</button>
+        <button class="dsp-tab ${tabState==='link'?'active':''}" onclick="setDspTab('${role}','link',this)">🔗 Ссылка</button>
+      </div>
+      <div id="dsp-form-${role}">
+        ${tabState==='file'
+          ? `<div class="dsp-row">
+               <label class="dsp-file-label" for="dsp-file-${role}">📎 Выбрать файл
+                 <input type="file" id="dsp-file-${role}" style="display:none">
+               </label>
+             </div>`
+          : `<div class="dsp-row">
+               <input class="dsp-input" id="dsp-url-${role}" placeholder="https://..." type="url">
+               <input class="dsp-input" id="dsp-uname-${role}" placeholder="Название" style="max-width:160px">
+               <button class="dsp-sbtn ${btnColor}" onclick="addDspLink('${role}')">Добавить</button>
+             </div>`
+        }
+      </div>
+    </div>
+  </div>`;
+}
+
+function setDspTab(role, tab, btn){
+  if(role==='brief') dspBriefTab=tab; else dspResultTab=tab;
+  // Перерисовать весь body
+  if(curDspTaskId) renderDspBody(curDspTaskId);
+}
+
+async function uploadDspFile(role){
+  const inp = document.getElementById('dsp-file-'+role);
+  if(!inp || !inp.files.length || !curDspTaskId) return;
+  const fd = new FormData();
+  fd.append('file', inp.files[0]);
+  fd.append('role', role);
+  try{
+    const r = await fetch('/api/design-tasks/'+curDspTaskId+'/attachments',{method:'POST',body:fd});
+    const d = await r.json();
+    if(d.error) { alert('Ошибка: '+d.error); return; }
+    await renderDspBody(curDspTaskId);
+    loadDesign();
+  } catch(e){ alert('Ошибка загрузки файла'); }
+}
+
+async function addDspLink(role){
+  const url = (document.getElementById('dsp-url-'+role)||{value:''}).value.trim();
+  const name = (document.getElementById('dsp-uname-'+role)||{value:''}).value.trim();
+  if(!url || !curDspTaskId) return;
+  const r = await fetch('/api/design-tasks/'+curDspTaskId+'/attachments',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url, name: name||url, role})
+  });
+  const d = await r.json();
+  if(d.error){ alert('Ошибка: '+d.error); return; }
+  await renderDspBody(curDspTaskId);
+  loadDesign();
+}
+
+async function delDspAtt(attId){
+  if(!confirm('Удалить вложение?')) return;
+  await fetch('/api/design-attachments/'+attId,{method:'DELETE'});
+  if(curDspTaskId) await renderDspBody(curDspTaskId);
+  loadDesign();
+}
+
+function closeHistory(){
+  document.getElementById('hist-overlay').classList.remove('open');
+  document.getElementById('hist-modal').classList.remove('open');
+}
+</script>
+
+</body>
+</html>

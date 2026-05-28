@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ожидание доступа — Wblions</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f0f13;--bg2:#1a1a24;--bg3:#22222f;--border:#252535;--text:#e8e8f0;--text2:#8080a8;--blue:#4a9eff;--yellow:#fbbf24;--green:#4ade80}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(circle at 50% 40%,rgba(251,191,36,.04) 0%,transparent 55%);pointer-events:none}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:48px 40px;width:100%;max-width:400px;text-align:center;box-shadow:0 24px 64px rgba(0,0,0,.4)}
+.icon{font-size:48px;margin-bottom:20px;animation:spin-slow 6s linear infinite}
+@keyframes spin-slow{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+h1{font-size:20px;font-weight:700;margin-bottom:10px}
+.sub{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:28px}
+.user-info{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:14px 18px;text-align:left;margin-bottom:28px}
+.user-row{display:flex;align-items:center;gap:12px}
+.avatar{width:40px;height:40px;border-radius:50%;background:var(--bg);border:1px solid var(--border);object-fit:cover;flex-shrink:0}
+.avatar-placeholder{width:40px;height:40px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.user-name{font-size:15px;font-weight:500}
+.user-email{font-size:12px;color:var(--text2)}
+.status-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(251,191,36,.1);color:var(--yellow);border:1px solid rgba(251,191,36,.25);padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;margin-bottom:28px}
+.dot-pulse{width:7px;height:7px;border-radius:50%;background:var(--yellow);animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.btn-refresh{display:inline-flex;align-items:center;gap:8px;background:var(--blue);color:#fff;border:none;padding:11px 22px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;text-decoration:none;margin-bottom:14px;transition:opacity .2s}
+.btn-refresh:hover{opacity:.85}
+.btn-logout{font-size:13px;color:var(--text2);text-decoration:none;display:block}
+.btn-logout:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">⏳</div>
+  <h1>Заявка на рассмотрении</h1>
+  <div class="sub">
+    Вы успешно вошли через Google.<br>
+    Администратор получит уведомление и настроит ваши права доступа.
+  </div>
+
+  <div class="user-info">
+    <div class="user-row">
+      {% if user.picture %}
+      <img class="avatar" src="{{ user.picture }}" alt="">
+      {% else %}
+      <div class="avatar-placeholder">👤</div>
+      {% endif %}
+      <div>
+        <div class="user-name">{{ user.name }}</div>
+        <div class="user-email">{{ user.email }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-badge">
+    <span class="dot-pulse"></span>
+    Ожидает одобрения
+  </div>
+
+  <br>
+  <a class="btn-refresh" href="/">🔄 Обновить страницу</a>
+  <a class="btn-logout" href="/auth/logout">Выйти из аккаунта</a>
+</div>
+</body>
+</html>

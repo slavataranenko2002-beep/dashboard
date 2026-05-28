@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚙️ Пользователи — Wblions</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f13;--bg2:#1a1a24;--bg3:#22222f;--bg4:#2d2d3f;
+  --border:#252535;--text:#e8e8f0;--text2:#8080a8;--text3:#505070;
+  --blue:#4a9eff;--green:#4ade80;--red:#f87171;--yellow:#fbbf24;--purple:#a78bfa;
+  --header-bg:rgba(15,15,19,.95);--tr:background .2s,color .2s,border-color .2s
+}
+:root.light{
+  --bg:#f0f2f5;--bg2:#ffffff;--bg3:#f4f5f8;--bg4:#e8eaef;
+  --border:#dde1ea;--text:#1a1d2e;--text2:#6b7280;--text3:#9ca3af;
+  --blue:#2563eb;--green:#16a34a;--red:#dc2626;--yellow:#d97706;--purple:#7c3aed;
+  --header-bg:rgba(240,242,245,.95)
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;min-height:100vh;transition:var(--tr)}
+
+/* Header */
+.header{padding:14px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--header-bg);backdrop-filter:blur(8px);z-index:30}
+.logo{font-size:16px;font-weight:600}.logo em{color:var(--blue);font-style:normal}.logo .sep{color:var(--text3);margin:0 8px}
+.hright{display:flex;align-items:center;gap:12px}
+.hlink{font-size:13px;color:var(--text2);text-decoration:none;padding:6px 10px;border:1px solid var(--border);border-radius:7px;transition:all .15s}
+.hlink:hover{border-color:var(--blue);color:var(--blue)}
+.hlink.danger:hover{border-color:var(--red);color:var(--red)}
+.theme-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text2);width:34px;height:34px;border-radius:7px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.theme-btn:hover{border-color:var(--blue);color:var(--blue)}
+
+/* Main */
+.main{max-width:900px;margin:0 auto;padding:32px 24px}
+.section-title{font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px}
+
+/* Pending alert */
+.pending-banner{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.25);border-radius:12px;padding:14px 18px;margin-bottom:28px;display:flex;align-items:center;gap:10px;font-size:14px;color:var(--yellow)}
+
+/* User cards */
+.user-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:12px;transition:border-color .2s}
+.user-card.pending{border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.03)}
+.user-top{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.avatar{width:42px;height:42px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid var(--border)}
+.avatar-ph{width:42px;height:42px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.user-name{font-size:15px;font-weight:600}
+.user-email{font-size:12px;color:var(--text2);margin-top:2px}
+.user-meta{margin-left:auto;font-size:11px;color:var(--text3);text-align:right}
+.role-badge{display:inline-flex;align-items:center;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;margin-top:4px}
+.role-badge.pending{background:rgba(251,191,36,.12);color:var(--yellow)}
+.role-badge.employee{background:rgba(74,158,255,.12);color:var(--blue)}
+.role-badge.seller{background:rgba(167,139,250,.12);color:var(--purple)}
+.role-badge.admin{background:rgba(74,222,128,.12);color:var(--green)}
+
+/* Form controls */
+.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+.ctrl-group{display:flex;flex-direction:column;gap:6px}
+.ctrl-group label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em}
+.role-sel{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:7px;font-size:13px;outline:none;cursor:pointer}
+.role-sel:focus{border-color:var(--blue)}
+.proj-checks{display:flex;flex-wrap:wrap;gap:8px}
+.proj-check{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:6px;transition:all .15s}
+.proj-check:hover{border-color:var(--blue)}
+.proj-check input{accent-color:var(--blue)}
+.proj-check.checked{border-color:var(--blue);background:rgba(74,158,255,.08)}
+
+/* Actions */
+.card-actions{display:flex;gap:8px;margin-top:16px;align-items:center}
+.btn-save{background:var(--blue);color:#fff;border:none;padding:8px 18px;border-radius:7px;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .15s}
+.btn-save:hover{opacity:.85}
+.btn-save:disabled{opacity:.4;cursor:not-allowed}
+.btn-del{background:none;border:1px solid var(--border);color:var(--text3);padding:7px 12px;border-radius:7px;font-size:13px;cursor:pointer;transition:all .15s}
+.btn-del:hover{border-color:var(--red);color:var(--red)}
+.status-msg{font-size:12px;opacity:0;transition:opacity .3s;margin-left:4px}
+.status-msg.ok{color:var(--green)}
+.status-msg.err{color:var(--red)}
+
+/* Empty state */
+.empty-state{text-align:center;padding:56px;color:var(--text2)}
+.empty-ic{font-size:36px;margin-bottom:12px;opacity:.4}
+</style>
+</head>
+<body>
+
+{% macro user_card(u) %}
+<div class="user-card {% if u.role == 'pending' %}pending{% endif %}" id="card-{{ u.id }}">
+  <div class="user-top">
+    {% if u.picture %}
+    <img class="avatar" src="{{ u.picture }}" alt="">
+    {% else %}
+    <div class="avatar-ph">👤</div>
+    {% endif %}
+    <div>
+      <div class="user-name">{{ u.name or u.email }}</div>
+      <div class="user-email">{{ u.email }}</div>
+    </div>
+    <div class="user-meta">
+      <div class="role-badge {{ u.role }}">{{ {'pending':'⏳ Ожидает','employee':'👷 Сотрудник','seller':'🛍 Селлер','admin':'⭐ Админ'}.get(u.role, u.role) }}</div>
+      {% if u.last_login %}
+      <div style="margin-top:4px">был {{ u.last_login.strftime('%d.%m %H:%M') }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Роль</label>
+      <select class="role-sel" id="role-{{ u.id }}" onchange="onRoleChange({{ u.id }})">
+        <option value="pending"  {% if u.role=='pending'  %}selected{% endif %}>⏳ Ожидает</option>
+        <option value="employee" {% if u.role=='employee' %}selected{% endif %}>👷 Сотрудник</option>
+        <option value="seller"   {% if u.role=='seller'   %}selected{% endif %}>🛍 Селлер</option>
+        <option value="admin"    {% if u.role=='admin'    %}selected{% endif %}>⭐ Администратор</option>
+      </select>
+    </div>
+
+    <div class="ctrl-group" id="proj-group-{{ u.id }}">
+      <label>Проекты задач (для селлеров)</label>
+      <div class="proj-checks" id="proj-checks-{{ u.id }}">
+        {% for p in all_projects %}
+        <label class="proj-check {% if p in (u.projects or []) %}checked{% endif %}">
+          <input type="checkbox" value="{{ p }}"
+                 {% if p in (u.projects or []) %}checked{% endif %}
+                 onchange="toggleCheck(this)">
+          {{ p }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="ctrl-group" id="pf-group-{{ u.id }}">
+      <label>📊 План-Факт кабинеты</label>
+      <div class="proj-checks" id="pf-checks-{{ u.id }}">
+        {% for c in wb_cabinets %}
+        <label class="proj-check {% if c in (u.planfact_projects or []) %}checked{% endif %}" style="border-color:{% if c in (u.planfact_projects or []) %}var(--purple){% else %}var(--border){% endif %}">
+          <input type="checkbox" value="{{ c }}"
+                 {% if c in (u.planfact_projects or []) %}checked{% endif %}
+                 onchange="togglePfCheck(this)">
+          {{ c }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if u.role not in ('pending', 'admin') %}
+  <div style="margin-top:12px;padding:10px 14px;background:var(--bg3);border-radius:8px;border:1px solid var(--border);display:flex;flex-direction:column;gap:8px">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+      <input type="checkbox" id="pf-edit-{{ u.id }}"
+             {% if u.planfact_edit %}checked{% endif %}
+             style="accent-color:var(--green);width:16px;height:16px">
+      <span>✏️ Разрешить редактирование плана (план-факт)</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px" id="design-access-row-{{ u.id }}">
+      <input type="checkbox" id="design-access-{{ u.id }}"
+             {% if u.design_access %}checked{% endif %}
+             style="accent-color:var(--purple);width:16px;height:16px">
+      <span>🎨 Доступ к разделу «Дизайнеру» (только задачи своих проектов)</span>
+    </label>
+  </div>
+  {% endif %}
+
+  <div class="card-actions">
+    <button class="btn-save" onclick="saveUser({{ u.id }})">Сохранить</button>
+    <button class="btn-del" onclick="deleteUser({{ u.id }}, '{{ u.name or u.email }}')">Удалить</button>
+    <span class="status-msg" id="msg-{{ u.id }}"></span>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="header">
+  <div class="logo">🦁 <em>Wblions</em><span class="sep">·</span>Пользователи</div>
+  <div class="hright">
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Тема">🌙</button>
+    <a class="hlink" href="/">← Дашборд</a>
+    <a class="hlink danger" href="/auth/logout">Выйти</a>
+  </div>
+</div>
+
+<div class="main">
+
+  {% set pending_users = users | selectattr('role', 'equalto', 'pending') | list %}
+  {% if pending_users %}
+  <div class="pending-banner">
+    ⏳ {{ pending_users|length }} нов{{ 'ый пользователь ожидает' if pending_users|length == 1 else 'ых пользователя ожидают' if pending_users|length < 5 else 'ых пользователей ожидают' }} одобрения
+  </div>
+  {% endif %}
+
+  {% if not users %}
+  <div class="empty-state">
+    <div class="empty-ic">👥</div>
+    Пользователей пока нет. Как только кто-то войдёт через Google — они появятся здесь.
+  </div>
+  {% else %}
+
+  {% if pending_users %}
+  <div class="section-title">Новые заявки</div>
+  {% for u in pending_users %}
+  {{ user_card(u) }}
+  {% endfor %}
+  <br>
+  {% endif %}
+
+  {% set active_users = users | rejectattr('role', 'equalto', 'pending') | list %}
+  {% if active_users %}
+  <div class="section-title">Активные пользователи ({{ active_users|length }})</div>
+  {% for u in active_users %}
+  {{ user_card(u) }}
+  {% endfor %}
+  {% endif %}
+
+  {% endif %}
+</div>
+
+<script>
+const ALL_PROJECTS = {{ all_projects | tojson }};
+
+function onRoleChange(userId) {
+  const role = document.getElementById('role-' + userId).value;
+  const isSeller = role === 'seller';
+  document.getElementById('proj-group-' + userId).style.display = isSeller ? '' : 'none';
+  document.getElementById('pf-group-'   + userId).style.display = isSeller ? '' : 'none';
+}
+
+// Инициализация видимости чекбоксов
+document.querySelectorAll('[id^="role-"]').forEach(sel => {
+  const uid = sel.id.replace('role-', '');
+  onRoleChange(uid);
+});
+
+function toggleCheck(el) {
+  el.closest('.proj-check').classList.toggle('checked', el.checked);
+  el.closest('.proj-check').style.borderColor = el.checked ? 'var(--blue)' : '';
+}
+
+function togglePfCheck(el) {
+  const lbl = el.closest('.proj-check');
+  lbl.classList.toggle('checked', el.checked);
+  lbl.style.borderColor = el.checked ? 'var(--purple)' : '';
+}
+
+async function saveUser(userId) {
+  const role = document.getElementById('role-' + userId).value;
+  const checks = document.querySelectorAll('#proj-checks-' + userId + ' input[type=checkbox]');
+  const projects = Array.from(checks).filter(c => c.checked).map(c => c.value);
+  const pfChecks = document.querySelectorAll('#pf-checks-' + userId + ' input[type=checkbox]');
+  const planfact_projects = Array.from(pfChecks).filter(c => c.checked).map(c => c.value);
+  const pfEditEl = document.getElementById('pf-edit-' + userId);
+  const planfact_edit = pfEditEl ? pfEditEl.checked : false;
+  const designAccessEl = document.getElementById('design-access-' + userId);
+  const design_access = designAccessEl ? designAccessEl.checked : false;
+  const btn = document.querySelector('#card-' + userId + ' .btn-save');
+  const msg = document.getElementById('msg-' + userId);
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/admin/users/' + userId, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access}),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      showMsg(msg, '✓ Сохранено', 'ok');
+      // Обновляем бейдж роли
+      const badge = document.querySelector('#card-' + userId + ' .role-badge');
+      const labels = {pending:'⏳ Ожидает', employee:'👷 Сотрудник', seller:'🛍 Селлер', admin:'⭐ Админ'};
+      badge.textContent = labels[role] || role;
+      badge.className = 'role-badge ' + role;
+      // Убираем класс pending у карточки если роль изменена
+      if (role !== 'pending') document.getElementById('card-' + userId).classList.remove('pending');
+    } else {
+      showMsg(msg, '✗ Ошибка: ' + (data.error || ''), 'err');
+    }
+  } catch(e) {
+    showMsg(msg, '✗ Сетевая ошибка', 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteUser(userId, name) {
+  if (!confirm('Удалить пользователя «' + name + '»?')) return;
+  try {
+    const r = await fetch('/api/admin/users/' + userId, {method: 'DELETE'});
+    if ((await r.json()).ok) {
+      const card = document.getElementById('card-' + userId);
+      card.style.transition = 'opacity .3s';
+      card.style.opacity = '0';
+      setTimeout(() => card.remove(), 300);
+    }
+  } catch(e) {
+    alert('Ошибка удаления');
+  }
+}
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'status-msg ' + type;
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 3000);
+}
+
+function applyTheme(t) {
+  document.documentElement.classList.toggle('light', t === 'light');
+  document.getElementById('theme-btn').textContent = t === 'light' ? '🌙' : '☀️';
+}
+function toggleTheme() {
+  const n = document.documentElement.classList.contains('light') ? 'dark' : 'light';
+  localStorage.setItem('theme', n); applyTheme(n);
+}
+applyTheme(localStorage.getItem('theme') || 'dark');
+</script>
+</body>
+</html>
