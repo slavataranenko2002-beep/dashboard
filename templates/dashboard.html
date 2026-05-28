@@ -1301,7 +1301,9 @@ document.addEventListener('keydown', e=>{
 
 load();
 loadUsers();
+loadDesign();
 setInterval(load, 5000);
+setInterval(loadDesign, 5000);
 
 // ── История изменений ─────────────────────────────────────────────────────────
 const FIELD_ICON = {

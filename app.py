@@ -541,6 +541,23 @@ def _first_name(full_name: str) -> str:
     """Возвращает первое слово из полного имени."""
     return (full_name or "").strip().split()[0] if (full_name or "").strip() else (full_name or "")
 
+def _resolve_owner_email_design(cur, task_id: int, stored_email: str, created_by_name: str) -> str:
+    """
+    Email создателя design-задачи.
+    Fallback: ищет по first_name через users.name (created_by хранит первое имя).
+    """
+    if stored_email:
+        return stored_email
+    if created_by_name:
+        cur.execute(
+            "SELECT email FROM users WHERE name LIKE %s LIMIT 1",
+            (created_by_name + "%",)
+        )
+        row = cur.fetchone()
+        if row:
+            return row["email"]
+    return ""
+
 def _resolve_owner_email(cur, task_id: int, stored_email: str) -> str:
     """
     Возвращает email создателя задачи.
@@ -615,6 +632,22 @@ def api_notifications():
             }
             for r in rows
         ]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/notifications/all")
+@require_admin_api
+def api_notifications_all():
+    """Debug: все уведомления (только для admin)."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_email, type, title, message, task_id, read, created_at "
+                    "FROM notifications ORDER BY created_at DESC LIMIT 50"
+                )
+                rows = cur.fetchall()
+        return jsonify([dict(r) | {"created_at": r["created_at"].isoformat()} for r in rows])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1513,7 +1546,7 @@ def api_design_tasks_update(task_id):
                 if row:
                     notified = set()
                     old_assignee_email = row.get("assignee_email") or ""
-                    owner_email        = row.get("created_by_email") or ""
+                    owner_email        = _resolve_owner_email_design(cur, task_id, row.get("created_by_email") or "", row.get("created_by") or "")
                     task_title         = d.get("title") or row.get("title") or ""
                     # Новый исполнитель
                     if new_assignee_email and new_assignee_email != old_assignee_email and new_assignee_email != u_email:
@@ -1526,6 +1559,7 @@ def api_design_tasks_update(task_id):
                         _push_notification(cur, owner_email, "task_updated",
                             f"Задача дизайнеру изменена: {task_title}",
                             f"Изменил(а): {changed_by}", task_id)
+                    logging.info(f"[notif] design update task={task_id} owner={owner_email} u={u_email}")
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -1543,12 +1577,12 @@ def api_design_tasks_done(task_id):
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE design_tasks SET done=TRUE, done_at=NOW() WHERE id=%s RETURNING title, created_by_email",
+                    "UPDATE design_tasks SET done=TRUE, done_at=NOW() WHERE id=%s RETURNING title, created_by, created_by_email",
                     (task_id,)
                 )
                 row = cur.fetchone()
                 if row:
-                    owner_email = _resolve_owner_email(cur, task_id, row.get("created_by_email") or "")
+                    owner_email = _resolve_owner_email_design(cur, task_id, row.get("created_by_email") or "", row.get("created_by") or "")
                     if owner_email and owner_email != u_email:
                         _push_notification(cur, owner_email, "status_changed",
                             f"Задача дизайнеру закрыта: {row['title']}",
