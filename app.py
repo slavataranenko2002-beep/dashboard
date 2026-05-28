@@ -103,20 +103,26 @@ def _ensure_design_tables():
                     )
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_notif_user_unread ON notifications(user_email, read) WHERE read = FALSE")
-                # Миграция: заполняем created_by_email для старых задач через task_history
-                cur.execute("""
-                    UPDATE tasks t
-                    SET created_by_email = u.email
-                    FROM users u,
-                         (SELECT DISTINCT ON (task_id) task_id, changed_by
-                          FROM task_history
-                          ORDER BY task_id, id ASC) first_hist
-                    WHERE t.id = first_hist.task_id
-                      AND u.name = first_hist.changed_by
-                      AND (t.created_by_email IS NULL OR t.created_by_email = '')
-                """)
             conn.commit()
         logging.info("Design tables ready.")
+        # Миграция created_by_email — в отдельной транзакции, ошибки не критичны
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE tasks t
+                        SET created_by_email = u.email
+                        FROM users u,
+                             (SELECT DISTINCT ON (task_id) task_id, changed_by
+                              FROM task_history
+                              ORDER BY task_id, id ASC) first_hist
+                        WHERE t.id = first_hist.task_id
+                          AND u.name = first_hist.changed_by
+                          AND (t.created_by_email IS NULL OR t.created_by_email = '')
+                    """)
+                conn.commit()
+        except Exception as me:
+            logging.warning(f"_ensure_design_tables migration: {me}")
     except Exception as e:
         logging.error(f"_ensure_design_tables error: {e}")
 
@@ -638,7 +644,7 @@ def api_notifications():
 @app.route("/api/notifications/all")
 @require_admin_api
 def api_notifications_all():
-    """Debug: все уведомления (только для admin)."""
+    """Debug: все уведомления + состояние задач (только для admin)."""
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -646,8 +652,16 @@ def api_notifications_all():
                     "SELECT id, user_email, type, title, message, task_id, read, created_at "
                     "FROM notifications ORDER BY created_at DESC LIMIT 50"
                 )
-                rows = cur.fetchall()
-        return jsonify([dict(r) | {"created_at": r["created_at"].isoformat()} for r in rows])
+                notifs = cur.fetchall()
+                cur.execute(
+                    "SELECT id, title, assignee, assignee_email, created_by_email "
+                    "FROM design_tasks ORDER BY created_at DESC LIMIT 20"
+                )
+                tasks = cur.fetchall()
+        return jsonify({
+            "notifications": [dict(r) | {"created_at": r["created_at"].isoformat()} for r in notifs],
+            "design_tasks_emails": [dict(r) for r in tasks],
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1532,7 +1546,7 @@ def api_design_tasks_update(task_id):
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT title, assignee_email, created_by_email FROM design_tasks WHERE id=%s",
+                    "SELECT title, assignee_email, created_by, created_by_email FROM design_tasks WHERE id=%s",
                     (task_id,)
                 )
                 row = cur.fetchone()
