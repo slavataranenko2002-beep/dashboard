@@ -711,13 +711,13 @@ def api_update(task_id):
             "due":      "Срок",
             "project":  "Проект",
         }
-        u_email        = u.get("email", "") if u else ""
+        u_email            = u.get("email", "") if u else ""
         new_assignee_email = d.get("assignee_email", "")
         with get_conn() as conn:
             with conn.cursor() as cur:
                 # Читаем старые значения
                 cur.execute(
-                    "SELECT title,priority,assignee,assignee_email,due,project FROM tasks WHERE id=%s",
+                    "SELECT title,priority,assignee,assignee_email,due,project,created_by_email FROM tasks WHERE id=%s",
                     (task_id,)
                 )
                 row = cur.fetchone()
@@ -730,6 +730,7 @@ def api_update(task_id):
                         "due":      d.get("due"),
                         "project":  d.get("project"),
                     }
+                    changed_fields = []
                     for field, label in field_labels.items():
                         if str(old.get(field) or "") != str(new.get(field) or ""):
                             cur.execute(
@@ -739,6 +740,10 @@ def api_update(task_id):
                                 (task_id, changed_by, label,
                                  old.get(field), new.get(field))
                             )
+                            changed_fields.append(label)
+
+                    notified = set()
+
                     # Уведомление новому исполнителю при смене
                     old_assignee_email = row.get("assignee_email") or ""
                     if new_assignee_email and new_assignee_email != old_assignee_email and new_assignee_email != u_email:
@@ -748,6 +753,19 @@ def api_update(task_id):
                             f"Назначил(а): {changed_by}",
                             task_id,
                         )
+                        notified.add(new_assignee_email)
+
+                    # Уведомление создателю при любом изменении (кроме смены исполнителя)
+                    owner_email = row.get("created_by_email") or ""
+                    non_assignee_changes = [f for f in changed_fields if f != "Исполнитель"]
+                    if non_assignee_changes and owner_email and owner_email != u_email and owner_email not in notified:
+                        _push_notification(
+                            cur, owner_email, "task_updated",
+                            f"Задача изменена: {new.get('title') or old.get('title')}",
+                            f"{changed_by} изменил(а): {', '.join(non_assignee_changes)}",
+                            task_id,
+                        )
+
                 cur.execute(
                     "UPDATE tasks SET title=%s,priority=%s,assignee=%s,assignee_email=%s,due=%s,project=%s "
                     "WHERE id=%s",
@@ -816,13 +834,33 @@ def api_get_comments(task_id):
 @require_auth
 def api_add_comment(task_id):
     try:
+        u      = _session_user()
+        u_email = u.get("email", "") if u else ""
+        author  = _first_name(u.get("name", "")) or "Аноним"
         d = request.json or {}
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO comments (task_id, author, text) VALUES (%s,%s,%s)",
-                    (task_id, d.get("author", "Аноним"), d["text"]),
+                    (task_id, author, d["text"]),
                 )
+                # Уведомляем создателя и исполнителя (кроме самого комментатора)
+                cur.execute(
+                    "SELECT title, created_by_email, assignee_email FROM tasks WHERE id=%s",
+                    (task_id,)
+                )
+                task = cur.fetchone()
+                if task:
+                    notified = set()
+                    for email in [task["created_by_email"], task["assignee_email"]]:
+                        if email and email != u_email and email not in notified:
+                            _push_notification(
+                                cur, email, "comment_added",
+                                f"Новый комментарий: {task['title']}",
+                                f"{author}: {d['text'][:80]}",
+                                task_id,
+                            )
+                            notified.add(email)
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:

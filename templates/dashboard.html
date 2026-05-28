@@ -606,9 +606,6 @@ tr:hover td{background:rgba(128,128,255,.03)}
     <div class="cp-empty">Комментариев пока нет</div>
   </div>
   <div class="cp-form">
-    <div class="cp-form-author">
-      <input id="cp-author" placeholder="Ваше имя" maxlength="60">
-    </div>
     <textarea class="cp-textarea" id="cp-text" placeholder="Напиши комментарий или вставь ссылку..."></textarea>
     <div class="cp-send">
       <button class="cp-send-btn" id="cp-send-btn" onclick="sendComment()">Отправить →</button>
@@ -1218,7 +1215,7 @@ async function openComments(taskId){
   document.body.style.overflow = 'hidden';
 
   await loadComments(taskId);
-  setTimeout(()=>document.getElementById('cp-author').focus(), 300);
+  setTimeout(()=>document.getElementById('cp-text').focus(), 300);
 }
 
 function closeComments(){
@@ -1256,7 +1253,6 @@ async function loadComments(taskId){
 
 async function sendComment(){
   if(!curCommentTaskId) return;
-  const author = document.getElementById('cp-author').value.trim() || 'Аноним';
   const text = document.getElementById('cp-text').value.trim();
   if(!text) return;
 
@@ -1266,7 +1262,7 @@ async function sendComment(){
     await fetch('/api/tasks/'+curCommentTaskId+'/comments', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({author, text})
+      body: JSON.stringify({text})
     });
     document.getElementById('cp-text').value = '';
     await loadComments(curCommentTaskId);
@@ -1721,7 +1717,7 @@ function _showToast(notif) {
   const container = document.getElementById('notif-container');
   if (!container) return;
 
-  const icon = notif.type === 'task_assigned' ? '📋' : '✅';
+  const icon = notif.type === 'task_assigned' ? '📋' : notif.type === 'comment_added' ? '💬' : notif.type === 'task_updated' ? '✏️' : '✅';
   const el = document.createElement('div');
   el.className = 'notif-toast notif-enter';
   el.innerHTML = `
