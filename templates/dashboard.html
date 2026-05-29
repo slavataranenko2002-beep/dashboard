@@ -314,12 +314,13 @@ tr:hover td{background:rgba(128,128,255,.03)}
 .bell-btn:hover { background: var(--bg3); color: var(--text) }
 .bell-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round }
 .bell-badge {
-  position: absolute; top: 2px; right: 2px;
+  position: absolute; top: -5px; right: -5px;
   background: var(--red); color: #fff;
   font-size: 10px; font-weight: 700; line-height: 1;
-  min-width: 16px; height: 16px; border-radius: 8px;
+  min-width: 18px; height: 18px; border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
-  padding: 0 4px; pointer-events: none;
+  padding: 0 5px; pointer-events: none;
+  box-shadow: 0 0 0 2px var(--bg2);
 }
 .bell-badge.hidden { display: none }
 .bell-panel {
@@ -1938,7 +1939,7 @@ async function _pollNotifications() {
   finally { _notifPolling = false; }
 }
 
-// Запускаем поллинг каждые 5 секунд
+// Запускаем поллинг тостов каждые 5 секунд
 setInterval(_pollNotifications, 5000);
 
 // ── Bell notification panel ───────────────────────────────────────────────────
@@ -2019,18 +2020,17 @@ document.addEventListener('click', e=>{
   }
 });
 
-// Обновляем бейдж при каждом поллинге (дополняем _pollNotifications)
-const _origPoll = _pollNotifications;
-_pollNotifications = async function(){
-  await _origPoll();
-  // Тихо обновляем счётчик бейджа
+// Отдельный интервал: обновляем бейдж каждые 5 секунд
+async function _refreshBellBadge(){
   try{
     const r = await fetch('/api/notifications/inbox');
     const d = await r.json();
     _updateBellBadge(d.unread || 0);
     if(_bellOpen) await _loadBellInbox();
   } catch(e){}
-};
+}
+_refreshBellBadge(); // сразу при загрузке
+setInterval(_refreshBellBadge, 5000);
 
 // ── Activity ping ─────────────────────────────────────────────────────────────
 async function _activityPing(){
