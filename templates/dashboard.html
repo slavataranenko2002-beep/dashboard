@@ -519,6 +519,11 @@ tr:hover td{background:rgba(128,128,255,.03)}
           <button class="tab" onclick="setDesignStatus('done',this)">Выполнено</button>
           <button class="tab" onclick="setDesignStatus('all',this)">Все</button>
         </div>
+        {% if role != 'seller' %}
+        <select class="psel" id="design-assignee-sel" onchange="renderDesign()">
+          <option value="">Все исполнители</option>
+        </select>
+        {% endif %}
         <div class="sp"></div>
         <button class="add-btn" onclick="toggleDesignForm()">+ Добавить задачу</button>
       </div>
@@ -895,7 +900,7 @@ function render(){
         claimBtn = `<button class="ab claim is-taken" disabled title="Взял: ${esc(cl.user_name)}">📋</button>`;
       }
     }
-    const histBtn = USER_ROLE==='admin' ? `<button class="ab" onclick="openHistory(${t.id},${JSON.stringify(esc(t.title))})" title="История изменений">🕐</button>` : '';
+    const histBtn = USER_ROLE==='admin' ? `<button class="ab" onclick="openHistory(${t.id},${JSON.stringify(esc(t.title))},'main')" title="История изменений">🕐</button>` : '';
     const acts = t.done
       ? `<div class="acts">${claimBtn}<button class="${cbClass}" onclick="openComments(${t.id})">${cbLabel}</button><button class="ab ed" onclick="openEdit(${t.id})">✏️</button>${histBtn}<button class="ab dl" onclick="del(${t.id})">🗑</button></div>`
       : `<div class="acts"><button class="ab ok" onclick="done(${t.id})">✓</button>${claimBtn}<button class="${cbClass}" onclick="openComments(${t.id})">${cbLabel}</button><button class="ab ed" onclick="openEdit(${t.id})">✏️</button>${histBtn}<button class="ab dl" onclick="del(${t.id})">🗑</button></div>`;
@@ -936,7 +941,7 @@ function updateAssigneeFilter(){
     names.map(n=>`<option value="${esc(n)}"${n===prev?' selected':''}>${esc('@'+n)}</option>`).join('');
 }
 
-// ── «Беру сегодня» ────────────────────────────────────────────────────────────
+// ── «Беру сегодня» (обычные задачи) ──────────────────────────────────────────
 async function claimTask(taskId){
   const r = await fetch('/api/today/claim',{
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -963,6 +968,27 @@ async function unclaimTask(taskId){
   load();
 }
 
+// ── «Беру сегодня» (дизайн-задачи) ───────────────────────────────────────────
+let designTodayClaims = {};
+
+async function claimDesignTask(taskId){
+  const r = await fetch('/api/design-today/claim',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({task_id: taskId})
+  });
+  const d = await r.json();
+  if(d.ok) loadDesign();
+  else if(d.error==='already_claimed') alert('Эта задача уже взята другим сотрудником');
+}
+
+async function unclaimDesignTask(taskId){
+  await fetch('/api/design-today/unclaim',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({task_id: taskId})
+  });
+  loadDesign();
+}
+
 async function todayDone(taskId){
   await fetch('/api/today/'+taskId+'/done', {method:'POST'});
   load();
@@ -975,24 +1001,27 @@ function renderToday(){
   const days = ['вс','пн','вт','ср','чт','пт','сб'];
   dateEl.textContent = `${now.getDate()} ${['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][now.getMonth()]}, ${days[now.getDay()]}`;
 
-  const claims = Object.values(todayClaims);
-  if(!claims.length){
+  const allClaims = [
+    ...Object.values(todayClaims).map(c=>({...c, _type:'main'})),
+    ...Object.values(designTodayClaims).map(c=>({...c, _type:'design'})),
+  ];
+  if(!allClaims.length){
     body.innerHTML = `<div class="today-empty"><div class="today-empty-ic">☀️</div>Никто ещё не взял задачи на сегодня.<br>Нажми 📋 на задаче в списке.</div>`;
     return;
   }
 
   // Группируем по имени сотрудника
   const byEmp = {};
-  claims.forEach(c=>{ (byEmp[c.user_name]||(byEmp[c.user_name]=[])).push(c); });
+  allClaims.forEach(c=>{ (byEmp[c.user_name]||(byEmp[c.user_name]=[])).push(c); });
 
   body.innerHTML = Object.keys(byEmp).sort((a,b)=>{
-    // Сначала свои задачи
     if(a===USER_NAME) return -1; if(b===USER_NAME) return 1; return a.localeCompare(b);
   }).map(name=>{
     const tasks = byEmp[name];
     const isMe = name===USER_NAME;
     const taskRows = tasks.map(c=>{
       const proj = c.project ? `<span class="today-task-proj">${esc(c.project)}</span>` : '';
+      const typeTag = c._type==='design' ? `<span style="font-size:11px;color:var(--purple);opacity:.7">🎨</span>` : '';
       const cb = isMe && !c.done
         ? `<input type="checkbox" class="today-cb" onchange="todayDone(${c.task_id})" title="Отметить выполненным">`
         : `<input type="checkbox" class="today-cb" disabled ${c.done?'checked':''}>`;
@@ -1002,7 +1031,7 @@ function renderToday(){
         : '';
       return `<div class="today-task">
         ${cb}
-        <div class="today-task-title ${c.done?'done-title':''}">${esc(c.title)} ${proj}</div>
+        <div class="today-task-title ${c.done?'done-title':''}">${esc(c.title)} ${proj} ${typeTag}</div>
         ${removeBtn}
       </div>`;
     }).join('');
@@ -1016,8 +1045,11 @@ function renderToday(){
 async function load(){
   try{
     const fetches = [fetch('/api/tasks')];
-    if(USER_ROLE==='employee'||USER_ROLE==='admin') fetches.push(fetch('/api/today'));
-    const [tasksRes, todayRes] = await Promise.all(fetches);
+    if(USER_ROLE==='employee'||USER_ROLE==='admin'){
+      fetches.push(fetch('/api/today'));
+      fetches.push(fetch('/api/design-today'));
+    }
+    const [tasksRes, todayRes, designTodayRes] = await Promise.all(fetches);
 
     allTasks = await tasksRes.json();
     taskMap = {}; allTasks.forEach(t=>taskMap[t.id]=t);
@@ -1026,8 +1058,14 @@ async function load(){
       const claims = await todayRes.json();
       todayClaims = {};
       claims.forEach(c=>todayClaims[c.task_id]=c);
+
+      const designClaims = designTodayRes ? await designTodayRes.json() : [];
+      designTodayClaims = {};
+      designClaims.forEach(c=>designTodayClaims[c.task_id]=c);
+
+      const allActive = [...claims, ...designClaims].filter(c=>!c.done).length;
       const el = document.getElementById('cnt-today');
-      if(el) el.textContent = claims.filter(c=>!c.done).length || '—';
+      if(el) el.textContent = allActive || '—';
     }
 
     const total = allTasks.length;
@@ -1048,11 +1086,20 @@ async function load(){
 }
 
 // ── Close-task modal ──────────────────────────────────────────────────────────
-let _doneTaskId = null;
+let _doneTaskId   = null;
+let _doneTaskType = 'main'; // 'main' | 'design'
 
 function done(id){
-  const task = taskMap[id];
-  _doneTaskId = id;
+  _openDoneModal(id, 'main');
+}
+function doneDesignModal(id){
+  _openDoneModal(id, 'design');
+}
+function _openDoneModal(id, type){
+  const map  = type === 'design' ? designTaskMap : taskMap;
+  const task = map[id];
+  _doneTaskId   = id;
+  _doneTaskType = type;
   document.getElementById('done-task-name').textContent = task ? task.title : '#'+id;
   document.getElementById('done-comment').value = '';
   document.getElementById('done-url').value = '';
@@ -1079,18 +1126,24 @@ async function submitDone(){
   const btn     = document.getElementById('done-submit-btn');
   btn.disabled = true; btn.textContent = 'Сохраняю...';
   try {
-    // Строим текст комментария
-    let text = comment;
-    if(url) text = text ? text + '\n\nСсылка: ' + url : 'Ссылка: ' + url;
-    // Сохраняем комментарий
-    await fetch('/api/tasks/'+_doneTaskId+'/comments', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({author: USER_NAME, text})
-    });
-    // Закрываем задачу
-    await fetch('/api/tasks/'+_doneTaskId+'/done', {method:'POST'});
+    if(_doneTaskType === 'design'){
+      // Для дизайн-задачи — всё одним запросом (done-эндпоинт принимает comment+url)
+      await fetch('/api/design-tasks/'+_doneTaskId+'/done', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({comment, url})
+      });
+    } else {
+      // Для обычной задачи — сначала комментарий, потом done
+      let text = comment;
+      if(url) text = text ? text + '\n\nСсылка: ' + url : 'Ссылка: ' + url;
+      await fetch('/api/tasks/'+_doneTaskId+'/comments', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({text})
+      });
+      await fetch('/api/tasks/'+_doneTaskId+'/done', {method:'POST'});
+    }
     closeDoneModal();
-    load();
+    _doneTaskType === 'design' ? loadDesign() : load();
   } catch(e) {
     alert('Ошибка: '+e.message);
     btn.disabled = false; btn.textContent = 'Закрыть задачу';
@@ -1195,12 +1248,20 @@ function fmtCommentDate(iso){
          d.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'});
 }
 
+let _cpTaskType = 'main'; // 'main' | 'design'
+
 async function openComments(taskId){
+  _openCommentsPanel(taskId, 'main');
+}
+async function openDesignComments(taskId){
+  _openCommentsPanel(taskId, 'design');
+}
+async function _openCommentsPanel(taskId, type){
+  _cpTaskType      = type;
   curCommentTaskId = taskId;
-  const t = taskMap[taskId];
+  const t = type === 'design' ? designTaskMap[taskId] : taskMap[taskId];
   if(!t) return;
 
-  // Заполняем шапку
   document.getElementById('cp-task-name').textContent = t.title;
   const meta = [
     t.project || '',
@@ -1209,7 +1270,6 @@ async function openComments(taskId){
   ].filter(Boolean).join(' · ');
   document.getElementById('cp-task-meta').textContent = meta;
 
-  // Открываем панель
   document.getElementById('cp-overlay').classList.add('open');
   document.getElementById('cp').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -1229,7 +1289,8 @@ async function loadComments(taskId){
   const list = document.getElementById('cp-list');
   list.innerHTML = '<div class="cp-empty">Загрузка...</div>';
   try{
-    const r = await fetch('/api/tasks/'+taskId+'/comments');
+    const base = _cpTaskType === 'design' ? '/api/design-tasks/' : '/api/tasks/';
+    const r = await fetch(base+taskId+'/comments');
     const comments = await r.json();
     if(!comments.length){
       list.innerHTML = '<div class="cp-empty">Комментариев пока нет.<br>Будь первым 👇</div>';
@@ -1259,14 +1320,16 @@ async function sendComment(){
   const btn = document.getElementById('cp-send-btn');
   btn.disabled = true;
   try{
-    await fetch('/api/tasks/'+curCommentTaskId+'/comments', {
+    const base = _cpTaskType === 'design' ? '/api/design-tasks/' : '/api/tasks/';
+    await fetch(base+curCommentTaskId+'/comments', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({text})
     });
     document.getElementById('cp-text').value = '';
     await loadComments(curCommentTaskId);
-    await load(); // обновить счётчик комментариев в таблице
+    // Обновляем счётчик в таблице
+    if(_cpTaskType === 'design') await loadDesign(); else await load();
   } finally{
     btn.disabled = false;
     document.getElementById('cp-text').focus();
@@ -1277,12 +1340,6 @@ async function sendComment(){
 document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('cp-text').addEventListener('keydown', e=>{
     if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendComment(); }
-  });
-  // Сохраняем имя автора в localStorage
-  const savedAuthor = localStorage.getItem('cp-author');
-  if(savedAuthor) document.getElementById('cp-author').value = savedAuthor;
-  document.getElementById('cp-author').addEventListener('input', e=>{
-    localStorage.setItem('cp-author', e.target.value);
   });
   // Enter в форме дизайн-задачи
   const dfTitle = document.getElementById('df-title');
@@ -1325,14 +1382,15 @@ function fmtVal(field, val){
   return esc(val);
 }
 
-async function openHistory(taskId, taskTitle){
+async function openHistory(taskId, taskTitle, taskType){
   document.getElementById('hist-sub').textContent = taskTitle;
   document.getElementById('hist-body').innerHTML = '<div class="hist-empty">Загрузка...</div>';
   document.getElementById('hist-overlay').classList.add('open');
   document.getElementById('hist-modal').classList.add('open');
 
   try {
-    const r = await fetch('/api/tasks/'+taskId+'/history');
+    const base = (taskType === 'design') ? '/api/design-tasks/' : '/api/tasks/';
+    const r = await fetch(base+taskId+'/history');
     const rows = await r.json();
     const body = document.getElementById('hist-body');
     if(!rows.length){
@@ -1436,10 +1494,7 @@ async function addDesignTask(){
   } catch(e){ alert('Ошибка сети: '+e.message); }
 }
 
-async function doneDesign(id){
-  await fetch('/api/design-tasks/'+id+'/done',{method:'POST'});
-  loadDesign();
-}
+async function doneDesign(id){ doneDesignModal(id); } // backward compat
 
 async function delDesign(id){
   if(!confirm('Удалить задачу дизайнеру?')) return;
@@ -1514,12 +1569,22 @@ async function loadDesign(){
     const active = designTasks.filter(t=>!t.done).length;
     const cnt = document.getElementById('cnt-design');
     if(cnt) cnt.textContent = active || '—';
+    updateDesignAssigneeFilter();
     renderDesign();
   } catch(e){
     console.error('loadDesign exception:', e);
     const tbody = document.getElementById('design-tbody');
     if(tbody) tbody.innerHTML=`<tr><td colspan="8" class="empty">Ошибка загрузки</td></tr>`;
   }
+}
+
+function updateDesignAssigneeFilter(){
+  const sel = document.getElementById('design-assignee-sel');
+  if(!sel) return;
+  const prev = sel.value;
+  const names = [...new Set(designTasks.map(t=>t.assignee).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Все исполнители</option>' +
+    names.map(n=>`<option value="${esc(n)}"${n===prev?' selected':''}>${esc('@'+n)}</option>`).join('');
 }
 
 function renderDesign(){
@@ -1529,33 +1594,54 @@ function renderDesign(){
   if(designStatus==='active') tasks = tasks.filter(t=>!t.done);
   else if(designStatus==='done') tasks = tasks.filter(t=>t.done);
 
+  // Фильтр исполнителя
+  const asel = document.getElementById('design-assignee-sel');
+  const af = asel ? asel.value : '';
+  if(af) tasks = tasks.filter(t=>(t.assignee||'')===af);
+
   if(!tasks.length){
     tbody.innerHTML='<tr><td colspan="8" class="empty"><div class="empty-ic">🎨</div>Задач нет</td></tr>';
     return;
   }
   tbody.innerHTML = tasks.map((t,i)=>{
     const dc = dueClass(t.due, t.done);
-    const briefC = t.brief_count||0;
-    const resultC = t.result_count||0;
+    // Вложения
+    const briefC = t.brief_count||0, resultC = t.result_count||0;
     const attLabel = (briefC||resultC)
       ? `📎 ${briefC>0?briefC+'ТЗ':''}${briefC>0&&resultC>0?' · ':''}${resultC>0?resultC+'✓':''}`
       : '📎';
-    const attCls = (briefC||resultC) ? 'ab' : 'ab';
     const attStyle = (briefC||resultC) ? 'border-color:rgba(167,139,250,.4);color:var(--purple)' : '';
+    // Комментарии
+    const cc = t.comment_count || 0;
+    const cbClass = cc > 0 ? 'cb has-comments' : 'cb';
+    const cbLabel = cc > 0 ? `💬 ${cc}` : '💬';
+    // «Беру сегодня»
+    let claimBtn = '';
+    if((USER_ROLE==='employee'||USER_ROLE==='admin') && !t.done){
+      const cl = designTodayClaims[t.id];
+      if(!cl){
+        claimBtn = `<button class="ab claim" onclick="claimDesignTask(${t.id})" title="Беру сегодня">📋</button>`;
+      } else if(cl.user_name===USER_NAME){
+        claimBtn = `<button class="ab claim is-mine" onclick="unclaimDesignTask(${t.id})" title="Снять (${esc(cl.user_name)})">📋✓</button>`;
+      } else {
+        claimBtn = `<button class="ab claim is-taken" disabled title="Взял: ${esc(cl.user_name)}">📋</button>`;
+      }
+    }
+    const histBtn = USER_ROLE==='admin'
+      ? `<button class="ab" onclick="openHistory(${t.id},${JSON.stringify(esc(t.title))},'design')" title="История изменений">🕐</button>`
+      : '';
+    const acts = t.done
+      ? `<div class="acts">${claimBtn}<button class="${cbClass}" onclick="openDesignComments(${t.id})">${cbLabel}</button><button class="ab ed" onclick="openDesignEdit(${t.id})">✏️</button><button class="ab" style="${attStyle}" onclick="openDsp(${t.id})" title="Файлы">${attLabel}</button>${histBtn}<button class="ab dl" onclick="delDesign(${t.id})">🗑</button></div>`
+      : `<div class="acts"><button class="ab ok" onclick="doneDesignModal(${t.id})">✓</button>${claimBtn}<button class="${cbClass}" onclick="openDesignComments(${t.id})">${cbLabel}</button><button class="ab ed" onclick="openDesignEdit(${t.id})">✏️</button><button class="ab" style="${attStyle}" onclick="openDsp(${t.id})" title="Файлы">${attLabel}</button>${histBtn}<button class="ab dl" onclick="delDesign(${t.id})">🗑</button></div>`;
     return `<tr class="${t.done?'done-row':''}" translate="no">
       <td style="color:var(--text3);font-size:13px">${i+1}</td>
       <td style="font-weight:500;max-width:240px" class="${t.done?'done-title':''}">${esc(t.title)}</td>
       <td>${t.project ? projBadge(t.project) : '<span style="color:var(--text3);font-size:13px">—</span>'}</td>
       <td><span class="badge ${t.priority}">${PRIO[t.priority]||t.priority}</span></td>
-      <td style="color:var(--text2);font-size:14px">${t.assignee?'@'+esc(t.assignee):'—'}</td>
+      ${USER_ROLE !== 'seller' ? `<td style="color:var(--text2);font-size:14px">${t.assignee?'@'+esc(t.assignee):'—'}</td>` : ''}
       <td><span class="${dc}" style="font-size:14px">${fmtDate(t.due)}</span></td>
       <td><span class="badge ${t.done?'bdone':'bpend'}">${t.done?'✓ Готово':'● В работе'}</span></td>
-      <td><div class="acts">
-        ${!t.done?`<button class="ab ok" onclick="doneDesign(${t.id})" title="Отметить выполненным">✓</button>`:''}
-        <button class="ab ed" onclick="openDesignEdit(${t.id})" title="Редактировать">✏️</button>
-        <button class="${attCls}" style="${attStyle}" onclick="openDsp(${t.id})" title="Файлы и ссылки">${attLabel}</button>
-        <button class="ab dl" onclick="delDesign(${t.id})" title="Удалить">🗑</button>
-      </div></td>
+      <td>${acts}</td>
     </tr>`;
   }).join('');
 }

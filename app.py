@@ -103,6 +103,36 @@ def _ensure_design_tables():
                     )
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_notif_user_unread ON notifications(user_email, read) WHERE read = FALSE")
+                # Комментарии, история и «сегодня» для design_tasks
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS design_comments (
+                        id         SERIAL PRIMARY KEY,
+                        task_id    INTEGER NOT NULL REFERENCES design_tasks(id) ON DELETE CASCADE,
+                        author     TEXT NOT NULL DEFAULT '',
+                        text       TEXT NOT NULL DEFAULT '',
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS design_task_history (
+                        id         SERIAL PRIMARY KEY,
+                        task_id    INTEGER NOT NULL REFERENCES design_tasks(id) ON DELETE CASCADE,
+                        changed_by TEXT NOT NULL DEFAULT '',
+                        field      TEXT NOT NULL DEFAULT '',
+                        old_value  TEXT,
+                        new_value  TEXT,
+                        changed_at TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS design_today_claims (
+                        id           SERIAL PRIMARY KEY,
+                        task_id      INTEGER NOT NULL REFERENCES design_tasks(id) ON DELETE CASCADE,
+                        user_name    TEXT NOT NULL,
+                        claimed_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                        UNIQUE (task_id, claimed_date)
+                    )
+                """)
             conn.commit()
         logging.info("Design tables ready.")
         # Миграция created_by_email — в отдельной транзакции, ошибки не критичны
@@ -1464,9 +1494,11 @@ def api_design_tasks_list():
                     cur.execute("""
                         SELECT dt.*,
                                COUNT(da.id) FILTER (WHERE da.attach_role='brief')  AS brief_count,
-                               COUNT(da.id) FILTER (WHERE da.attach_role='result') AS result_count
+                               COUNT(da.id) FILTER (WHERE da.attach_role='result') AS result_count,
+                               COUNT(dc.id) AS comment_count
                         FROM design_tasks dt
                         LEFT JOIN design_attachments da ON da.task_id = dt.id
+                        LEFT JOIN design_comments dc ON dc.task_id = dt.id
                         GROUP BY dt.id
                         ORDER BY dt.done ASC, dt.created_at DESC
                     """)
@@ -1475,9 +1507,11 @@ def api_design_tasks_list():
                     cur.execute("""
                         SELECT dt.*,
                                COUNT(da.id) FILTER (WHERE da.attach_role='brief')  AS brief_count,
-                               COUNT(da.id) FILTER (WHERE da.attach_role='result') AS result_count
+                               COUNT(da.id) FILTER (WHERE da.attach_role='result') AS result_count,
+                               COUNT(dc.id) AS comment_count
                         FROM design_tasks dt
                         LEFT JOIN design_attachments da ON da.task_id = dt.id
+                        LEFT JOIN design_comments dc ON dc.task_id = dt.id
                         WHERE dt.project = ANY(%s)
                         GROUP BY dt.id
                         ORDER BY dt.done ASC, dt.created_at DESC
@@ -1550,13 +1584,28 @@ def api_design_tasks_update(task_id):
                     (task_id,)
                 )
                 row = cur.fetchone()
+                new_title    = d.get("title","").strip() or None
+                new_priority = d.get("priority","med")
+                new_due      = d.get("due") or None
                 cur.execute(
                     "UPDATE design_tasks SET title=%s, priority=%s, assignee=%s, assignee_email=%s, due=%s, project=%s "
                     "WHERE id=%s",
-                    (d.get("title","").strip() or None, d.get("priority","med"),
-                     d.get("assignee") or None, new_assignee_email,
-                     d.get("due") or None, project, task_id)
+                    (new_title, new_priority, d.get("assignee") or None,
+                     new_assignee_email, new_due, project, task_id)
                 )
+                if row:
+                    # Пишем историю изменений
+                    hist_fields = [
+                        ("Название",    row.get("title"),          new_title),
+                        ("Исполнитель", row.get("assignee_email"), new_assignee_email),
+                    ]
+                    for fname, old_v, new_v in hist_fields:
+                        if str(old_v or "") != str(new_v or ""):
+                            cur.execute(
+                                "INSERT INTO design_task_history (task_id, changed_by, field, old_value, new_value) "
+                                "VALUES (%s,%s,%s,%s,%s)",
+                                (task_id, changed_by, fname, old_v, new_v)
+                            )
                 if row:
                     notified = set()
                     old_assignee_email = row.get("assignee_email") or ""
@@ -1586,6 +1635,9 @@ def api_design_tasks_done(task_id):
     if not _design_auth(u):
         return jsonify({"error": "forbidden"}), 403
     try:
+        d          = request.json or {}
+        comment    = (d.get("comment") or "").strip()
+        url        = (d.get("url") or "").strip()
         u_email    = u.get("email", "") if u else ""
         changed_by = _first_name(u.get("name", "")) if u else "unknown"
         with get_conn() as conn:
@@ -1596,6 +1648,15 @@ def api_design_tasks_done(task_id):
                 )
                 row = cur.fetchone()
                 if row:
+                    # Сохраняем комментарий закрытия
+                    text = comment
+                    if url:
+                        text = (text + "\n\nСсылка: " + url) if text else "Ссылка: " + url
+                    if text:
+                        cur.execute(
+                            "INSERT INTO design_comments (task_id, author, text) VALUES (%s,%s,%s)",
+                            (task_id, changed_by, text)
+                        )
                     owner_email = _resolve_owner_email_design(cur, task_id, row.get("created_by_email") or "", row.get("created_by") or "")
                     if owner_email and owner_email != u_email:
                         _push_notification(cur, owner_email, "status_changed",
@@ -1633,6 +1694,147 @@ def api_design_tasks_delete(task_id):
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM design_tasks WHERE id=%s", (task_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/design-tasks/<int:task_id>/comments")
+@require_auth
+def api_design_get_comments(task_id):
+    if not _design_auth(_session_user()):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, task_id, author, text, created_at FROM design_comments "
+                    "WHERE task_id=%s ORDER BY created_at ASC", (task_id,)
+                )
+                return jsonify([serialize_comment(dict(r)) for r in cur.fetchall()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/design-tasks/<int:task_id>/comments", methods=["POST"])
+@require_auth
+def api_design_add_comment(task_id):
+    u = _session_user()
+    if not _design_auth(u):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        u_email    = u.get("email", "") if u else ""
+        author     = _first_name(u.get("name", "")) or "Аноним"
+        d          = request.json or {}
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO design_comments (task_id, author, text) VALUES (%s,%s,%s)",
+                    (task_id, author, d.get("text",""))
+                )
+                cur.execute(
+                    "SELECT title, created_by_email, assignee_email FROM design_tasks WHERE id=%s",
+                    (task_id,)
+                )
+                task = cur.fetchone()
+                if task:
+                    notified = set()
+                    for email in [task["created_by_email"], task["assignee_email"]]:
+                        if email and email != u_email and email not in notified:
+                            _push_notification(cur, email, "comment_added",
+                                f"Новый комментарий: {task['title']}",
+                                f"{author}: {d.get('text','')[:80]}", task_id)
+                            notified.add(email)
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/design-tasks/<int:task_id>/history")
+@require_auth
+def api_design_task_history(task_id):
+    u = _session_user()
+    if not u or u["role"] != "admin":
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, changed_by, field, old_value, new_value, changed_at "
+                    "FROM design_task_history WHERE task_id=%s ORDER BY changed_at DESC",
+                    (task_id,)
+                )
+                return jsonify([{
+                    "id":         r["id"],
+                    "changed_by": r["changed_by"],
+                    "field":      r["field"],
+                    "old_value":  r["old_value"],
+                    "new_value":  r["new_value"],
+                    "changed_at": r["changed_at"].isoformat() if r["changed_at"] else None,
+                } for r in cur.fetchall()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/design-today")
+@require_auth
+def api_design_today():
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT dtc.id, dtc.task_id, dtc.user_name,
+                           dt.title, dt.project, dt.priority, dt.done
+                    FROM design_today_claims dtc
+                    JOIN design_tasks dt ON dt.id = dtc.task_id
+                    WHERE dtc.claimed_date = CURRENT_DATE
+                    ORDER BY dtc.user_name, dtc.id
+                """)
+                return jsonify([dict(r) for r in cur.fetchall()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/design-today/claim", methods=["POST"])
+@require_auth
+def api_design_today_claim():
+    u = _session_user()
+    if u["role"] not in ("admin", "employee"):
+        return jsonify({"error": "forbidden"}), 403
+    d = request.json or {}
+    task_id = d.get("task_id")
+    if not task_id:
+        return jsonify({"error": "task_id required"}), 400
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM design_tasks WHERE id=%s AND done=FALSE", (task_id,))
+                if not cur.fetchone():
+                    return jsonify({"error": "task not found or already done"}), 404
+                cur.execute("""
+                    INSERT INTO design_today_claims (task_id, user_name, claimed_date)
+                    VALUES (%s, %s, CURRENT_DATE)
+                    ON CONFLICT (task_id, claimed_date) DO NOTHING
+                    RETURNING id
+                """, (task_id, u["name"]))
+                row = cur.fetchone()
+            conn.commit()
+        return jsonify({"ok": True}) if row else jsonify({"ok": False, "error": "already_claimed"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/design-today/unclaim", methods=["POST"])
+@require_auth
+def api_design_today_unclaim():
+    u = _session_user()
+    d = request.json or {}
+    task_id = d.get("task_id")
+    if not task_id:
+        return jsonify({"error": "task_id required"}), 400
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM design_today_claims WHERE task_id=%s AND claimed_date=CURRENT_DATE AND user_name=%s",
+                    (task_id, u["name"])
+                )
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
