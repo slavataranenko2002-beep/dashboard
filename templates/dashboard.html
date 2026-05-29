@@ -302,6 +302,58 @@ tr:hover td{background:rgba(128,128,255,.03)}
 .today-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;padding:2px 6px;border-radius:4px;line-height:1;transition:color .15s}
 .today-remove:hover{color:var(--red)}
 /* ─── Уведомления-тосты ─── */
+/* ── Bell notification panel ── */
+.bell-wrap { position:relative }
+.bell-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 20px; padding: 6px 8px; border-radius: 8px;
+  color: var(--text2); transition: color .15s, background .15s;
+  position: relative;
+}
+.bell-btn:hover { background: var(--bg3); color: var(--text) }
+.bell-badge {
+  position: absolute; top: 2px; right: 2px;
+  background: var(--red); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  min-width: 16px; height: 16px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px; pointer-events: none;
+}
+.bell-badge.hidden { display: none }
+.bell-panel {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: 340px; max-height: 480px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: 0 16px 48px rgba(0,0,0,.45);
+  z-index: 200; display: none; flex-direction: column; overflow: hidden;
+}
+.bell-panel.open { display: flex }
+.bell-panel-head {
+  padding: 14px 16px 10px; font-size: 14px; font-weight: 600;
+  border-bottom: 1px solid var(--border); display: flex;
+  align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.bell-panel-clear {
+  font-size: 12px; font-weight: 400; color: var(--text3);
+  background: none; border: none; cursor: pointer; padding: 2px 4px;
+}
+.bell-panel-clear:hover { color: var(--text2) }
+.bell-list { overflow-y: auto; flex: 1 }
+.bell-item {
+  display: flex; gap: 10px; padding: 11px 16px;
+  border-bottom: 1px solid var(--border); cursor: default;
+  transition: background .12s;
+}
+.bell-item:last-child { border-bottom: none }
+.bell-item.unread { background: rgba(120,100,220,.07) }
+.bell-item:hover { background: var(--bg3) }
+.bell-item-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px }
+.bell-item-body { flex: 1; min-width: 0 }
+.bell-item-title { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.3 }
+.bell-item.unread .bell-item-title { font-weight: 600 }
+.bell-item-msg { font-size: 12px; color: var(--text3); margin-top: 2px; line-height: 1.3 }
+.bell-item-time { font-size: 11px; color: var(--text3); margin-top: 3px }
+.bell-empty { padding: 32px 16px; text-align: center; color: var(--text3); font-size: 13px }
 #notif-container {
   position: fixed;
   bottom: 24px;
@@ -356,7 +408,23 @@ tr:hover td{background:rgba(128,128,255,.03)}
     {% endif %}
     {% if current_user.role == 'admin' %}
     <a href="/admin" class="hbtn admin-btn">⚙️ Пользователи</a>
+    <a href="/admin/activity" class="hbtn admin-btn">📊 Активность</a>
     {% endif %}
+    <div class="bell-wrap" id="bell-wrap">
+      <button class="bell-btn" onclick="toggleBellPanel()" title="Уведомления" id="bell-btn">
+        🔔
+        <span class="bell-badge hidden" id="bell-badge">0</span>
+      </button>
+      <div class="bell-panel" id="bell-panel">
+        <div class="bell-panel-head">
+          <span>Уведомления</span>
+          <button class="bell-panel-clear" onclick="markAllRead()">Прочитать все</button>
+        </div>
+        <div class="bell-list" id="bell-list">
+          <div class="bell-empty">Загрузка...</div>
+        </div>
+      </div>
+    </div>
     <div class="clock" id="clock"></div>
     <div class="status"><div class="dot"></div>онлайн</div>
     <div class="user-info">
@@ -490,6 +558,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
             <th>Проект</th>
             <th>Приоритет</th>
             {% if current_user.role != 'seller' %}<th>Исполнитель</th>{% endif %}
+            <th>Создана</th>
             <th>Срок</th>
             <th>Статус</th>
             <th style="width:100px"></th>
@@ -568,6 +637,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
               <th>Проект</th>
               <th>Приоритет</th>
               <th>Исполнитель</th>
+              <th>Создана</th>
               <th>Срок</th>
               <th>Статус</th>
               <th style="width:120px"></th>
@@ -910,6 +980,7 @@ function render(){
       <td>${projBadge(t.project)}</td>
       <td><span class="badge ${t.priority}">${PRIO[t.priority]||t.priority}</span></td>
       ${USER_ROLE !== 'seller' ? `<td style="color:var(--text2);font-size:14px">${t.assignee?'@'+esc(t.assignee):'—'}</td>` : ''}
+      <td style="color:var(--text3);font-size:13px">${fmtDate(t.created_at)}</td>
       <td><span class="${dc}" style="font-size:14px">${fmtDate(t.due)}</span></td>
       <td><span class="badge ${t.done?'bdone':'bpend'}">${t.done?'✓ Готово':'● В работе'}</span></td>
       <td>${acts}</td>
@@ -1639,6 +1710,7 @@ function renderDesign(){
       <td>${t.project ? projBadge(t.project) : '<span style="color:var(--text3);font-size:13px">—</span>'}</td>
       <td><span class="badge ${t.priority}">${PRIO[t.priority]||t.priority}</span></td>
       ${USER_ROLE !== 'seller' ? `<td style="color:var(--text2);font-size:14px">${t.assignee?'@'+esc(t.assignee):'—'}</td>` : ''}
+      <td style="color:var(--text3);font-size:13px">${fmtDate(t.created_at)}</td>
       <td><span class="${dc}" style="font-size:14px">${fmtDate(t.due)}</span></td>
       <td><span class="badge ${t.done?'bdone':'bpend'}">${t.done?'✓ Готово':'● В работе'}</span></td>
       <td>${acts}</td>
@@ -1863,6 +1935,98 @@ async function _pollNotifications() {
 
 // Запускаем поллинг каждые 5 секунд
 setInterval(_pollNotifications, 5000);
+
+// ── Bell notification panel ───────────────────────────────────────────────────
+const NOTIF_ICON = { task_assigned:'📋', comment_added:'💬', task_updated:'✏️', status_changed:'✅' };
+
+function _notifTimeAgo(iso){
+  if(!iso) return '';
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if(diff < 60) return 'только что';
+  if(diff < 3600) return Math.floor(diff/60) + ' мин назад';
+  if(diff < 86400) return Math.floor(diff/3600) + ' ч назад';
+  return Math.floor(diff/86400) + ' дн назад';
+}
+
+let _bellOpen = false;
+
+async function toggleBellPanel(){
+  _bellOpen = !_bellOpen;
+  document.getElementById('bell-panel').classList.toggle('open', _bellOpen);
+  if(_bellOpen) await _loadBellInbox();
+}
+
+async function _loadBellInbox(){
+  const list = document.getElementById('bell-list');
+  try{
+    const r = await fetch('/api/notifications/inbox');
+    const data = await r.json();
+    const items = data.notifications || [];
+    // Обновляем бейдж
+    _updateBellBadge(data.unread || 0);
+    if(!items.length){
+      list.innerHTML = '<div class="bell-empty">Уведомлений пока нет</div>';
+      return;
+    }
+    list.innerHTML = items.map(n=>`
+      <div class="bell-item${n.read?'':' unread'}">
+        <div class="bell-item-icon">${NOTIF_ICON[n.type]||'🔔'}</div>
+        <div class="bell-item-body">
+          <div class="bell-item-title">${esc(n.title)}</div>
+          ${n.message ? `<div class="bell-item-msg">${esc(n.message)}</div>` : ''}
+          <div class="bell-item-time">${_notifTimeAgo(n.created_at)}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e){
+    list.innerHTML = '<div class="bell-empty">Ошибка загрузки</div>';
+  }
+}
+
+function _updateBellBadge(count){
+  const badge = document.getElementById('bell-badge');
+  if(!badge) return;
+  if(count > 0){
+    badge.textContent = count > 99 ? '99+' : count;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+async function markAllRead(){
+  await fetch('/api/notifications/read', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+  _updateBellBadge(0);
+  await _loadBellInbox();
+}
+
+// Закрыть панель при клике вне
+document.addEventListener('click', e=>{
+  if(_bellOpen && !document.getElementById('bell-wrap').contains(e.target)){
+    _bellOpen = false;
+    document.getElementById('bell-panel').classList.remove('open');
+  }
+});
+
+// Обновляем бейдж при каждом поллинге (дополняем _pollNotifications)
+const _origPoll = _pollNotifications;
+_pollNotifications = async function(){
+  await _origPoll();
+  // Тихо обновляем счётчик бейджа
+  try{
+    const r = await fetch('/api/notifications/inbox');
+    const d = await r.json();
+    _updateBellBadge(d.unread || 0);
+    if(_bellOpen) await _loadBellInbox();
+  } catch(e){}
+};
+
+// ── Activity ping ─────────────────────────────────────────────────────────────
+async function _activityPing(){
+  try { await fetch('/api/activity/ping', {method:'POST'}); } catch(e){}
+}
+_activityPing(); // при загрузке страницы
+setInterval(_activityPing, 60000); // каждую минуту
 </script>
 
 <div id="notif-container"></div>

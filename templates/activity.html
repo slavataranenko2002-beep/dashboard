@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Активность · Wblions</title>
+<style>
+  :root {
+    --bg:     #0f1117; --bg2: #181c27; --bg3: #1e2336; --bg4: #252a3a;
+    --border: #2a3050; --text: #e0e6f0; --text2: #8892a4; --text3: #4a5570;
+    --purple: #a78bfa; --green: #34d399; --red: #f87171; --yellow: #fbbf24;
+    --tr: all .18s ease;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh }
+  .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px; display: flex; align-items: center; gap: 16px }
+  .logo { font-size: 18px; font-weight: 700; color: var(--text) }
+  .logo em { color: var(--purple); font-style: normal }
+  .hbtn { color: var(--text2); text-decoration: none; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); transition: var(--tr) }
+  .hbtn:hover { background: var(--bg3); color: var(--text) }
+  .sp { flex: 1 }
+  .main { max-width: 1100px; margin: 0 auto; padding: 28px 20px }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px }
+  .subtitle { color: var(--text2); font-size: 13px; margin-bottom: 24px }
+  /* Stats */
+  .stat-row { display: flex; gap: 16px; margin-bottom: 28px; flex-wrap: wrap }
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; min-width: 160px; flex: 1 }
+  .stat-label { font-size: 12px; color: var(--text3); margin-bottom: 4px }
+  .stat-value { font-size: 24px; font-weight: 700; color: var(--text) }
+  /* Filters */
+  .filters { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center }
+  .ftabs { display: flex; gap: 4px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 4px }
+  .tab { background: none; border: none; padding: 6px 14px; border-radius: 7px; cursor: pointer; font-size: 13px; color: var(--text2); transition: var(--tr) }
+  .tab.active { background: var(--bg4); color: var(--text); font-weight: 500 }
+  select.psel { background: var(--bg2); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer }
+  /* Table */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden }
+  table { width: 100%; border-collapse: collapse }
+  th { text-align: left; padding: 10px 14px; font-size: 12px; color: var(--text3); font-weight: 500; border-bottom: 1px solid var(--border); background: var(--bg3) }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px }
+  tr:last-child td { border-bottom: none }
+  tr:hover td { background: var(--bg3) }
+  .badge-role { font-size: 11px; padding: 2px 8px; border-radius: 6px; font-weight: 500 }
+  .dur { color: var(--purple); font-weight: 500 }
+  .pv { color: var(--text2) }
+  .empty { text-align: center; padding: 40px; color: var(--text3) }
+  /* User bar */
+  .user-bar { display: flex; gap: 8px; align-items: center }
+  .user-pic { width: 28px; height: 28px; border-radius: 50%; object-fit: cover }
+  .user-name { font-weight: 500 }
+  .user-email { font-size: 12px; color: var(--text3) }
+  .today-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 4px }
+  #loading { text-align: center; padding: 40px; color: var(--text3) }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">🦁 <em>Wblions</em></div>
+  <a href="/" class="hbtn">← Дашборд</a>
+  <a href="/admin" class="hbtn">⚙️ Пользователи</a>
+  <div class="sp"></div>
+  <span style="color:var(--text3);font-size:13px" id="updated-at"></span>
+</div>
+
+<div class="main">
+  <h1>📊 Активность сотрудников</h1>
+  <div class="subtitle">Когда заходили на дашборд и как долго работали · последние 30 дней</div>
+
+  <div class="stat-row" id="stat-row">
+    <div class="stat-card"><div class="stat-label">Активных сегодня</div><div class="stat-value" id="s-today">—</div></div>
+    <div class="stat-card"><div class="stat-label">Активных за 7 дней</div><div class="stat-value" id="s-week">—</div></div>
+    <div class="stat-card"><div class="stat-label">Всего визитов за 30 дней</div><div class="stat-value" id="s-total">—</div></div>
+    <div class="stat-card"><div class="stat-label">Среднее время/день</div><div class="stat-value" id="s-avg">—</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="ftabs" id="period-tabs">
+      <button class="tab active" onclick="setPeriod('today',this)">Сегодня</button>
+      <button class="tab" onclick="setPeriod('week',this)">7 дней</button>
+      <button class="tab" onclick="setPeriod('month',this)">30 дней</button>
+    </div>
+    <select class="psel" id="user-filter" onchange="renderTable()">
+      <option value="">Все сотрудники</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <div id="loading">⏳ Загрузка...</div>
+    <table id="act-table" style="display:none">
+      <thead>
+        <tr>
+          <th>Сотрудник</th>
+          <th>Дата</th>
+          <th>Первый вход</th>
+          <th>Последняя активность</th>
+          <th>Время на сайте</th>
+          <th>Визитов/действий</th>
+        </tr>
+      </thead>
+      <tbody id="act-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let allRows = [];
+let curPeriod = 'today';
+
+function fmtDur(sec){
+  if(!sec || sec < 60) return '< 1 мин';
+  const h = Math.floor(sec/3600);
+  const m = Math.floor((sec%3600)/60);
+  return h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
+}
+
+function fmtTime(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+}
+
+function fmtDateRu(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.floor((today - d) / 86400000);
+  const months = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  const base = d.getDate() + ' ' + months[d.getMonth()];
+  if(diff === 0) return `<span><span class="today-dot"></span>сегодня</span>`;
+  if(diff === 1) return 'вчера';
+  return base;
+}
+
+function setPeriod(p, el){
+  curPeriod = p;
+  document.querySelectorAll('#period-tabs .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderTable();
+}
+
+function filterByPeriod(rows){
+  const today = new Date(); today.setHours(0,0,0,0);
+  if(curPeriod === 'today'){
+    return rows.filter(r => new Date(r.date) >= today);
+  } else if(curPeriod === 'week'){
+    const w = new Date(today); w.setDate(w.getDate() - 6);
+    return rows.filter(r => new Date(r.date) >= w);
+  }
+  return rows;
+}
+
+function renderTable(){
+  const userF = document.getElementById('user-filter').value;
+  let rows = filterByPeriod(allRows);
+  if(userF) rows = rows.filter(r => r.email === userF);
+
+  const tbody = document.getElementById('act-tbody');
+  if(!rows.length){
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Нет данных за выбранный период</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>
+        <div style="font-weight:500">${r.name||r.email}</div>
+        <div style="font-size:11px;color:var(--text3)">${r.email}</div>
+      </td>
+      <td>${fmtDateRu(r.date)}</td>
+      <td style="color:var(--text2)">${fmtTime(r.first_seen)}</td>
+      <td style="color:var(--text2)">${fmtTime(r.last_seen)}</td>
+      <td class="dur">${fmtDur(r.duration_sec)}</td>
+      <td class="pv">${r.page_views}</td>
+    </tr>
+  `).join('');
+}
+
+function updateStats(rows){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const week  = new Date(today); week.setDate(week.getDate() - 6);
+
+  const todayRows  = rows.filter(r => new Date(r.date) >= today);
+  const weekRows   = rows.filter(r => new Date(r.date) >= week);
+  const todayUsers = new Set(todayRows.map(r=>r.email)).size;
+  const weekUsers  = new Set(weekRows.map(r=>r.email)).size;
+  const totalVisits = rows.reduce((s,r)=>s+r.page_views, 0);
+  const avgSec = rows.length ? Math.floor(rows.reduce((s,r)=>s+r.duration_sec,0) / rows.length) : 0;
+
+  document.getElementById('s-today').textContent = todayUsers;
+  document.getElementById('s-week').textContent  = weekUsers;
+  document.getElementById('s-total').textContent = totalVisits;
+  document.getElementById('s-avg').textContent   = fmtDur(avgSec);
+}
+
+function populateUserFilter(rows){
+  const sel = document.getElementById('user-filter');
+  const prev = sel.value;
+  const users = [...new Map(rows.map(r=>[r.email, r.name||r.email])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
+  sel.innerHTML = '<option value="">Все сотрудники</option>' +
+    users.map(([email, name])=>`<option value="${email}"${email===prev?' selected':''}>${name}</option>`).join('');
+}
+
+async function loadActivity(){
+  try{
+    const r = await fetch('/api/admin/activity');
+    allRows = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('act-table').style.display = '';
+    updateStats(allRows);
+    populateUserFilter(allRows);
+    renderTable();
+    document.getElementById('updated-at').textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  } catch(e){
+    document.getElementById('loading').textContent = 'Ошибка загрузки';
+  }
+}
+
+loadActivity();
+setInterval(loadActivity, 60000);
+</script>
+</body>
+</html>

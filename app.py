@@ -133,6 +133,19 @@ def _ensure_design_tables():
                         UNIQUE (task_id, claimed_date)
                     )
                 """)
+                # Логи активности пользователей
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS user_activity (
+                        id          SERIAL PRIMARY KEY,
+                        email       TEXT NOT NULL,
+                        name        TEXT NOT NULL DEFAULT '',
+                        date        DATE NOT NULL DEFAULT CURRENT_DATE,
+                        first_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        last_seen   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        page_views  INT NOT NULL DEFAULT 1,
+                        UNIQUE (email, date)
+                    )
+                """)
             conn.commit()
         logging.info("Design tables ready.")
         # Миграция created_by_email — в отдельной транзакции, ошибки не критичны
@@ -718,6 +731,94 @@ def api_notifications_read():
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/notifications/inbox")
+@require_auth
+def api_notifications_inbox():
+    """Последние 30 уведомлений (прочитанные + непрочитанные) для bell-панели."""
+    u = _session_user()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, type, title, message, task_id, read, created_at "
+                    "FROM notifications WHERE user_email=%s "
+                    "ORDER BY created_at DESC LIMIT 30",
+                    (u["email"],),
+                )
+                rows = cur.fetchall()
+                unread = sum(1 for r in rows if not r["read"])
+        return jsonify({"unread": unread, "notifications": [
+            {
+                "id":         r["id"],
+                "type":       r["type"],
+                "title":      r["title"],
+                "message":    r["message"],
+                "task_id":    r["task_id"],
+                "read":       r["read"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ─── Activity API ─────────────────────────────────────────────────────────────
+
+@app.route("/api/activity/ping", methods=["POST"])
+@require_auth
+def api_activity_ping():
+    """Пинг активности — вызывается JS при загрузке страницы и каждую минуту."""
+    u = _session_user()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO user_activity (email, name, date, first_seen, last_seen, page_views)
+                    VALUES (%s, %s, CURRENT_DATE, NOW(), NOW(), 1)
+                    ON CONFLICT (email, date) DO UPDATE
+                      SET last_seen  = NOW(),
+                          page_views = user_activity.page_views + 1,
+                          name       = EXCLUDED.name
+                """, (u["email"], u.get("name", "")))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/activity")
+@require_admin_api
+def api_admin_activity():
+    """Логи активности пользователей — последние 30 дней."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT email, name, date,
+                           first_seen, last_seen,
+                           EXTRACT(EPOCH FROM (last_seen - first_seen))::INT AS duration_sec,
+                           page_views
+                    FROM user_activity
+                    WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+                    ORDER BY date DESC, last_seen DESC
+                """)
+                rows = cur.fetchall()
+        return jsonify([{
+            "email":        r["email"],
+            "name":         r["name"],
+            "date":         r["date"].isoformat(),
+            "first_seen":   r["first_seen"].isoformat() if r["first_seen"] else None,
+            "last_seen":    r["last_seen"].isoformat() if r["last_seen"] else None,
+            "duration_sec": r["duration_sec"] or 0,
+            "page_views":   r["page_views"],
+        } for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/admin/activity")
+@require_admin
+def admin_activity():
+    return render_template("activity.html")
 
 # ─── Task API ─────────────────────────────────────────────────────────────────
 @app.route("/api/tasks")
