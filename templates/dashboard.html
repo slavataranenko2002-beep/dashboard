@@ -306,11 +306,13 @@ tr:hover td{background:rgba(128,128,255,.03)}
 .bell-wrap { position:relative }
 .bell-btn {
   background: none; border: none; cursor: pointer;
-  font-size: 20px; padding: 6px 8px; border-radius: 8px;
+  width: 36px; height: 36px; border-radius: 8px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
   color: var(--text2); transition: color .15s, background .15s;
   position: relative;
 }
 .bell-btn:hover { background: var(--bg3); color: var(--text) }
+.bell-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round }
 .bell-badge {
   position: absolute; top: 2px; right: 2px;
   background: var(--red); color: #fff;
@@ -412,13 +414,16 @@ tr:hover td{background:rgba(128,128,255,.03)}
     {% endif %}
     <div class="bell-wrap" id="bell-wrap">
       <button class="bell-btn" onclick="toggleBellPanel()" title="Уведомления" id="bell-btn">
-        🔔
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <span class="bell-badge hidden" id="bell-badge">0</span>
       </button>
       <div class="bell-panel" id="bell-panel">
         <div class="bell-panel-head">
           <span>Уведомления</span>
-          <button class="bell-panel-clear" onclick="markAllRead()">Прочитать все</button>
+          <div style="display:flex;gap:8px">
+            <button class="bell-panel-clear" onclick="markAllRead()">Прочитать все</button>
+            <button class="bell-panel-clear" onclick="dismissAll()" style="color:var(--red);opacity:.7">Очистить</button>
+          </div>
         </div>
         <div class="bell-list" id="bell-list">
           <div class="bell-empty">Загрузка...</div>
@@ -1998,6 +2003,12 @@ async function markAllRead(){
   await fetch('/api/notifications/read', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
   _updateBellBadge(0);
   await _loadBellInbox();
+}
+
+async function dismissAll(){
+  await fetch('/api/notifications/dismiss', {method:'POST'});
+  _updateBellBadge(0);
+  document.getElementById('bell-list').innerHTML = '<div class="bell-empty">Нет уведомлений</div>';
 }
 
 // Закрыть панель при клике вне

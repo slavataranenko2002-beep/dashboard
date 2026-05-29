@@ -133,6 +133,7 @@ def _ensure_design_tables():
                         UNIQUE (task_id, claimed_date)
                     )
                 """)
+                cur.execute("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS dismissed BOOLEAN DEFAULT FALSE")
                 # Логи активности пользователей
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS user_activity (
@@ -732,6 +733,23 @@ def api_notifications_read():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/notifications/dismiss", methods=["POST"])
+@require_auth
+def api_notifications_dismiss():
+    """Скрывает все уведомления из панели (dismissed=TRUE), из БД не удаляет."""
+    u = _session_user()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE notifications SET dismissed=TRUE WHERE user_email=%s",
+                    (u["email"],)
+                )
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/notifications/inbox")
 @require_auth
 def api_notifications_inbox():
@@ -742,7 +760,7 @@ def api_notifications_inbox():
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT id, type, title, message, task_id, read, created_at "
-                    "FROM notifications WHERE user_email=%s "
+                    "FROM notifications WHERE user_email=%s AND dismissed=FALSE "
                     "ORDER BY created_at DESC LIMIT 30",
                     (u["email"],),
                 )
