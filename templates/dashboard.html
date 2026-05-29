@@ -1916,6 +1916,9 @@ function _showToast(notif) {
   }, 4000);
 }
 
+// ID уведомлений, которые уже показали как тост (чтобы не дублировать)
+const _shownToastIds = new Set();
+
 let _notifPolling = false;
 async function _pollNotifications() {
   if (_notifPolling) return;
@@ -1924,16 +1927,12 @@ async function _pollNotifications() {
     const r = await fetch('/api/notifications');
     if (!r.ok) return;
     const data = await r.json();
-    const items = data.notifications || [];
-    if (items.length > 0) {
+    // Показываем только те, которые ещё не показывали
+    const fresh = (data.notifications || []).filter(n => !_shownToastIds.has(n.id));
+    if (fresh.length > 0) {
       _notifSound();
-      items.forEach(n => _showToast(n));
-      // Помечаем прочитанными
-      await fetch('/api/notifications/read', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ ids: items.map(n => n.id) }),
-      });
+      fresh.forEach(n => { _showToast(n); _shownToastIds.add(n.id); });
+      // НЕ помечаем как read — пусть пользователь откроет панель
     }
   } catch(e) {}
   finally { _notifPolling = false; }
@@ -1959,7 +1958,12 @@ let _bellOpen = false;
 async function toggleBellPanel(){
   _bellOpen = !_bellOpen;
   document.getElementById('bell-panel').classList.toggle('open', _bellOpen);
-  if(_bellOpen) await _loadBellInbox();
+  if(_bellOpen){
+    await _loadBellInbox();
+    // Помечаем прочитанными при открытии панели
+    await fetch('/api/notifications/read', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    _updateBellBadge(0);
+  }
 }
 
 async function _loadBellInbox(){
