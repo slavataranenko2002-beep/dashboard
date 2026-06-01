@@ -958,17 +958,27 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         if stocks == 0:
             continue
 
-        # Средняя цена: если текущий месяц пустой — берём прошлый
         avg_price_cur  = round(ord_rub / ord_qty) if ord_qty else 0
         avg_price_prev = round(ord_rub_past / ord_qty_past) if ord_qty_past else 0
-        avg_price      = avg_price_cur if avg_price_cur else avg_price_prev
-        avg_price_is_prev = (avg_price_cur == 0 and avg_price_prev > 0)
-
-        # % выкупа: если текущий месяц пустой — берём прошлый (из воронки)
         buyout_pct_cur  = round(sal_qty / ord_qty * 100, 1) if ord_qty else 0.0
         buyout_pct_prev = round(buyout_past / ord_qty_past * 100, 1) if ord_qty_past else 0.0
-        buyout_pct      = buyout_pct_cur if buyout_pct_cur else buyout_pct_prev
-        buyout_pct_is_prev = (buyout_pct_cur == 0 and buyout_pct_prev > 0)
+
+        # Первые 7 дней текущего месяца — данных мало, используем прошлый месяц
+        # для планировочных показателей (средняя цена, % выкупа).
+        # После 7-го числа — только если текущее значение = 0.
+        from datetime import date as _today_cls
+        _today = _today_cls.today()
+        _is_current_month = (date_from.year == _today.year and date_from.month == _today.month)
+        _early_month = _is_current_month and _today.day <= 7
+
+        use_prev_avg    = _early_month or (avg_price_cur == 0 and avg_price_prev > 0)
+        use_prev_buyout = _early_month or (buyout_pct_cur == 0 and buyout_pct_prev > 0)
+
+        avg_price          = avg_price_prev if use_prev_avg and avg_price_prev else avg_price_cur
+        avg_price_is_prev  = use_prev_avg and avg_price_prev > 0
+
+        buyout_pct         = buyout_pct_prev if use_prev_buyout and buyout_pct_prev else buyout_pct_cur
+        buyout_pct_is_prev = use_prev_buyout and buyout_pct_prev > 0
 
         articles.append({
             "vendor_code":        vc,
