@@ -602,8 +602,8 @@ function makeRow(a){
     <td>${fmt(a.sales_rub_plan)}</td>
     <td>${fmt(a.sales_qty_plan)}</td>
     <td>${fmt(a.stocks)}</td>
-    <td>${fmt(a.avg_price)}</td>
-    <td>${a.buyout_pct}%</td>
+    <td>${fmt(a.avg_price)}${a.avg_price_is_prev?'<span title="Данные за прошлый месяц" style="font-size:10px;color:var(--text3);margin-left:3px">пр.м</span>':''}</td>
+    <td>${a.buyout_pct}%${a.buyout_pct_is_prev?'<span title="Данные за прошлый месяц" style="font-size:10px;color:var(--text3);margin-left:3px">пр.м</span>':''}</td>
     <td style="font-weight:600">${fmt(a.orders_rub_fact)}</td>
     <td>${fmt(a.orders_qty_fact)}</td>
     <td class="sub">${a.orders_per_day}</td>

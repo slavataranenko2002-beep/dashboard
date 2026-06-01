@@ -948,7 +948,9 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         title    = str(get_product_field(p, "title") or "")
         ord_qty      = int(_funnel_metric(p, "orderCount", "selected"))
         ord_qty_past = int(_funnel_metric(p, "orderCount", "past"))
-        ord_rub  = float(_funnel_metric(p, "orderSum",   "selected"))
+        ord_rub      = float(_funnel_metric(p, "orderSum",    "selected"))
+        ord_rub_past = float(_funnel_metric(p, "orderSum",    "past"))
+        buyout_past  = int(_funnel_metric(p, "buyoutCount", "past"))
         sal_qty  = int(sales_by_vc.get(vc, 0))
         sal_rub  = float(sales_rub_by_vc.get(vc, 0.0))
         stocks   = int(stock_by_vc.get(vc, 0))
@@ -956,21 +958,32 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         if stocks == 0:
             continue
 
-        avg_price   = round(ord_rub / ord_qty) if ord_qty else 0
-        buyout_pct  = round(sal_qty / ord_qty * 100, 1) if ord_qty else 0.0
+        # Средняя цена: если текущий месяц пустой — берём прошлый
+        avg_price_cur  = round(ord_rub / ord_qty) if ord_qty else 0
+        avg_price_prev = round(ord_rub_past / ord_qty_past) if ord_qty_past else 0
+        avg_price      = avg_price_cur if avg_price_cur else avg_price_prev
+        avg_price_is_prev = (avg_price_cur == 0 and avg_price_prev > 0)
+
+        # % выкупа: если текущий месяц пустой — берём прошлый (из воронки)
+        buyout_pct_cur  = round(sal_qty / ord_qty * 100, 1) if ord_qty else 0.0
+        buyout_pct_prev = round(buyout_past / ord_qty_past * 100, 1) if ord_qty_past else 0.0
+        buyout_pct      = buyout_pct_cur if buyout_pct_cur else buyout_pct_prev
+        buyout_pct_is_prev = (buyout_pct_cur == 0 and buyout_pct_prev > 0)
 
         articles.append({
-            "vendor_code":     vc,
-            "nm_id":           nm_id,
-            "title":           title,
-            "orders_qty_fact": ord_qty,
-            "orders_qty_past": ord_qty_past,  # факт прошлого месяца для авто-расчёта плана
-            "orders_rub_fact": ord_rub,
-            "sales_qty_fact":  sal_qty,
-            "sales_rub_fact":  sal_rub,
-            "stocks":          stocks,
-            "avg_price":       avg_price,
-            "buyout_pct":      buyout_pct,
+            "vendor_code":        vc,
+            "nm_id":              nm_id,
+            "title":              title,
+            "orders_qty_fact":    ord_qty,
+            "orders_qty_past":    ord_qty_past,
+            "orders_rub_fact":    ord_rub,
+            "sales_qty_fact":     sal_qty,
+            "sales_rub_fact":     sal_rub,
+            "stocks":             stocks,
+            "avg_price":          avg_price,
+            "avg_price_is_prev":  avg_price_is_prev,
+            "buyout_pct":         buyout_pct,
+            "buyout_pct_is_prev": buyout_pct_is_prev,
         })
 
     articles.sort(key=lambda x: x["orders_rub_fact"], reverse=True)
