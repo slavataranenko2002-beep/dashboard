@@ -1351,11 +1351,18 @@ def api_debug_cabinets():
         env_var = f"WB_API_KEY_{slug}"
         key_val = os.environ.get(env_var, "")
         result.append({
-            "cabinet": cab,
-            "env_var": env_var,
-            "key_set": bool(key_val),
-            "key_prefix": key_val[:8] + "..." if key_val else "",
+            "cabinet":    cab,
+            "env_var":    env_var,
+            "key_set":    bool(key_val),
+            "key_start":  key_val[:20]  if key_val else "",
+            "key_end":    key_val[-10:] if key_val else "",
+            "key_len":    len(key_val),
         })
+    # Помечаем дубликаты ключей
+    keys = [r["key_start"] + r["key_end"] for r in result]
+    for i, r in enumerate(result):
+        r["duplicate_of"] = [result[j]["cabinet"] for j in range(len(result))
+                             if j != i and keys[j] == keys[i] and keys[i]]
     return jsonify(result)
 
 @app.route("/api/plan-fact")
