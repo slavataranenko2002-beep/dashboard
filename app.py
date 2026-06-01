@@ -1365,6 +1365,31 @@ def api_debug_cabinets():
                              if j != i and keys[j] == keys[i] and keys[i]]
     return jsonify(result)
 
+@app.route("/api/debug/stocks")
+@require_admin_api
+def api_debug_stocks():
+    """Диагностика: сколько записей/артикулов возвращает WB stocks API для кабинета."""
+    from wb_api import WBClient, aggregate_stocks_by_article
+    cabinet = request.args.get("cabinet", "").strip()
+    if not cabinet or cabinet not in WB_CABINETS:
+        return jsonify({"error": "unknown cabinet"}), 400
+    date_from = request.args.get("date_from", "2019-01-01")
+    with WBClient(cabinet) as wb:
+        raw = wb.get_stocks(date_from)
+    by_vc, total, meta = aggregate_stocks_by_article(raw)
+    articles_with_stock = {vc: qty for vc, qty in by_vc.items() if qty > 0}
+    sample = sorted(articles_with_stock.items(), key=lambda x: -x[1])[:20]
+    return jsonify({
+        "cabinet":            cabinet,
+        "date_from":          date_from,
+        "raw_rows":           len(raw),
+        "unique_articles":    len(by_vc),
+        "articles_stock_gt0": len(articles_with_stock),
+        "stock_total":        total,
+        "top20":              [{"vc": vc, "qty": qty} for vc, qty in sample],
+        "sample_raw_row":     raw[0] if raw else None,
+    })
+
 @app.route("/api/plan-fact")
 @require_auth
 def api_plan_fact_get():

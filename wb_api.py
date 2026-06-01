@@ -628,7 +628,7 @@ def collect_report_data(
     )
 
     # Агрегация складских остатков
-    stock_by_vendor, stock_total = aggregate_stocks_by_article(stocks_raw)
+    stock_by_vendor, stock_total, _stock_meta = aggregate_stocks_by_article(stocks_raw)
 
     # Агрегаты кабинета — текущий период (воронка)
     cur_views   = sum(_funnel_metric(p, "openCount",  "selected") for p in products)
@@ -812,20 +812,29 @@ def aggregate_sales_by_article(
     return by_article, total_count, total_for_pay, by_article_for_pay
 
 
-def aggregate_stocks_by_article(stocks: list[dict]) -> tuple[dict[str, int], int]:
+def aggregate_stocks_by_article(stocks: list[dict]) -> tuple[dict[str, int], int, dict[str, dict]]:
     """
     Агрегирует складские остатки по артикулу.
-    Возвращает: ({supplierArticle: quantityFull}, total_quantity_full)
+    Возвращает: ({supplierArticle: quantityFull}, total_quantity_full, {supplierArticle: {nmId, title}})
     """
     by_article: dict[str, int] = {}
+    meta: dict[str, dict] = {}
     total = 0
     for s in stocks:
         qty = int(s.get("quantityFull") or 0)
         key = str(s.get("supplierArticle") or "").strip()
         if key:
             by_article[key] = by_article.get(key, 0) + qty
+            if key not in meta:
+                subject = str(s.get("subject") or s.get("category") or "")
+                brand   = str(s.get("brand") or "")
+                title   = f"{brand} {subject}".strip() if (brand or subject) else key
+                meta[key] = {
+                    "nmId": s.get("nmId"),
+                    "title": title,
+                }
         total += qty
-    return by_article, total
+    return by_article, total, meta
 
 
 def _funnel_metric(product: dict, field: str, period: str) -> float:
@@ -926,8 +935,9 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         # 2. Продажи/выкупы из Statistics API
         sales_raw = wb.get_sales(fmt_date(date_from))
 
-        # 3. Складские остатки
-        stocks_raw = wb.get_stocks(fmt_date(date_from))
+        # 3. Складские остатки — dateFrom=2019-01-01 чтобы получить все текущие остатки,
+        #    а не только те что изменились с date_from (WB фильтрует по дате изменения).
+        stocks_raw = wb.get_stocks("2019-01-01")
 
         # 4. Расход на рекламу за период
         upd_rows = wb.get_upd(fmt_date(date_from), fmt_date(date_to))
@@ -935,41 +945,45 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
     sales_by_vc, _, _, sales_rub_by_vc = aggregate_sales_by_article(
         sales_raw, date_from, date_to
     )
-    stock_by_vc, stock_total = aggregate_stocks_by_article(stocks_raw)
+    stock_by_vc, stock_total, stock_meta = aggregate_stocks_by_article(stocks_raw)
 
-    # Артикулы строго из воронки — она возвращает все активные артикулы кабинета.
-    # Продажи и остатки используются для обогащения, а не как источник артикулов.
-    articles = []
+    # Индекс воронки по vendorCode для быстрого поиска
+    funnel_by_vc: dict[str, dict] = {}
     for p in products:
-        vc    = str(get_product_field(p, "vendorCode") or "").strip()
-        if not vc:
+        vc = str(get_product_field(p, "vendorCode") or "").strip()
+        if vc:
+            funnel_by_vc[vc] = p
+
+    # Источник артикулов — складские остатки (остаток > 0).
+    # Воронка используется для обогащения метриками где доступна.
+    from datetime import date as _today_cls
+    _today = _today_cls.today()
+    _is_current_month = (date_from.year == _today.year and date_from.month == _today.month)
+    _early_month = _is_current_month and _today.day <= 7
+
+    articles = []
+    for vc, stocks in stock_by_vc.items():
+        if stocks <= 0:
             continue
-        nm_id    = get_product_field(p, "nmId")
-        title    = str(get_product_field(p, "title") or "")
-        ord_qty      = int(_funnel_metric(p, "orderCount", "selected"))
-        ord_qty_past = int(_funnel_metric(p, "orderCount", "past"))
-        ord_rub      = float(_funnel_metric(p, "orderSum",    "selected"))
-        ord_rub_past = float(_funnel_metric(p, "orderSum",    "past"))
-        buyout_past  = int(_funnel_metric(p, "buyoutCount", "past"))
+
+        p = funnel_by_vc.get(vc)
+        m = stock_meta.get(vc, {})
+
+        nm_id = (get_product_field(p, "nmId") if p else None) or m.get("nmId")
+        title = (str(get_product_field(p, "title") or "") if p else "") or m.get("title", vc)
+
+        ord_qty      = int(_funnel_metric(p, "orderCount", "selected")) if p else 0
+        ord_qty_past = int(_funnel_metric(p, "orderCount", "past"))     if p else 0
+        ord_rub      = float(_funnel_metric(p, "orderSum",  "selected")) if p else 0.0
+        ord_rub_past = float(_funnel_metric(p, "orderSum",  "past"))     if p else 0.0
+        buyout_past  = int(_funnel_metric(p, "buyoutCount", "past"))     if p else 0
         sal_qty  = int(sales_by_vc.get(vc, 0))
         sal_rub  = float(sales_rub_by_vc.get(vc, 0.0))
-        stocks   = int(stock_by_vc.get(vc, 0))
-
-        if stocks == 0:
-            continue
 
         avg_price_cur  = round(ord_rub / ord_qty) if ord_qty else 0
         avg_price_prev = round(ord_rub_past / ord_qty_past) if ord_qty_past else 0
         buyout_pct_cur  = round(sal_qty / ord_qty * 100, 1) if ord_qty else 0.0
         buyout_pct_prev = round(buyout_past / ord_qty_past * 100, 1) if ord_qty_past else 0.0
-
-        # Первые 7 дней текущего месяца — данных мало, используем прошлый месяц
-        # для планировочных показателей (средняя цена, % выкупа).
-        # После 7-го числа — только если текущее значение = 0.
-        from datetime import date as _today_cls
-        _today = _today_cls.today()
-        _is_current_month = (date_from.year == _today.year and date_from.month == _today.month)
-        _early_month = _is_current_month and _today.day <= 7
 
         use_prev_avg    = _early_month or (avg_price_cur == 0 and avg_price_prev > 0)
         use_prev_buyout = _early_month or (buyout_pct_cur == 0 and buyout_pct_prev > 0)
