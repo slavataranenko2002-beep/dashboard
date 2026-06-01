@@ -1340,6 +1340,24 @@ def plan_fact_page():
         can_edit=_planfact_can_edit(u),
     )
 
+@app.route("/api/debug/cabinets")
+@require_admin_api
+def api_debug_cabinets():
+    """Показывает какие env-переменные используются для каждого кабинета (без самих ключей)."""
+    from wb_api import cabinet_env_slug, get_cabinet_key
+    result = []
+    for cab in WB_CABINETS:
+        slug    = cabinet_env_slug(cab)
+        env_var = f"WB_API_KEY_{slug}"
+        key_val = os.environ.get(env_var, "")
+        result.append({
+            "cabinet": cab,
+            "env_var": env_var,
+            "key_set": bool(key_val),
+            "key_prefix": key_val[:8] + "..." if key_val else "",
+        })
+    return jsonify(result)
+
 @app.route("/api/plan-fact")
 @require_auth
 def api_plan_fact_get():
