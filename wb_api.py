@@ -935,9 +935,11 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         # 2. Продажи/выкупы из Statistics API
         sales_raw = wb.get_sales(fmt_date(date_from))
 
-        # 3. Складские остатки — dateFrom=2019-01-01 чтобы получить все текущие остатки,
-        #    а не только те что изменились с date_from (WB фильтрует по дате изменения).
-        stocks_raw = wb.get_stocks("2019-01-01")
+        # 3. Складские остатки.
+        #    WB фильтрует по дате изменения, поэтому берём с запасом — 6 месяцев назад,
+        #    чтобы захватить артикулы без движения в текущем месяце.
+        stocks_date = (date_from.replace(day=1) - timedelta(days=180)).strftime("%Y-%m-%d")
+        stocks_raw = wb.get_stocks(stocks_date)
 
         # 4. Расход на рекламу за период
         upd_rows = wb.get_upd(fmt_date(date_from), fmt_date(date_to))
