@@ -949,28 +949,13 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
     )
     stock_by_vc, stock_total, stock_meta = aggregate_stocks_by_article(stocks_raw)
 
-    # Индекс воронки по vendorCode для быстрого поиска
-    funnel_by_vc: dict[str, dict] = {}
-    for p in products:
-        vc = str(get_product_field(p, "vendorCode") or "").strip()
-        if vc:
-            funnel_by_vc[vc] = p
-
-    # Источник артикулов — складские остатки (остаток > 0).
-    # Воронка используется для обогащения метриками где доступна.
     from datetime import date as _today_cls
     _today = _today_cls.today()
     _is_current_month = (date_from.year == _today.year and date_from.month == _today.month)
     _early_month = _is_current_month and _today.day <= 7
 
-    articles = []
-    for vc, stocks in stock_by_vc.items():
-        if stocks <= 0:
-            continue
-
-        p = funnel_by_vc.get(vc)
+    def _build_article(vc: str, p, stocks: int) -> dict:
         m = stock_meta.get(vc, {})
-
         nm_id = (get_product_field(p, "nmId") if p else None) or m.get("nmId")
         title = (str(get_product_field(p, "title") or "") if p else "") or m.get("title", vc)
 
@@ -992,11 +977,10 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
 
         avg_price          = avg_price_prev if use_prev_avg and avg_price_prev else avg_price_cur
         avg_price_is_prev  = use_prev_avg and avg_price_prev > 0
-
         buyout_pct         = buyout_pct_prev if use_prev_buyout and buyout_pct_prev else buyout_pct_cur
         buyout_pct_is_prev = use_prev_buyout and buyout_pct_prev > 0
 
-        articles.append({
+        return {
             "vendor_code":        vc,
             "nm_id":              nm_id,
             "title":              title,
@@ -1010,7 +994,27 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
             "avg_price_is_prev":  avg_price_is_prev,
             "buyout_pct":         buyout_pct,
             "buyout_pct_is_prev": buyout_pct_is_prev,
-        })
+        }
+
+    # Проход 1: артикулы из воронки у которых есть остаток (как было раньше — надёжно).
+    articles = []
+    seen_vcs: set[str] = set()
+    for p in products:
+        vc = str(get_product_field(p, "vendorCode") or "").strip()
+        if not vc:
+            continue
+        stocks = int(stock_by_vc.get(vc, 0))
+        if stocks == 0:
+            continue
+        seen_vcs.add(vc)
+        articles.append(_build_article(vc, p, stocks))
+
+    # Проход 2: артикулы с остатком > 0, которых нет в воронке.
+    # Это артикулы без заказов в выбранном периоде — нужны для планирования.
+    for vc, stocks in stock_by_vc.items():
+        if vc in seen_vcs or stocks <= 0:
+            continue
+        articles.append(_build_article(vc, None, stocks))
 
     articles.sort(key=lambda x: x["orders_rub_fact"], reverse=True)
 
