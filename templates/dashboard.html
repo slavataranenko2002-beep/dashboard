@@ -994,15 +994,16 @@ function render(){
 
 function updateSidebar(){
   const projects = {{ projects_json | safe }};
-  const total = allTasks.length;
-  const none = allTasks.filter(t=>!t.project).length;
+  const inWork = allTasks.filter(t=>!t.done);
+  const total = inWork.length;
+  const none = inWork.filter(t=>!t.project).length;
   const elAll = document.getElementById('cnt-all');
   if(elAll) elAll.textContent = total;
   const elNone = document.getElementById('cnt-__none__');
   if(elNone) elNone.textContent = none;
   projects.forEach(p=>{
     const el = document.getElementById('cnt-'+p);
-    if(el) el.textContent = allTasks.filter(t=>t.project===p).length;
+    if(el) el.textContent = inWork.filter(t=>t.project===p).length;
   });
 }
 
