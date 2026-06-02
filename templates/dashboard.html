@@ -528,7 +528,6 @@ tr:hover td{background:rgba(128,128,255,.03)}
             <option value="">Без проекта</option>
             <option value="KSF">🔵 KSF</option>
             <option value="KLIFE">🟣 KLIFE</option>
-            <option value="BERKUT">🦅 BERKUT</option>
             <option value="PA">🟢 PA</option>
             <option value="PIELE">🟡 PIELE</option>
             <option value="Визенкова">🟠 Визенкова</option>
@@ -724,7 +723,6 @@ tr:hover td{background:rgba(128,128,255,.03)}
         <option value="">Без проекта</option>
         <option value="KSF">🔵 KSF</option>
         <option value="KLIFE">🟣 KLIFE</option>
-        <option value="BERKUT">🦅 BERKUT</option>
         <option value="PA">🟢 PA</option>
         <option value="PIELE">🟡 PIELE</option>
         <option value="Визенкова">🟠 Визенкова</option>
@@ -847,11 +845,11 @@ const USER_ROLE = {{ current_user.role | tojson }};
 const USER_NAME = {{ current_user.name | tojson }};
 
 const PROJ_COLORS = {
-  KSF:'#4a9eff', KLIFE:'#a78bfa', BERKUT:'#f87171',
+  KSF:'#4a9eff', KLIFE:'#a78bfa',
   PA:'#4ade80', PIELE:'#fbbf24', 'Визенкова':'#fb923c'
 };
 const PROJ_EMOJI = {
-  KSF:'🔵', KLIFE:'🟣', BERKUT:'🦅', PA:'🟢', PIELE:'🟡', 'Визенкова':'🟠'
+  KSF:'🔵', KLIFE:'🟣', PA:'🟢', PIELE:'🟡', 'Визенкова':'🟠'
 };
 const PRIO = {high:'🔴 Срочно', med:'🟡 Обычная', low:'🟢 Низкий'};
 const MON = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
