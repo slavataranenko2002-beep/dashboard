@@ -14,10 +14,10 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").replace("postgres://", "postgr
 MSK = pytz.timezone("Europe/Moscow")
 
 # ─── Проекты ──────────────────────────────────────────────────
-PROJECTS = ["KSF", "KLIFE", "BERKUT", "PA", "PIELE", "Визенкова"]
+PROJECTS = ["KSF", "KLIFE", "PA", "PIELE", "Визенкова"]
 
 PROJECT_EMOJI = {
-    "KSF": "🔵", "KLIFE": "🟣", "BERKUT": "🦅",
+    "KSF": "🔵", "KLIFE": "🟣",
     "PA": "🟢",  "PIELE": "🟡", "Визенкова": "🟠",
 }
 
