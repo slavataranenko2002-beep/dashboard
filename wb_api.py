@@ -1018,6 +1018,14 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
 
     articles.sort(key=lambda x: x["orders_rub_fact"], reverse=True)
 
+    logger.info(
+        f"[planfact:{cabinet}] products={len(products)} "
+        f"stock_vcs={len(stock_by_vc)} "
+        f"stock_total={stock_total} "
+        f"articles={len(articles)} "
+        f"stocks_date={stocks_date}"
+    )
+
     adv_spend = sum(float(r.get("updSum") or 0) for r in upd_rows)
     orders_rub_total = sum(a["orders_rub_fact"] for a in articles)
     sales_rub_total  = sum(a["sales_rub_fact"]  for a in articles)

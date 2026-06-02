@@ -1499,6 +1499,12 @@ def api_plan_fact_get():
         }
         data["season_coefficients"] = season_coefficients
         data["season_names"]        = all_season_names
+        data["_debug"] = {
+            "articles_count": len(data["articles"]),
+            "d_from": d_from.isoformat(),
+            "d_to":   d_to.isoformat(),
+            "cabinet": cabinet,
+        }
         return jsonify(data)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
