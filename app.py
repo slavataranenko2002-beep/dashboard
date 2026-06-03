@@ -179,6 +179,7 @@ def _ensure_design_tables():
                     END $$
                 """)
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS stock INTEGER DEFAULT 0")
+                cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS spp_pct NUMERIC(5,2) DEFAULT 0")
                 # Ежедневные бэкапы
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS unit_economics_backup (
@@ -2197,7 +2198,7 @@ def unit_page():
     return render_template(
         "unit.html",
         current_user=u,
-        projects=PROJECTS,
+        projects=WB_CABINETS,
         project_emoji=PROJECT_EMOJI,
     )
 
@@ -2228,6 +2229,7 @@ def _unit_row_params(d):
         "drr_pct":          d.get("drr_pct") or 0,
         "drr_external_rub": d.get("drr_external_rub") or 0,
         "stock":            d.get("stock") or 0,
+        "spp_pct":          d.get("spp_pct") or 0,
     }
 
 
@@ -2244,7 +2246,7 @@ def api_unit_rows_get():
                            defect_pct, width_cm, length_cm, height_cm, liters,
                            redemption_pct, warehouse, irp, logistics_ktr,
                            reception_coef, storage_per_day, commission_pct,
-                           wb_price, drr_pct, drr_external_rub, stock
+                           wb_price, drr_pct, drr_external_rub, stock, spp_pct
                     FROM unit_economics
                     WHERE project = %s
                     ORDER BY id ASC
@@ -2287,14 +2289,14 @@ def api_unit_rows_create():
                          defect_pct, width_cm, length_cm, height_cm, liters,
                          redemption_pct, warehouse, irp, logistics_ktr,
                          reception_coef, storage_per_day, commission_pct,
-                         wb_price, drr_pct, drr_external_rub, stock)
+                         wb_price, drr_pct, drr_external_rub, stock, spp_pct)
                     VALUES
                         (%(project)s, %(brand)s, %(wb_article)s, %(seller_article)s,
                          %(cost_price)s, %(logistics_to_wb)s, %(packaging)s, %(overhead)s,
                          %(defect_pct)s, %(width_cm)s, %(length_cm)s, %(height_cm)s, %(liters)s,
                          %(redemption_pct)s, %(warehouse)s, %(irp)s, %(logistics_ktr)s,
                          %(reception_coef)s, %(storage_per_day)s, %(commission_pct)s,
-                         %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(stock)s)
+                         %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(stock)s, %(spp_pct)s)
                     RETURNING id
                 """, p)
                 new_id = cur.fetchone()[0]
@@ -2325,7 +2327,7 @@ def api_unit_rows_update(row_id):
                         reception_coef=%(reception_coef)s, storage_per_day=%(storage_per_day)s,
                         commission_pct=%(commission_pct)s, wb_price=%(wb_price)s,
                         drr_pct=%(drr_pct)s, drr_external_rub=%(drr_external_rub)s,
-                        stock=%(stock)s, updated_at=NOW()
+                        stock=%(stock)s, spp_pct=%(spp_pct)s, updated_at=NOW()
                     WHERE id=%(id)s
                 """, p)
             conn.commit()
@@ -2387,6 +2389,158 @@ def api_unit_import_articles():
         return jsonify(result)
     except Exception as e:
         logging.error(f"unit-import-articles {project}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/unit-export-excel")
+@require_auth
+def api_unit_export_excel():
+    """Выгрузка таблицы юнит-экономики в Excel."""
+    project = request.args.get("project", "")
+    if not project:
+        return jsonify({"error": "project required"}), 400
+    try:
+        import io
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT wb_article, seller_article, brand,
+                           cost_price, packaging, logistics_to_wb, overhead, defect_pct,
+                           liters, redemption_pct, warehouse, irp, logistics_ktr,
+                           commission_pct, wb_price, spp_pct,
+                           drr_pct, drr_external_rub, stock
+                    FROM unit_economics WHERE project=%s ORDER BY id ASC
+                """, (project,))
+                rows = [dict(r) for r in cur.fetchall()]
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = project
+
+        headers = [
+            "WB артикул", "Арт. продавца", "Бренд",
+            "Себест.₽", "Упак.₽", "Лог.ВБ₽", "Накл.₽", "Брак%",
+            "Литраж", "%выкупа", "Склад", "ИРП", "Лог+КТР",
+            "Комис.%", "Цена ВБ₽", "СПП%",
+            "ДРР%", "ДРР₽", "Остаток"
+        ]
+        keys = [
+            "wb_article", "seller_article", "brand",
+            "cost_price", "packaging", "logistics_to_wb", "overhead", "defect_pct",
+            "liters", "redemption_pct", "warehouse", "irp", "logistics_ktr",
+            "commission_pct", "wb_price", "spp_pct",
+            "drr_pct", "drr_external_rub", "stock"
+        ]
+
+        hdr_font = Font(bold=True, color="FFFFFF")
+        hdr_fill = PatternFill("solid", fgColor="1F3A5F")
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.font = hdr_font
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal="center")
+
+        for ri, row in enumerate(rows, 2):
+            for ci, key in enumerate(keys, 1):
+                v = row.get(key)
+                ws.cell(row=ri, column=ci, value=float(v) if hasattr(v, '__float__') and not isinstance(v, (int, bool)) else v)
+
+        for col in ws.columns:
+            ws.column_dimensions[col[0].column_letter].width = 14
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        fname = f"unit_{project}.xlsx"
+        return Response(
+            buf.read(),
+            headers={
+                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "Content-Disposition": f'attachment; filename="{fname}"',
+            }
+        )
+    except Exception as e:
+        logging.error(f"unit-export-excel {project}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/unit-refresh", methods=["POST"])
+@require_auth
+def api_unit_refresh():
+    """Обновляет Остаток и %выкупа из WB API для всех артикулов кабинета."""
+    project = request.args.get("project", "")
+    if not project:
+        return jsonify({"error": "project required"}), 400
+    try:
+        from wb_api import WBClient, fmt_date, aggregate_stocks_by_article
+        today  = date.today()
+        d_from = fmt_date(today - timedelta(days=30))
+        d_to   = fmt_date(today)
+        p_from = fmt_date(today - timedelta(days=60))
+        p_to   = fmt_date(today - timedelta(days=31))
+
+        # Получаем текущие артикулы из БД
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, wb_article FROM unit_economics WHERE project=%s AND wb_article IS NOT NULL",
+                    (project,)
+                )
+                db_rows = {r["wb_article"]: r["id"] for r in cur.fetchall()}
+
+        if not db_rows:
+            return jsonify({"updated": 0})
+
+        with WBClient(project) as wb:
+            # Остатки — по nmId
+            stocks_raw = wb.get_stocks(fmt_date(today - timedelta(days=180)))
+            # Воронка — %выкупа
+            funnel = wb.get_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to, limit=1000)
+
+        # Агрегируем остатки по nmId
+        stock_by_nm = {}
+        for s in stocks_raw:
+            nm = s.get("nmId")
+            if nm:
+                stock_by_nm[nm] = stock_by_nm.get(nm, 0) + (s.get("quantityFull") or 0)
+
+        # %выкупа по nmId из воронки
+        from wb_api import _funnel_metric, get_product_field
+        redemption_by_nm = {}
+        for p in (funnel.get("data") or {}).get("products") or []:
+            nm = get_product_field(p, "nmId")
+            if not nm:
+                continue
+            orders  = _funnel_metric(p, "orderCount",  "selected")
+            buyouts = _funnel_metric(p, "buyoutCount", "selected")
+            if orders > 0:
+                redemption_by_nm[nm] = round(buyouts / orders * 100, 1)
+
+        # Обновляем в БД
+        updated = 0
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                for nm_id, row_id in db_rows.items():
+                    stock   = stock_by_nm.get(nm_id)
+                    red_pct = redemption_by_nm.get(nm_id)
+                    if stock is None and red_pct is None:
+                        continue
+                    sets, vals = [], []
+                    if stock is not None:
+                        sets.append("stock=%s"); vals.append(stock)
+                    if red_pct is not None:
+                        sets.append("redemption_pct=%s"); vals.append(red_pct)
+                    sets.append("updated_at=NOW()")
+                    vals.append(row_id)
+                    cur.execute(f"UPDATE unit_economics SET {', '.join(sets)} WHERE id=%s", vals)
+                    updated += 1
+            conn.commit()
+
+        return jsonify({"updated": updated, "stock_found": len(stock_by_nm), "redemption_found": len(redemption_by_nm)})
+    except Exception as e:
+        logging.error(f"unit-refresh {project}: {e}")
         return jsonify({"error": str(e)}), 500
 
 

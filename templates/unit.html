@@ -209,6 +209,14 @@ tfoot td.fcomp{background:var(--comp-bg)}
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     📥 Загрузить из WB
   </button>
+  <button class="btn-add" id="btnRefresh" disabled onclick="refreshWB()"
+    style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
+    🔄 Обновить из WB
+  </button>
+  <button class="btn-add" id="btnExcel" disabled onclick="exportExcel()"
+    style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
+    📊 Excel
+  </button>
   <div class="tsep"></div>
   <span class="save-indicator" id="saveInd"></span>
 </div>
@@ -306,6 +314,7 @@ function compute(r) {
   const de  = +r.drr_external_rub || 0;
   const qty = +r.stock       || 0;
 
+  const spp  = +r.spp_pct       || 0;
   const totalCost = cp + lw + pkg + ovh;
 
   const w = +r.width_cm, l = +r.length_cm, h = +r.height_cm;
@@ -337,9 +346,12 @@ function compute(r) {
   const batchMargin = (qty > 0 && wp > 0) ? batchProfit / (wp * qty) * 100 : 0;
   const invested    = totalCost * qty;
 
+  const clientPrice = wp > 0 ? wp * (1 - spp / 100) : 0;
+
   return {totalCost, liters, wCoef, storageDay, storage30,
           logKtr, commission, wbClub, usn, drrRub, brakCost,
-          revenue, profit, margin, roi, batchProfit, batchMargin, invested};
+          revenue, profit, margin, roi, batchProfit, batchMargin, invested,
+          clientPrice};
 }
 
 // ─── Форматирование ──────────────────────────────────────────────────────────
@@ -361,15 +373,16 @@ async function onProjectChange() {
   selectedKeys = new Set();
   updateBulkBar();
   const active = !!currentProject;
-  document.getElementById('btnAdd').disabled    = !active;
-  document.getElementById('btnImport').disabled = !active;
+  document.getElementById('btnAdd').disabled     = !active;
+  document.getElementById('btnImport').disabled  = !active;
+  document.getElementById('btnRefresh').disabled = !active;
+  document.getElementById('btnExcel').disabled   = !active;
   if (!currentProject) { rows = []; renderContent(); return; }
 
   // Загружаем из БД
   const resp = await fetch('/api/unit-rows?project=' + encodeURIComponent(currentProject));
   const data = await resp.json();
   rows = Array.isArray(data) ? data : [];
-  console.log('[unit] DB rows:', rows.length, 'hasRealArticles:', rows.some(r => r.wb_article), rows.slice(0,3));
   rows.forEach(r => { r._key = newKey(); r._dirty = false; });
 
   // Первый раз (или только пустые строки) — авто-импорт из WB без модалки
@@ -379,7 +392,6 @@ async function onProjectChange() {
     try {
       const ir = await fetch('/api/unit-auto-import?project=' + encodeURIComponent(currentProject), {method:'POST'});
       const ij = await ir.json();
-      console.log('[unit] auto-import result:', ij);
       if (ij.error) throw new Error(ij.error);
       rows = ij.rows || [];
       rows.forEach(r => { r._key = newKey(); r._dirty = false; });
@@ -458,7 +470,8 @@ function updateComputedCells(key) {
     el.className = el.className.replace(/profit-\w+/g, '').replace(/mbadge \w+/g, 'mbadge').trim();
     if (extra) el.classList.add(...extra.split(' '));
   };
-  set('cv-totalcost',  fmtR(c.totalCost));
+  set('cv-totalcost',   fmtR(c.totalCost));
+  set('cv-clientprice', fmtR(c.clientPrice));
   set('cv-logtgtr',    r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
                          ? fmtR(+r.logistics_ktr) : fmtR(c.logKtr));
   set('cv-stor30',     fmtR(c.storage30));
@@ -483,7 +496,7 @@ function makeEmptyRow(overrides = {}) {
     width_cm: null, length_cm: null, height_cm: null, liters: null,
     redemption_pct: 100, warehouse: '', irp: 1.0, logistics_ktr: null,
     reception_coef: 'x0', storage_per_day: 0,
-    commission_pct: 36, wb_price: 0, drr_pct: 0, drr_external_rub: 0, stock: 0,
+    commission_pct: 36, wb_price: 0, spp_pct: 0, drr_pct: 0, drr_external_rub: 0, stock: 0,
     ...overrides
   };
 }
@@ -574,6 +587,8 @@ function rowHTML(r) {
   <td class="comp cv-stor30">${fmtR(c.storage30)}</td>
   <td class="ed">${n(r.commission_pct,'commission_pct','','36')}</td>
   <td class="ed">${n(r.wb_price,'wb_price')}</td>
+  <td class="ed">${n(r.spp_pct??0,'spp_pct','','0')}</td>
+  <td class="comp cv-clientprice">${fmtR(c.clientPrice)}</td>
   <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
   <td class="ed">${n(r.drr_external_rub,'drr_external_rub','','0')}</td>
   <td class="ed">${n(r.stock,'stock','','0','0')}</td>
@@ -621,8 +636,7 @@ function renderContent(state) {
       <th class="grp-comp">↓</th>
       <th colspan="5">Параметры ВБ</th>
       <th class="grp-comp">↓</th>
-      <th colspan="4">Цена и реклама</th>
-      <th colspan="1"></th>
+      <th colspan="6">Цена и реклама</th>
       <th class="grp-comp" colspan="5">Результаты расчёта</th>
     </tr>
     <tr class="col-row">
@@ -644,6 +658,8 @@ function renderContent(state) {
       <th class="comp" title="Хранение за 30 дней">Хран/30д</th>
       <th>Комис.%</th>
       <th>Цена ВБ₽</th>
+      <th>СПП%</th>
+      <th class="comp">Цена клиенту</th>
       <th>ДРР%</th>
       <th>ДРР₽</th>
       <th>Остаток</th>
@@ -696,12 +712,41 @@ function updateFooter() {
     <td></td>
     <td></td>
     <td></td><td></td><td></td>
+    <td class="fcomp"></td><td class="fcomp"></td>
     <td class="fcomp">${fmtR(totals.comm)}</td>
     <td class="fcomp ${profitCls(totals.profit)}">${fmtR(totals.profit)}</td>
     <td class="fcomp"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
     <td class="fcomp"></td>
     <td class="fcomp"><span class="mbadge ${mClass(avgBM)}">${fmtP(avgBM)}</span></td>
   </tr>`;
+}
+
+// ─── Обновление из WB ────────────────────────────────────────────────────────
+async function refreshWB() {
+  if (!currentProject) return;
+  const btn = document.getElementById('btnRefresh');
+  btn.disabled = true; btn.textContent = '⏳ Обновляем…';
+  try {
+    const r = await fetch('/api/unit-refresh?project=' + encodeURIComponent(currentProject), {method:'POST'});
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    // Перезагружаем строки из БД
+    const resp = await fetch('/api/unit-rows?project=' + encodeURIComponent(currentProject));
+    rows = await resp.json();
+    rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+    renderContent();
+    showInd('saved');
+    btn.textContent = `✓ Обновлено ${j.updated}`;
+    setTimeout(() => { btn.textContent = '🔄 Обновить из WB'; btn.disabled = false; }, 3000);
+  } catch(e) {
+    alert('Ошибка обновления: ' + e.message);
+    btn.textContent = '🔄 Обновить из WB'; btn.disabled = false;
+  }
+}
+
+function exportExcel() {
+  if (!currentProject) return;
+  window.location.href = '/api/unit-export-excel?project=' + encodeURIComponent(currentProject);
 }
 
 // ─── Массовое редактирование ─────────────────────────────────────────────────
