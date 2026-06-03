@@ -226,22 +226,38 @@ tfoot td.fcomp{background:var(--comp-bg)}
   <span class="bulk-bar-info" id="bulkInfo">Выбрано 0</span>
   <div class="tsep"></div>
   <select class="bulk-field" id="bulkField" onchange="onBulkFieldChange()">
-    <option value="warehouse">Склад</option>
-    <option value="commission_pct">Комиссия %</option>
-    <option value="redemption_pct">% выкупа</option>
-    <option value="irp">ИРП</option>
-    <option value="drr_pct">ДРР %</option>
-    <option value="drr_external_rub">ДРР ₽</option>
-    <option value="logistics_to_wb">Лог. до ВБ ₽</option>
-    <option value="overhead">Накладные ₽</option>
-    <option value="packaging">Упаковка ₽</option>
-    <option value="defect_pct">Брак %</option>
-    <option value="wb_price">Цена ВБ ₽</option>
-    <option value="cost_price">Себест. ₽</option>
+    <optgroup label="Идентификация">
+      <option value="brand">Бренд</option>
+    </optgroup>
+    <optgroup label="Себестоимость">
+      <option value="cost_price">Себест. ₽</option>
+      <option value="packaging">Упаковка ₽</option>
+      <option value="logistics_to_wb">Лог. до ВБ ₽</option>
+      <option value="overhead">Накладные ₽</option>
+      <option value="defect_pct">Брак %</option>
+    </optgroup>
+    <optgroup label="Параметры ВБ">
+      <option value="liters">Литраж</option>
+      <option value="redemption_pct">% выкупа</option>
+      <option value="warehouse">Склад</option>
+      <option value="irp">ИРП</option>
+      <option value="logistics_ktr">Лог+КТР (ручное)</option>
+    </optgroup>
+    <optgroup label="Цена и реклама">
+      <option value="commission_pct">Комиссия %</option>
+      <option value="wb_price">Цена ВБ ₽</option>
+      <option value="spp_pct">СПП %</option>
+      <option value="drr_pct">ДРР %</option>
+      <option value="drr_external_rub">ДРР ₽</option>
+    </optgroup>
+    <optgroup label="Прочее">
+      <option value="stock">Остаток</option>
+    </optgroup>
   </select>
   <select class="bulk-val" id="bulkWarehouseVal" style="display:none">
     <option value="">— склад —</option>
   </select>
+  <input class="bulk-val" id="bulkTextVal" type="text" placeholder="Значение" style="display:none">
   <input class="bulk-val" id="bulkNumVal" type="number" step="any" placeholder="Значение">
   <button class="bulk-apply" onclick="applyBulk()">Применить</button>
   <button class="bulk-apply" onclick="deleteBulk()"
@@ -752,8 +768,10 @@ function exportExcel() {
 // ─── Массовое редактирование ─────────────────────────────────────────────────
 const BULK_NUM_FIELDS = new Set([
   'commission_pct','redemption_pct','irp','drr_pct','drr_external_rub',
-  'logistics_to_wb','overhead','packaging','defect_pct','wb_price','cost_price'
+  'logistics_to_wb','overhead','packaging','defect_pct','wb_price','cost_price',
+  'spp_pct','liters','logistics_ktr','stock'
 ]);
+const BULK_TEXT_FIELDS = new Set(['brand']);
 
 function onRowCheck(key, checked) {
   if (checked) selectedKeys.add(key); else selectedKeys.delete(key);
@@ -793,9 +811,11 @@ function updateBulkBar() {
 
 function onBulkFieldChange() {
   const field = document.getElementById('bulkField').value;
-  const isWh = field === 'warehouse';
-  document.getElementById('bulkWarehouseVal').style.display = isWh ? '' : 'none';
-  document.getElementById('bulkNumVal').style.display = isWh ? 'none' : '';
+  const isWh  = field === 'warehouse';
+  const isTxt = BULK_TEXT_FIELDS.has(field);
+  document.getElementById('bulkWarehouseVal').style.display = isWh  ? '' : 'none';
+  document.getElementById('bulkTextVal').style.display      = isTxt ? '' : 'none';
+  document.getElementById('bulkNumVal').style.display       = (!isWh && !isTxt) ? '' : 'none';
 }
 
 async function deleteBulk() {
@@ -818,10 +838,11 @@ async function deleteBulk() {
 
 function applyBulk() {
   const field = document.getElementById('bulkField').value;
-  const isWh = field === 'warehouse';
-  const rawVal = isWh
-    ? document.getElementById('bulkWarehouseVal').value
-    : document.getElementById('bulkNumVal').value;
+  const isWh  = field === 'warehouse';
+  const isTxt = BULK_TEXT_FIELDS.has(field);
+  const rawVal = isWh  ? document.getElementById('bulkWarehouseVal').value
+               : isTxt ? document.getElementById('bulkTextVal').value
+               :          document.getElementById('bulkNumVal').value;
   if (rawVal === '' && !isWh) return;
   const val = isWh ? rawVal : (BULK_NUM_FIELDS.has(field) ? +rawVal : rawVal);
 
