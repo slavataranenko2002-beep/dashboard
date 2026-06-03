@@ -369,8 +369,9 @@ async function onProjectChange() {
   rows = Array.isArray(data) ? data : [];
   rows.forEach(r => { r._key = newKey(); r._dirty = false; });
 
-  // Первый раз — авто-импорт из WB без модалки
-  if (rows.length === 0) {
+  // Первый раз (или только пустые строки) — авто-импорт из WB без модалки
+  const hasRealArticles = rows.some(r => r.wb_article);
+  if (!hasRealArticles) {
     renderContent('auto-import');
     try {
       const ir = await fetch('/api/unit-auto-import?project=' + encodeURIComponent(currentProject), {method:'POST'});
