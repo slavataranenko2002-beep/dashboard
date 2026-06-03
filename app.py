@@ -180,6 +180,8 @@ def _ensure_design_tables():
                 """)
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS stock INTEGER DEFAULT 0")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS spp_pct NUMERIC(5,2) DEFAULT 0")
+                cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS tax_system TEXT DEFAULT 'УСН 7%'")
+                cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS tax_pct NUMERIC(5,2) DEFAULT 7")
                 # Ежедневные бэкапы
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS unit_economics_backup (
@@ -2230,6 +2232,8 @@ def _unit_row_params(d):
         "drr_external_rub": d.get("drr_external_rub") or 0,
         "stock":            d.get("stock") or 0,
         "spp_pct":          d.get("spp_pct") or 0,
+        "tax_system":       d.get("tax_system") or "УСН 7%",
+        "tax_pct":          d.get("tax_pct") or 7,
     }
 
 
@@ -2246,7 +2250,8 @@ def api_unit_rows_get():
                            defect_pct, width_cm, length_cm, height_cm, liters,
                            redemption_pct, warehouse, irp, logistics_ktr,
                            reception_coef, storage_per_day, commission_pct,
-                           wb_price, drr_pct, drr_external_rub, stock, spp_pct
+                           wb_price, drr_pct, drr_external_rub, stock, spp_pct,
+                           tax_system, tax_pct
                     FROM unit_economics
                     WHERE project = %s
                     ORDER BY id ASC
@@ -2289,14 +2294,16 @@ def api_unit_rows_create():
                          defect_pct, width_cm, length_cm, height_cm, liters,
                          redemption_pct, warehouse, irp, logistics_ktr,
                          reception_coef, storage_per_day, commission_pct,
-                         wb_price, drr_pct, drr_external_rub, stock, spp_pct)
+                         wb_price, drr_pct, drr_external_rub, stock, spp_pct,
+                         tax_system, tax_pct)
                     VALUES
                         (%(project)s, %(brand)s, %(wb_article)s, %(seller_article)s,
                          %(cost_price)s, %(logistics_to_wb)s, %(packaging)s, %(overhead)s,
                          %(defect_pct)s, %(width_cm)s, %(length_cm)s, %(height_cm)s, %(liters)s,
                          %(redemption_pct)s, %(warehouse)s, %(irp)s, %(logistics_ktr)s,
                          %(reception_coef)s, %(storage_per_day)s, %(commission_pct)s,
-                         %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(stock)s, %(spp_pct)s)
+                         %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(stock)s, %(spp_pct)s,
+                         %(tax_system)s, %(tax_pct)s)
                     RETURNING id
                 """, p)
                 new_id = cur.fetchone()[0]
@@ -2327,7 +2334,8 @@ def api_unit_rows_update(row_id):
                         reception_coef=%(reception_coef)s, storage_per_day=%(storage_per_day)s,
                         commission_pct=%(commission_pct)s, wb_price=%(wb_price)s,
                         drr_pct=%(drr_pct)s, drr_external_rub=%(drr_external_rub)s,
-                        stock=%(stock)s, spp_pct=%(spp_pct)s, updated_at=NOW()
+                        stock=%(stock)s, spp_pct=%(spp_pct)s,
+                        tax_system=%(tax_system)s, tax_pct=%(tax_pct)s, updated_at=NOW()
                     WHERE id=%(id)s
                 """, p)
             conn.commit()

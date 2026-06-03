@@ -57,6 +57,8 @@ thead tr.grp-row th{
   letter-spacing:.07em;color:var(--text3);padding:5px 10px;border-bottom:1px solid var(--border);
   text-align:center;white-space:nowrap}
 thead tr.grp-row th.grp-comp{background:#151c27;color:var(--text3)}
+thead tr.grp-row th.grp-results{background:#0d2137;color:#58a6ff;letter-spacing:.1em}
+[data-theme="light"] thead tr.grp-row th.grp-results{background:#dbeafe;color:#1d4ed8}
 thead tr.col-row th{
   background:var(--bg3);font-size:11px;font-weight:600;color:var(--text2);
   padding:7px 8px;border-bottom:2px solid var(--border);white-space:nowrap;
@@ -155,6 +157,15 @@ td.del-cell{width:32px;padding:3px 6px;text-align:center}
   color:#fff;font-size:13px;font-weight:600;cursor:pointer}
 .btn-import:hover{opacity:.85}
 .btn-import:disabled{opacity:.4;cursor:default}
+
+/* Tax select */
+.tax-wrap{display:flex;align-items:center;gap:3px;padding:3px 4px}
+.tax-sel{border:none;background:transparent;color:var(--text);font-size:11px;
+  font-family:inherit;padding:2px 3px;border-radius:3px;cursor:pointer;max-width:110px}
+.tax-sel:focus{outline:none;background:rgba(88,166,255,.1);border:1px solid var(--blue)}
+.tax-pct-inp{width:42px;border:none;background:transparent;color:var(--text);
+  font-size:11px;font-family:inherit;padding:2px 4px;border-radius:3px;text-align:right}
+.tax-pct-inp:focus{outline:none;background:rgba(88,166,255,.1);border:1px solid var(--blue)}
 
 /* Margin badge */
 .mbadge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600}
@@ -307,6 +318,59 @@ const WAREHOUSE_COEFS = {
 };
 const WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
 
+// ─── Системы налогообложения ──────────────────────────────────────────────────
+const TAX_PRESETS_DEFAULT = [
+  {label:'УСН 6%',   pct:6},
+  {label:'УСН 7%',   pct:7},
+  {label:'УСН 8%',   pct:8},
+  {label:'УСН 10%',  pct:10},
+  {label:'УСН 15%',  pct:15},
+  {label:'УСН 6% + НДС 5%', pct:11},
+  {label:'УСН 6% + НДС 20%',pct:26},
+  {label:'ОСНО НДС 20%',    pct:20},
+];
+function loadTaxPresets() {
+  try { return JSON.parse(localStorage.getItem('taxPresets') || 'null') || TAX_PRESETS_DEFAULT; }
+  catch { return TAX_PRESETS_DEFAULT; }
+}
+function saveTaxPresets(list) { localStorage.setItem('taxPresets', JSON.stringify(list)); }
+let TAX_PRESETS = loadTaxPresets();
+
+function taxOptions(selectedLabel) {
+  const opts = TAX_PRESETS.map(t =>
+    `<option value="${t.pct}" data-label="${esc(t.label)}" ${t.label===selectedLabel?'selected':''}>${esc(t.label)}</option>`
+  ).join('');
+  return opts + `<option value="__custom__">+ Своя…</option>`;
+}
+
+function onTaxSelect(key, selectEl) {
+  const val = selectEl.value;
+  if (val === '__custom__') {
+    const label = prompt('Название системы (напр. УСН 6%):');
+    const pct   = parseFloat(prompt('Ставка в % (напр. 6):'));
+    if (!label || isNaN(pct)) { selectEl.value = ''; return; }
+    TAX_PRESETS.push({label, pct});
+    saveTaxPresets(TAX_PRESETS);
+    // Перерисовываем select этой строки
+    const row = rows.find(r => r._key === key);
+    if (row) { row.tax_system = label; row.tax_pct = pct; row._dirty = true; }
+    selectEl.outerHTML = `<select class="tax-sel" onchange="onTaxSelect('${key}',this)">${taxOptions(label)}</select>`;
+    const tr = document.querySelector(`tr[data-key="${key}"]`);
+    const inp = tr?.querySelector('.tax-pct-inp');
+    if (inp) inp.value = pct;
+    updateComputedCells(key);
+    schedSave(key);
+    return;
+  }
+  const chosen = TAX_PRESETS.find(t => String(t.pct) === val) || TAX_PRESETS.find(t => t.label === selectEl.selectedOptions[0]?.dataset.label);
+  if (!chosen) return;
+  onInput(key, 'tax_system', chosen.label);
+  onInput(key, 'tax_pct', chosen.pct);
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  const inp = tr?.querySelector('.tax-pct-inp');
+  if (inp) inp.value = chosen.pct;
+}
+
 let rows = [];       // [{id, _key, _dirty, project, ...fields}]
 let currentProject = '';
 let saveTimers = {};
@@ -330,7 +394,8 @@ function compute(r) {
   const de  = +r.drr_external_rub || 0;
   const qty = +r.stock       || 0;
 
-  const spp  = +r.spp_pct       || 0;
+  const spp    = +r.spp_pct    || 0;
+  const taxPct = +r.tax_pct   || 7;
   const totalCost = cp + lw + pkg + ovh;
 
   const w = +r.width_cm, l = +r.length_cm, h = +r.height_cm;
@@ -351,7 +416,7 @@ function compute(r) {
 
   const commission  = wp * com / 100;
   const wbClub      = wp * 0.95;
-  const usn         = wp * 0.07;
+  const usn         = wp * taxPct / 100;
   const drrRub      = wp * dp / 100 + de;
   const brakCost    = totalCost * def / 100;
   const revenue     = wp - commission - logKtr - storage30 - usn - drrRub;
@@ -365,7 +430,7 @@ function compute(r) {
   const clientPrice = wp > 0 ? wp * (1 - spp / 100) : 0;
 
   return {totalCost, liters, wCoef, storageDay, storage30,
-          logKtr, commission, wbClub, usn, drrRub, brakCost,
+          logKtr, commission, wbClub, usn, taxPct, drrRub, brakCost,
           revenue, profit, margin, roi, batchProfit, batchMargin, invested,
           clientPrice};
 }
@@ -488,6 +553,7 @@ function updateComputedCells(key) {
   };
   set('cv-totalcost',   fmtR(c.totalCost));
   set('cv-clientprice', fmtR(c.clientPrice));
+  set('cv-usn',         fmtR(c.usn));
   set('cv-logtgtr',    r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
                          ? fmtR(+r.logistics_ktr) : fmtR(c.logKtr));
   set('cv-stor30',     fmtR(c.storage30));
@@ -513,6 +579,7 @@ function makeEmptyRow(overrides = {}) {
     redemption_pct: 100, warehouse: '', irp: 1.0, logistics_ktr: null,
     reception_coef: 'x0', storage_per_day: 0,
     commission_pct: 36, wb_price: 0, spp_pct: 0, drr_pct: 0, drr_external_rub: 0, stock: 0,
+    tax_system: 'УСН 7%', tax_pct: 7,
     ...overrides
   };
 }
@@ -605,6 +672,14 @@ function rowHTML(r) {
   <td class="ed">${n(r.wb_price,'wb_price')}</td>
   <td class="ed">${n(r.spp_pct??0,'spp_pct','','0')}</td>
   <td class="comp cv-clientprice">${fmtR(c.clientPrice)}</td>
+  <td class="ed" style="padding:0">
+    <div class="tax-wrap">
+      <select class="tax-sel" onchange="onTaxSelect('${key}',this)">${taxOptions(r.tax_system||'УСН 7%')}</select>
+      <input class="tax-pct-inp" type="number" step="0.1" value="${r.tax_pct??7}"
+        oninput="onInput('${key}','tax_pct',this.value)">%
+    </div>
+  </td>
+  <td class="comp cv-usn">${fmtR(c.usn)}</td>
   <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
   <td class="ed">${n(r.drr_external_rub,'drr_external_rub','','0')}</td>
   <td class="ed">${n(r.stock,'stock','','0','0')}</td>
@@ -652,8 +727,8 @@ function renderContent(state) {
       <th class="grp-comp">↓</th>
       <th colspan="5">Параметры ВБ</th>
       <th class="grp-comp">↓</th>
-      <th colspan="6">Цена и реклама</th>
-      <th class="grp-comp" colspan="5">Результаты расчёта</th>
+      <th colspan="8">Цена и реклама</th>
+      <th class="grp-results" colspan="5">Результаты расчёта</th>
     </tr>
     <tr class="col-row">
       <th class="cb-cell"><input type="checkbox" id="cbAll" onchange="toggleSelectAll(this.checked)" title="Выбрать все"></th>
@@ -676,6 +751,8 @@ function renderContent(state) {
       <th>Цена ВБ₽</th>
       <th>СПП%</th>
       <th class="comp">Цена клиенту</th>
+      <th class="left">Налог</th>
+      <th class="comp">Налог₽</th>
       <th>ДРР%</th>
       <th>ДРР₽</th>
       <th>Остаток</th>
