@@ -2321,11 +2321,13 @@ def api_unit_import_articles():
     try:
         from datetime import date, timedelta
         from wb_api import WBClient, fmt_date
-        today  = date.today()
-        d_from = fmt_date(today - timedelta(days=30))
-        d_to   = fmt_date(today)
+        today    = date.today()
+        d_from   = fmt_date(today - timedelta(days=30))
+        d_to     = fmt_date(today)
+        p_from   = fmt_date(today - timedelta(days=60))
+        p_to     = fmt_date(today - timedelta(days=31))
         with WBClient(project) as wb:
-            raw = wb.raw_sales_funnel(d_from, d_to)
+            raw = wb.raw_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to)
         status = raw.get("status")
         if status != 200:
             msg = raw.get("response_text_preview") or f"HTTP {status}"
