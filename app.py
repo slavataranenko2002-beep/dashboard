@@ -160,13 +160,36 @@ def _ensure_design_tables():
                         wb_price         NUMERIC(12,2) DEFAULT 0,
                         drr_pct          NUMERIC(5,2) DEFAULT 0,
                         drr_external_rub NUMERIC(12,2) DEFAULT 0,
-                        quantity         INTEGER DEFAULT 0,
+                        stock            INTEGER DEFAULT 0,
                         project          TEXT NOT NULL DEFAULT '',
                         created_at       TIMESTAMPTZ DEFAULT NOW(),
                         updated_at       TIMESTAMPTZ DEFAULT NOW()
                     )
                 """)
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS project TEXT NOT NULL DEFAULT ''")
+                # quantity → stock (безопасный переименование)
+                cur.execute("""
+                    DO $$ BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name='unit_economics' AND column_name='quantity'
+                        ) THEN
+                            ALTER TABLE unit_economics RENAME COLUMN quantity TO stock;
+                        END IF;
+                    END $$
+                """)
+                cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS stock INTEGER DEFAULT 0")
+                # Ежедневные бэкапы
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS unit_economics_backup (
+                        id          SERIAL PRIMARY KEY,
+                        backup_date DATE NOT NULL,
+                        project     TEXT NOT NULL,
+                        data        JSONB NOT NULL,
+                        created_at  TIMESTAMPTZ DEFAULT NOW(),
+                        UNIQUE (backup_date, project)
+                    )
+                """)
                 # Логи активности пользователей
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS user_activity (
@@ -2204,7 +2227,7 @@ def _unit_row_params(d):
         "wb_price":         d.get("wb_price") or 0,
         "drr_pct":          d.get("drr_pct") or 0,
         "drr_external_rub": d.get("drr_external_rub") or 0,
-        "quantity":         d.get("quantity") or 0,
+        "stock":            d.get("stock") or 0,
     }
 
 
@@ -2221,7 +2244,7 @@ def api_unit_rows_get():
                            defect_pct, width_cm, length_cm, height_cm, liters,
                            redemption_pct, warehouse, irp, logistics_ktr,
                            reception_coef, storage_per_day, commission_pct,
-                           wb_price, drr_pct, drr_external_rub, quantity
+                           wb_price, drr_pct, drr_external_rub, stock
                     FROM unit_economics
                     WHERE project = %s
                     ORDER BY id ASC
@@ -2232,6 +2255,20 @@ def api_unit_rows_get():
             for k, v in row.items():
                 if hasattr(v, '__float__'):
                     row[k] = float(v) if v is not None else None
+        # Ежедневный бэкап (ON CONFLICT DO NOTHING = не дублируем)
+        if project and rows:
+            try:
+                with get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO unit_economics_backup (backup_date, project, data)
+                            SELECT CURRENT_DATE, %s, jsonb_agg(row_to_json(ue))
+                            FROM unit_economics ue WHERE project = %s
+                            ON CONFLICT (backup_date, project) DO NOTHING
+                        """, (project, project))
+                    conn.commit()
+            except Exception:
+                pass
         return jsonify(rows)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2251,14 +2288,14 @@ def api_unit_rows_create():
                          defect_pct, width_cm, length_cm, height_cm, liters,
                          redemption_pct, warehouse, irp, logistics_ktr,
                          reception_coef, storage_per_day, commission_pct,
-                         wb_price, drr_pct, drr_external_rub, quantity)
+                         wb_price, drr_pct, drr_external_rub, stock)
                     VALUES
                         (%(project)s, %(brand)s, %(wb_article)s, %(seller_article)s,
                          %(cost_price)s, %(logistics_to_wb)s, %(packaging)s, %(overhead)s,
                          %(defect_pct)s, %(width_cm)s, %(length_cm)s, %(height_cm)s, %(liters)s,
                          %(redemption_pct)s, %(warehouse)s, %(irp)s, %(logistics_ktr)s,
                          %(reception_coef)s, %(storage_per_day)s, %(commission_pct)s,
-                         %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(quantity)s)
+                         %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(stock)s)
                     RETURNING id
                 """, p)
                 new_id = cur.fetchone()[0]
@@ -2289,7 +2326,7 @@ def api_unit_rows_update(row_id):
                         reception_coef=%(reception_coef)s, storage_per_day=%(storage_per_day)s,
                         commission_pct=%(commission_pct)s, wb_price=%(wb_price)s,
                         drr_pct=%(drr_pct)s, drr_external_rub=%(drr_external_rub)s,
-                        quantity=%(quantity)s, updated_at=NOW()
+                        stock=%(stock)s, updated_at=NOW()
                     WHERE id=%(id)s
                 """, p)
             conn.commit()
@@ -2351,6 +2388,91 @@ def api_unit_import_articles():
         return jsonify(result)
     except Exception as e:
         logging.error(f"unit-import-articles {project}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/unit-auto-import", methods=["POST"])
+@require_auth
+def api_unit_auto_import():
+    """Первичный авто-импорт: добавляет артикулы из WB только если их нет в БД.
+    Возвращает все строки кабинета после вставки."""
+    project = request.args.get("project", "")
+    if not project:
+        return jsonify({"error": "project required"}), 400
+    try:
+        from wb_api import WBClient, fmt_date
+        today  = date.today()
+        d_from = fmt_date(today - timedelta(days=30))
+        d_to   = fmt_date(today)
+        p_from = fmt_date(today - timedelta(days=60))
+        p_to   = fmt_date(today - timedelta(days=31))
+
+        with WBClient(project) as wb:
+            raw = wb.raw_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to)
+
+        status = raw.get("status")
+        if status != 200:
+            msg = raw.get("response_text_preview") or f"HTTP {status}"
+            return jsonify({"error": f"WB API вернул {status}: {msg[:150]}"}), 502
+
+        products = ((raw.get("response_json") or {}).get("data") or {}).get("products") or []
+
+        # Собираем уникальные артикулы из WB
+        wb_articles = {}
+        for p in products:
+            prod  = p.get("product") or {}
+            nm_id = prod.get("nmId")
+            if nm_id and nm_id not in wb_articles:
+                wb_articles[nm_id] = {
+                    "wb_article":     nm_id,
+                    "seller_article": prod.get("vendorCode", ""),
+                    "brand":          prod.get("brandName", "") or project,
+                }
+
+        if not wb_articles:
+            return jsonify({"inserted": 0, "rows": []})
+
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                # Узнаём какие уже есть
+                cur.execute(
+                    "SELECT wb_article FROM unit_economics WHERE project=%s AND wb_article IS NOT NULL",
+                    (project,)
+                )
+                existing = {r[0] for r in cur.fetchall()}
+
+                # Вставляем только новые
+                to_insert = [a for nm, a in wb_articles.items() if nm not in existing]
+                for a in to_insert:
+                    cur.execute("""
+                        INSERT INTO unit_economics
+                            (project, brand, wb_article, seller_article,
+                             commission_pct, redemption_pct, irp, stock)
+                        VALUES (%s,%s,%s,%s, 36, 100, 1.0, 0)
+                    """, (project, a["brand"], a["wb_article"], a["seller_article"]))
+
+                # Читаем все строки
+                cur.execute("""
+                    SELECT id, project, brand, wb_article, seller_article,
+                           cost_price, logistics_to_wb, packaging, overhead,
+                           defect_pct, width_cm, length_cm, height_cm, liters,
+                           redemption_pct, warehouse, irp, logistics_ktr,
+                           reception_coef, storage_per_day, commission_pct,
+                           wb_price, drr_pct, drr_external_rub, stock
+                    FROM unit_economics WHERE project=%s ORDER BY id ASC
+                """, (project,))
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            conn.commit()
+
+        for row in rows:
+            for k, v in row.items():
+                if hasattr(v, '__float__'):
+                    row[k] = float(v) if v is not None else None
+
+        return jsonify({"inserted": len(to_insert), "rows": rows})
+    except Exception as e:
+        logging.error(f"unit-auto-import {project}: {e}")
         return jsonify({"error": str(e)}), 500
 
 

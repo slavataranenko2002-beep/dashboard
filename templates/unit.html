@@ -302,7 +302,7 @@ function compute(r) {
   const irp = +r.irp            || 1.0;
   const dp  = +r.drr_pct        || 0;
   const de  = +r.drr_external_rub || 0;
-  const qty = +r.quantity       || 0;
+  const qty = +r.stock       || 0;
 
   const totalCost = cp + lw + pkg + ovh;
 
@@ -362,9 +362,26 @@ async function onProjectChange() {
   document.getElementById('btnAdd').disabled    = !active;
   document.getElementById('btnImport').disabled = !active;
   if (!currentProject) { rows = []; renderContent(); return; }
+
+  // Загружаем из БД
   const resp = await fetch('/api/unit-rows?project=' + encodeURIComponent(currentProject));
-  rows = await resp.json();
+  const data = await resp.json();
+  rows = Array.isArray(data) ? data : [];
   rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+
+  // Первый раз — авто-импорт из WB без модалки
+  if (rows.length === 0) {
+    renderContent('auto-import');
+    try {
+      const ir = await fetch('/api/unit-auto-import?project=' + encodeURIComponent(currentProject), {method:'POST'});
+      const ij = await ir.json();
+      if (ij.error) throw new Error(ij.error);
+      rows = ij.rows || [];
+      rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+    } catch(e) {
+      console.error('auto-import failed:', e);
+    }
+  }
   renderContent();
 }
 
@@ -409,7 +426,7 @@ function onInput(key, field, val) {
   if (!r) return;
   const numFields = ['cost_price','logistics_to_wb','packaging','overhead','defect_pct',
     'width_cm','length_cm','height_cm','liters','redemption_pct','irp','logistics_ktr',
-    'commission_pct','wb_price','drr_pct','drr_external_rub','quantity'];
+    'commission_pct','wb_price','drr_pct','drr_external_rub','stock'];
   r[field] = numFields.includes(field) ? (val === '' ? (field === 'logistics_ktr' || field === 'liters' ? null : 0) : +val) : val;
   r._dirty = true;
   updateComputedCells(key);
@@ -454,7 +471,7 @@ function makeEmptyRow(overrides = {}) {
     width_cm: null, length_cm: null, height_cm: null, liters: null,
     redemption_pct: 100, warehouse: '', irp: 1.0, logistics_ktr: null,
     reception_coef: 'x0', storage_per_day: 0,
-    commission_pct: 36, wb_price: 0, drr_pct: 0, drr_external_rub: 0, quantity: 0,
+    commission_pct: 36, wb_price: 0, drr_pct: 0, drr_external_rub: 0, stock: 0,
     ...overrides
   };
 }
@@ -547,7 +564,7 @@ function rowHTML(r) {
   <td class="ed">${n(r.wb_price,'wb_price')}</td>
   <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
   <td class="ed">${n(r.drr_external_rub,'drr_external_rub','','0')}</td>
-  <td class="ed">${n(r.quantity,'quantity','','0','0')}</td>
+  <td class="ed">${n(r.stock,'stock','','0','0')}</td>
   <td class="comp cv-commission">${fmtR(c.commission)}</td>
   <td class="comp cv-profit ${profitCls(c.profit)}">${fmtR(c.profit)}</td>
   <td class="comp cv-margin"><span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span></td>
@@ -555,7 +572,7 @@ function rowHTML(r) {
   <td class="comp cv-bmargin"><span class="mbadge ${mClass(c.batchMargin)}">${fmtP(c.batchMargin)}</span></td>`;
 }
 
-function renderContent() {
+function renderContent(state) {
   const div = document.getElementById('content');
   if (!currentProject) {
     div.innerHTML = `<div class="placeholder">
@@ -565,11 +582,19 @@ function renderContent() {
     </div>`;
     return;
   }
+  if (state === 'auto-import') {
+    div.innerHTML = `<div class="placeholder">
+      <div class="placeholder-icon">⏳</div>
+      <div class="placeholder-text">Первый запуск — загружаем артикулы из WB…</div>
+      <div class="placeholder-sub">Это займёт несколько секунд</div>
+    </div>`;
+    return;
+  }
   if (!rows.length) {
     div.innerHTML = `<div class="placeholder">
       <div class="placeholder-icon">📋</div>
       <div class="placeholder-text">Нет артикулов</div>
-      <div class="placeholder-sub">Нажмите «+ Строка» чтобы добавить первый артикул</div>
+      <div class="placeholder-sub">Нажмите «+ Строка» или «📥 Загрузить из WB»</div>
     </div>`;
     return;
   }
@@ -609,7 +634,7 @@ function renderContent() {
       <th>Цена ВБ₽</th>
       <th>ДРР%</th>
       <th>ДРР₽</th>
-      <th>Кол-во</th>
+      <th>Остаток</th>
       <th class="comp">Комис.₽</th>
       <th class="comp">Прибыль</th>
       <th class="comp">Маржа</th>
@@ -639,7 +664,7 @@ function updateFooter() {
     a.revenue  += (+r.wb_price || 0);
     a.invested += c.invested;
     a.bprofit  += c.batchProfit;
-    a.brev     += (+r.wb_price || 0) * (+r.quantity || 0);
+    a.brev     += (+r.wb_price || 0) * (+r.stock || 0);
     return a;
   }, {cost:0,logKtr:0,stor30:0,comm:0,profit:0,revenue:0,invested:0,bprofit:0,brev:0});
 
@@ -788,14 +813,22 @@ function existingWbArticles() {
 
 function renderImportList(articles, query = '') {
   const existing = existingWbArticles();
+  // Показываем только новые (не в таблице)
+  const newArticles = articles.filter(a => !existing.has(String(a.wb_article)));
   const q = query.toLowerCase();
-  const filtered = articles.filter(a =>
+  const filtered = newArticles.filter(a =>
     !q ||
     String(a.wb_article).includes(q) ||
     (a.seller_article || '').toLowerCase().includes(q) ||
     (a.name || '').toLowerCase().includes(q)
   );
 
+  if (!newArticles.length) {
+    document.getElementById('importBody').innerHTML =
+      '<div class="modal-loading">✅ Нет новых артикулов — таблица актуальна</div>';
+    updateImportBtn();
+    return;
+  }
   if (!filtered.length) {
     document.getElementById('importBody').innerHTML =
       '<div class="modal-loading">Ничего не найдено</div>';
@@ -803,17 +836,15 @@ function renderImportList(articles, query = '') {
     return;
   }
 
-  document.getElementById('importBody').innerHTML = filtered.map(a => {
-    const isExist = existing.has(String(a.wb_article));
-    return `<label class="import-item${isExist ? ' exists' : ''}">
-      <input type="checkbox" data-id="${a.wb_article}" ${isExist ? '' : 'checked'}
-        onchange="updateImportBtn()">
+  document.getElementById('importBody').innerHTML = filtered.map(a =>
+    `<label class="import-item">
+      <input type="checkbox" data-id="${a.wb_article}" checked onchange="updateImportBtn()">
       <div class="import-item-info">
         <div class="import-item-name">${esc(a.seller_article || a.name || '—')}</div>
-        <div class="import-item-meta">${a.wb_article}${isExist ? ' · уже добавлен' : ''}${a.brand ? ' · ' + esc(a.brand) : ''}</div>
+        <div class="import-item-meta">${a.wb_article}${a.brand ? ' · ' + esc(a.brand) : ''}</div>
       </div>
-    </label>`;
-  }).join('');
+    </label>`
+  ).join('');
 
   updateImportBtn();
 }
