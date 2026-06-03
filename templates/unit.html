@@ -382,7 +382,14 @@ async function onProjectChange() {
       rows = ij.rows || [];
       rows.forEach(r => { r._key = newKey(); r._dirty = false; });
     } catch(e) {
-      console.error('auto-import failed:', e);
+      // Показываем ошибку в плейсхолдере
+      document.getElementById('content').innerHTML = `<div class="placeholder">
+        <div class="placeholder-icon">❌</div>
+        <div class="placeholder-text">Не удалось загрузить артикулы из WB</div>
+        <div class="placeholder-sub" style="color:var(--red)">${esc(e.message)}</div>
+        <div class="placeholder-sub" style="margin-top:8px">Нажмите «📥 Загрузить из WB» чтобы попробовать вручную</div>
+      </div>`;
+      return;
     }
   }
   renderContent();

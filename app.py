@@ -2407,14 +2407,27 @@ def api_unit_auto_import():
         p_from = fmt_date(today - timedelta(days=60))
         p_to   = fmt_date(today - timedelta(days=31))
 
-        with WBClient(project) as wb:
-            funnel = wb.get_sales_funnel(d_from, d_to,
-                                         past_from=p_from, past_to=p_to,
-                                         limit=1000)
+        # Сначала чистим мусорные строки (независимо от результата WB)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM unit_economics WHERE project=%s AND (wb_article IS NULL OR wb_article=0)",
+                    (project,)
+                )
+            conn.commit()
 
-        products = (funnel.get("data") or {}).get("products") or []
+        with WBClient(project) as wb:
+            raw = wb.raw_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to)
+
+        status = raw.get("status")
+        if status != 200:
+            msg = raw.get("response_text_preview") or f"HTTP {status}"
+            logging.error(f"unit-auto-import {project}: WB вернул {status}: {msg[:200]}")
+            return jsonify({"error": f"WB API вернул {status}: {msg[:150]}"}), 502
+
+        products = ((raw.get("response_json") or {}).get("data") or {}).get("products") or []
         if not products:
-            return jsonify({"error": "WB API вернул пустой список артикулов"}), 502
+            return jsonify({"error": "WB API вернул пустой список артикулов — попробуйте «Загрузить из WB»"}), 502
 
         # Собираем уникальные артикулы из WB
         wb_articles = {}
@@ -2430,11 +2443,6 @@ def api_unit_auto_import():
 
         with get_conn() as conn:
             with conn.cursor() as cur:
-                # Удаляем «мусорные» строки без wb_article (могут быть от старых тестов)
-                cur.execute(
-                    "DELETE FROM unit_economics WHERE project=%s AND (wb_article IS NULL OR wb_article=0)",
-                    (project,)
-                )
                 # Узнаём какие wb_article уже есть
                 cur.execute(
                     "SELECT wb_article FROM unit_economics WHERE project=%s AND wb_article IS NOT NULL",
