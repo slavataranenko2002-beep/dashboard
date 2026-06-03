@@ -53,18 +53,35 @@ table{border-collapse:collapse;min-width:max-content;width:100%}
 
 /* ── Header rows ── */
 thead tr.grp-row th{
-  background:var(--bg4);font-size:10px;font-weight:700;text-transform:uppercase;
-  letter-spacing:.07em;color:var(--text3);padding:5px 10px;border-bottom:1px solid var(--border);
-  text-align:center;white-space:nowrap}
-thead tr.grp-row th.grp-comp{background:#151c27;color:var(--text3)}
+  background:#0f1e30;font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;color:#5a89b0;padding:5px 10px;border-bottom:1px solid var(--border);
+  text-align:center;white-space:nowrap;
+  position:sticky;top:0;z-index:11}
 thead tr.grp-row th.grp-results{background:#0d2137;color:#58a6ff;letter-spacing:.1em}
-[data-theme="light"] thead tr.grp-row th.grp-results{background:#dbeafe;color:#1d4ed8}
+[data-theme="light"] thead tr.grp-row th{background:#dbeafe;color:#1d4ed8}
+[data-theme="light"] thead tr.grp-row th.grp-results{background:#bfdbfe;color:#1e40af}
 thead tr.col-row th{
   background:var(--bg3);font-size:11px;font-weight:600;color:var(--text2);
   padding:7px 8px;border-bottom:2px solid var(--border);white-space:nowrap;
-  position:sticky;top:0;z-index:3;text-align:right}
+  position:sticky;top:28px;z-index:10;text-align:right}
 thead tr.col-row th.left{text-align:left}
 thead tr.col-row th.comp{background:var(--comp-bg);color:var(--text3)}
+
+/* ── Sticky columns ── */
+.sc0{position:sticky;left:0;    width:36px; min-width:36px; z-index:4;background:var(--bg2)}
+.sc1{position:sticky;left:36px; width:36px; min-width:36px; z-index:4;background:var(--bg2)}
+.sc2{position:sticky;left:72px; width:150px;min-width:150px;z-index:4;background:var(--bg2)}
+.sc3{position:sticky;left:222px;width:100px;min-width:100px;z-index:4;background:var(--bg2)}
+thead .sc0,thead .sc1,thead .sc2,thead .sc3{z-index:13;background:inherit}
+tbody tr:hover .sc0,tbody tr:hover .sc1,tbody tr:hover .sc2,tbody tr:hover .sc3{background:rgba(15,30,48,1)}
+tbody tr.selected .sc0,tbody tr.selected .sc1,tbody tr.selected .sc2,tbody tr.selected .sc3{background:rgba(15,30,56,1)}
+tfoot .sc0,tfoot .sc1,tfoot .sc2,tfoot .sc3{background:var(--bg4);z-index:4}
+[data-theme="light"] .sc0,[data-theme="light"] .sc1,[data-theme="light"] .sc2,[data-theme="light"] .sc3{background:var(--bg2)}
+[data-theme="light"] tbody tr:hover .sc0,[data-theme="light"] tbody tr:hover .sc1,
+[data-theme="light"] tbody tr:hover .sc2,[data-theme="light"] tbody tr:hover .sc3{background:#edf2fb}
+/* Shadow to show scroll */
+.sc3::after{content:'';position:absolute;top:0;right:-8px;bottom:0;width:8px;
+  background:linear-gradient(to right,rgba(0,0,0,.15),transparent);pointer-events:none}
 
 /* ── Body rows ── */
 tbody tr{border-bottom:1px solid var(--border)}
@@ -260,6 +277,9 @@ tfoot td.fcomp{background:var(--comp-bg)}
       <option value="spp_pct">СПП %</option>
       <option value="drr_pct">ДРР %</option>
       <option value="drr_external_rub">ДРР ₽</option>
+    </optgroup>
+    <optgroup label="Налог">
+      <option value="tax_pct">Налог %</option>
     </optgroup>
     <optgroup label="Прочее">
       <option value="stock">Остаток</option>
@@ -644,14 +664,14 @@ function rowHTML(r) {
 
   const chk = selectedKeys.has(key);
   return `
-  <td class="cb-cell">
+  <td class="cb-cell sc0">
     <input type="checkbox" ${chk?'checked':''} onchange="onRowCheck('${key}',this.checked)">
   </td>
-  <td class="del-cell">
+  <td class="del-cell sc1">
     <button class="del-btn" data-id="${r.id||''}" onclick="deleteRow('${key}',${r.id||'null'})">✕</button>
   </td>
-  <td class="ed">${s(r.seller_article,'seller_article','inp-seller')}</td>
-  <td class="ed">${n(r.wb_article,'wb_article','','артикул')}</td>
+  <td class="ed sc2">${s(r.seller_article,'seller_article','inp-seller')}</td>
+  <td class="ed sc3">${n(r.wb_article,'wb_article','','артикул')}</td>
   <td class="ed">${n(r.cost_price,'cost_price')}</td>
   <td class="ed">${n(r.packaging,'packaging')}</td>
   <td class="ed">${n(r.logistics_to_wb,'logistics_to_wb')}</td>
@@ -720,9 +740,9 @@ function renderContent(state) {
   div.innerHTML = `<div class="tbl-wrap"><table>
   <thead>
     <tr class="grp-row">
-      <th class="cb-cell"></th>
-      <th></th>
-      <th colspan="2" class="left">Идентификация</th>
+      <th class="cb-cell sc0"></th>
+      <th class="sc1"></th>
+      <th colspan="2" class="left sc2">Идентификация</th>
       <th colspan="5">Себестоимость</th>
       <th class="grp-comp">↓</th>
       <th colspan="5">Параметры ВБ</th>
@@ -731,10 +751,10 @@ function renderContent(state) {
       <th class="grp-results" colspan="5">Результаты расчёта</th>
     </tr>
     <tr class="col-row">
-      <th class="cb-cell"><input type="checkbox" id="cbAll" onchange="toggleSelectAll(this.checked)" title="Выбрать все"></th>
-      <th class="left"></th>
-      <th class="left">Арт. продавца</th>
-      <th class="left">WB арт.</th>
+      <th class="cb-cell sc0"><input type="checkbox" id="cbAll" onchange="toggleSelectAll(this.checked)" title="Выбрать все"></th>
+      <th class="left sc1"></th>
+      <th class="left sc2">Арт. продавца</th>
+      <th class="left sc3">WB арт.</th>
       <th>Себест.₽</th>
       <th>Упак.₽</th>
       <th>Лог.ВБ₽</th>
@@ -793,9 +813,9 @@ function updateFooter() {
   const avgBM = totals.brev    > 0 ? totals.bprofit / totals.brev * 100   : 0;
 
   tfoot.innerHTML = `<tr>
-    <td></td>
-    <td></td>
-    <td class="left" colspan="2">Итого (${rows.length})</td>
+    <td class="sc0"></td>
+    <td class="sc1"></td>
+    <td class="left sc2" colspan="2">Итого (${rows.length})</td>
     <td>${fmtR(totals.cost)}</td>
     <td></td><td></td><td></td><td></td>
     <td class="fcomp">${fmtR(totals.cost)}</td>
@@ -846,7 +866,7 @@ function exportExcel() {
 const BULK_NUM_FIELDS = new Set([
   'commission_pct','redemption_pct','irp','drr_pct','drr_external_rub',
   'logistics_to_wb','overhead','packaging','defect_pct','wb_price','cost_price',
-  'spp_pct','liters','logistics_ktr','stock'
+  'spp_pct','liters','logistics_ktr','stock','tax_pct'
 ]);
 const BULK_TEXT_FIELDS = new Set(['brand']);
 
