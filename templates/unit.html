@@ -9,129 +9,115 @@
   --bg:#0f1117;--bg2:#161b22;--bg3:#1c2333;--bg4:#21262d;
   --border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#484f58;
   --blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;
-  --purple:#a371f7;--orange:#f0883e;
+  --comp-bg:#181e28;--comp-text:#8b949e;
 }
 [data-theme="light"]{
   --bg:#f6f8fa;--bg2:#fff;--bg3:#f0f2f5;--bg4:#e8ebf0;
   --border:#d0d7de;--text:#24292f;--text2:#656d76;--text3:#8c959f;
+  --comp-bg:#f0f2f5;--comp-text:#656d76;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
-a{color:var(--blue);text-decoration:none}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;height:100vh;display:flex;flex-direction:column}
 
+/* ── Header ── */
 .hdr{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:30}
-.hdr-logo{font-weight:700;font-size:15px;letter-spacing:.5px}
+  display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;z-index:20}
+.hdr-logo{font-weight:700;font-size:15px}
 .hdr-sep{flex:1}
-.hbtn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);
-  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:13px;transition:all .15s;white-space:nowrap}
+.hbtn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;white-space:nowrap;text-decoration:none}
 .hbtn:hover{background:var(--bg4);color:var(--text)}
-.hbtn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.theme-btn{width:32px;height:32px;padding:0;display:flex;align-items:center;justify-content:center}
+.hbtn.act{background:var(--blue);color:#fff;border-color:var(--blue)}
+.theme-btn{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
 
-/* Layout */
-.layout{display:flex;height:calc(100vh - 52px);overflow:hidden}
-.main{flex:1;overflow:auto;padding:20px 24px}
-
-/* Controls */
-.controls{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-.btn-add{padding:7px 16px;border-radius:7px;border:none;background:var(--blue);
-  color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+/* ── Toolbar ── */
+.toolbar{display:flex;align-items:center;gap:10px;padding:12px 20px;
+  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.toolbar-title{font-weight:600;font-size:14px;margin-right:4px}
+.proj-select{padding:6px 12px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;min-width:160px}
+.proj-select:focus{outline:none;border-color:var(--blue)}
+.btn-add{padding:6px 14px;border-radius:7px;border:none;background:var(--blue);
+  color:#fff;font-size:13px;font-weight:600;cursor:pointer}
 .btn-add:hover{opacity:.85}
-.btn-del-all{padding:7px 14px;border-radius:7px;border:1px solid var(--border);
-  background:var(--bg3);color:var(--red);font-size:13px;cursor:pointer;display:none}
-.search-box{padding:7px 12px;border-radius:7px;border:1px solid var(--border);
-  background:var(--bg3);color:var(--text);font-size:13px;width:220px}
-.search-box:focus{outline:none;border-color:var(--blue)}
-.ctrl-sep{width:1px;height:24px;background:var(--border);margin:0 4px}
-.stat-pill{padding:4px 10px;border-radius:12px;background:var(--bg3);
-  font-size:12px;color:var(--text2);border:1px solid var(--border)}
-.stat-pill b{color:var(--text)}
+.btn-add:disabled{opacity:.4;cursor:default}
+.save-indicator{font-size:12px;color:var(--text3);min-width:80px}
+.save-indicator.saving{color:var(--yellow)}
+.save-indicator.saved{color:var(--green)}
+.tsep{width:1px;height:22px;background:var(--border)}
 
-/* Table */
-.tbl-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--bg2)}
-table{width:100%;border-collapse:collapse;min-width:1100px}
-thead th{
-  background:var(--bg3);color:var(--text2);font-size:11px;font-weight:600;
-  text-transform:uppercase;letter-spacing:.06em;padding:10px 12px;
-  border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2;
-  user-select:none;cursor:pointer}
-thead th:hover{color:var(--text)}
-thead th.sort-asc::after{content:' ↑'}
-thead th.sort-desc::after{content:' ↓'}
-tbody tr{border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
-tbody tr:hover{background:var(--bg3)}
-tbody tr.selected{background:var(--bg4)}
+/* ── Table container ── */
+.tbl-outer{flex:1;overflow:auto;padding:0 20px 20px}
+.tbl-wrap{margin-top:16px;border:1px solid var(--border);border-radius:10px;overflow:auto}
+table{border-collapse:collapse;min-width:max-content;width:100%}
+
+/* ── Header rows ── */
+thead tr.grp-row th{
+  background:var(--bg4);font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--text3);padding:5px 10px;border-bottom:1px solid var(--border);
+  text-align:center;white-space:nowrap}
+thead tr.grp-row th.grp-comp{background:#151c27;color:var(--text3)}
+thead tr.col-row th{
+  background:var(--bg3);font-size:11px;font-weight:600;color:var(--text2);
+  padding:7px 8px;border-bottom:2px solid var(--border);white-space:nowrap;
+  position:sticky;top:0;z-index:3;text-align:right}
+thead tr.col-row th.left{text-align:left}
+thead tr.col-row th.comp{background:var(--comp-bg);color:var(--text3)}
+
+/* ── Body rows ── */
+tbody tr{border-bottom:1px solid var(--border)}
+tbody tr:hover{background:rgba(88,166,255,.04)}
 tbody tr:last-child{border-bottom:none}
-td{padding:9px 12px;font-size:13px;white-space:nowrap}
-td.num{text-align:right;font-variant-numeric:tabular-nums}
-td.article{font-family:monospace;font-size:12px;color:var(--text2)}
-td.brand{font-weight:500}
-.profit-pos{color:var(--green)}
-.profit-neg{color:var(--red)}
-.profit-mid{color:var(--yellow)}
-.margin-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
-.margin-high{background:#1f3a2a;color:var(--green)}
-.margin-mid{background:#2e2a1a;color:var(--yellow)}
-.margin-low{background:#2a1a1a;color:var(--red)}
 
-/* Empty state */
-.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:60px 24px;color:var(--text3);gap:12px}
-.empty-icon{font-size:40px}
-.empty-text{font-size:15px}
+/* Editable cell */
+td.ed{padding:3px 4px;vertical-align:middle}
+td.ed input,td.ed select{
+  width:100%;border:none;background:transparent;color:var(--text);
+  font-size:12px;font-family:inherit;padding:4px 5px;border-radius:4px;
+  text-align:right;min-width:70px}
+td.ed input[type=text],td.ed input.art{text-align:left;min-width:100px}
+td.ed select{min-width:130px;cursor:pointer}
+td.ed input:focus,td.ed select:focus{
+  outline:none;background:rgba(88,166,255,.1);border:1px solid var(--blue)}
+td.ed input:hover,td.ed select:hover{background:var(--bg3)}
 
-/* Summary row */
-tfoot td{background:var(--bg3);font-weight:600;font-size:12px;border-top:2px solid var(--border);
-  padding:8px 12px;white-space:nowrap}
-tfoot td.sum-label{color:var(--text2);text-transform:uppercase;font-size:11px;letter-spacing:.05em}
+/* Computed cell */
+td.comp{
+  background:var(--comp-bg);color:var(--comp-text);
+  padding:5px 10px;text-align:right;white-space:nowrap;font-size:12px;
+  font-variant-numeric:tabular-nums}
+td.comp.profit-pos{color:var(--green)}
+td.comp.profit-neg{color:var(--red)}
+td.comp.profit-mid{color:var(--yellow)}
 
-/* Side panel */
-.panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
-.panel-overlay.open{display:block}
-.panel{position:fixed;right:0;top:0;bottom:0;width:480px;background:var(--bg2);
-  border-left:1px solid var(--border);z-index:41;display:flex;flex-direction:column;
-  transform:translateX(100%);transition:transform .2s ease}
-.panel.open{transform:none}
-.panel-hdr{display:flex;align-items:center;justify-content:space-between;
-  padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
-.panel-title{font-weight:600;font-size:15px}
-.panel-close{width:32px;height:32px;border-radius:6px;border:none;
-  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:18px;line-height:1;
-  display:flex;align-items:center;justify-content:center}
-.panel-close:hover{color:var(--text)}
-.panel-body{flex:1;overflow-y:auto;padding:20px}
-.panel-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;flex-shrink:0}
-.btn-save{flex:1;padding:9px;border-radius:7px;border:none;
-  background:var(--blue);color:#fff;font-size:14px;font-weight:600;cursor:pointer}
-.btn-save:hover{opacity:.85}
-.btn-delete{padding:9px 16px;border-radius:7px;border:1px solid var(--red);
-  background:transparent;color:var(--red);font-size:14px;cursor:pointer}
-.btn-delete:hover{background:var(--red);color:#fff}
+/* Delete cell */
+td.del-cell{width:32px;padding:3px 6px;text-align:center}
+.del-btn{width:24px;height:24px;border-radius:5px;border:none;
+  background:transparent;color:var(--text3);cursor:pointer;font-size:14px;line-height:1}
+.del-btn:hover{background:rgba(248,81,73,.15);color:var(--red)}
 
-/* Form groups */
-.form-section{margin-bottom:20px}
-.form-section-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;
-  letter-spacing:.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
-.field-row{display:flex;gap:10px;margin-bottom:10px}
-.field{display:flex;flex-direction:column;gap:4px;flex:1}
-.field label{font-size:11px;color:var(--text2);font-weight:500}
-.field input,.field select{
-  padding:7px 10px;border-radius:6px;border:1px solid var(--border);
-  background:var(--bg3);color:var(--text);font-size:13px}
-.field input:focus,.field select:focus{outline:none;border-color:var(--blue)}
-.field input.auto{background:var(--bg4);color:var(--text2);cursor:default}
-.field .hint{font-size:10px;color:var(--text3)}
+/* Margin badge */
+.mbadge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600}
+.mbadge.hi{background:#1f3a2a;color:var(--green)}
+.mbadge.mid{background:#2e2a1a;color:var(--yellow)}
+.mbadge.lo{background:#2a1a1a;color:var(--red)}
+[data-theme="light"] .mbadge.hi{background:#d2f4db;color:#1a7f37}
+[data-theme="light"] .mbadge.mid{background:#fff3cd;color:#9a6700}
+[data-theme="light"] .mbadge.lo{background:#ffe4e4;color:#cf222e}
 
-/* Results panel inside form */
-.results-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
-.res-card{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:10px 12px}
-.res-label{font-size:10px;color:var(--text2);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
-.res-value{font-size:16px;font-weight:700}
-.res-value.pos{color:var(--green)}
-.res-value.neg{color:var(--red)}
-.res-value.neu{color:var(--text)}
-.res-card.full{grid-column:1/-1}
+/* Footer / summary */
+tfoot td{
+  background:var(--bg4);font-weight:600;font-size:12px;padding:6px 10px;
+  border-top:2px solid var(--border);white-space:nowrap;text-align:right}
+tfoot td.left{text-align:left;color:var(--text2)}
+tfoot td.fcomp{background:var(--comp-bg)}
+
+/* Empty / no-project state */
+.placeholder{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:80px 24px;color:var(--text3);gap:14px;text-align:center}
+.placeholder-icon{font-size:48px}
+.placeholder-text{font-size:16px}
+.placeholder-sub{font-size:13px;color:var(--text3)}
 </style>
 </head>
 <body data-theme="dark">
@@ -141,72 +127,35 @@ tfoot td.sum-label{color:var(--text2);text-transform:uppercase;font-size:11px;le
   <div class="hdr-sep"></div>
   <a href="/" class="hbtn">📋 Задачи</a>
   <a href="/plan-fact" class="hbtn">📊 План-Факт</a>
-  <a href="/unit" class="hbtn active">💰 Юнит</a>
+  <a href="/unit" class="hbtn act">💰 Юнит</a>
   {% if current_user.role == 'admin' %}
   <a href="/admin" class="hbtn">⚙️ Пользователи</a>
   {% endif %}
-  <button class="hbtn theme-btn" onclick="toggleTheme()" title="Тема">🌙</button>
+  <button class="hbtn theme-btn" onclick="toggleTheme()">🌙</button>
   <a href="/auth/logout" class="hbtn" style="color:var(--red)">Выйти</a>
 </div>
 
-<div class="layout">
-<div class="main">
-  <div class="controls">
-    <button class="btn-add" onclick="openPanel(null)">+ Добавить артикул</button>
-    <div class="ctrl-sep"></div>
-    <input class="search-box" type="text" placeholder="Поиск по артикулу / бренду…" oninput="filterRows(this.value)" id="searchBox">
-    <div class="ctrl-sep"></div>
-    <span class="stat-pill" id="statRows"><b>0</b> артикулов</span>
-    <span class="stat-pill" id="statProfit">Прибыль: <b>—</b></span>
-    <span class="stat-pill" id="statMargin">Маржа: <b>—</b></span>
-  </div>
-
-  <div class="tbl-wrap" id="tblWrap">
-    <table>
-      <thead>
-        <tr>
-          <th onclick="sortBy('seller_article')">Артикул продавца</th>
-          <th onclick="sortBy('wb_article')">WB</th>
-          <th onclick="sortBy('brand')">Бренд</th>
-          <th onclick="sortBy('cost_price')" class="num">Себест.</th>
-          <th onclick="sortBy('wb_price')" class="num">Цена ВБ</th>
-          <th onclick="sortBy('_logistics_ktr')" class="num">Логистика</th>
-          <th onclick="sortBy('_storage_30d')" class="num">Хранение</th>
-          <th onclick="sortBy('_commission')" class="num">Комиссия</th>
-          <th onclick="sortBy('_profit')" class="num">Прибыль</th>
-          <th onclick="sortBy('_margin')" class="num">Маржа</th>
-          <th onclick="sortBy('_roi')" class="num">ROI</th>
-          <th onclick="sortBy('drr_pct')" class="num">ДРР %</th>
-          <th onclick="sortBy('_batch_margin')" class="num">Маржа партии</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-      <tfoot id="tfoot"></tfoot>
-    </table>
-    <div class="empty" id="emptyState" style="display:none">
-      <div class="empty-icon">💰</div>
-      <div class="empty-text">Добавьте первый артикул для расчёта юнит-экономики</div>
-      <button class="btn-add" onclick="openPanel(null)">+ Добавить артикул</button>
-    </div>
-  </div>
-</div>
+<div class="toolbar">
+  <span class="toolbar-title">💰 Юнит-экономика</span>
+  <div class="tsep"></div>
+  <select class="proj-select" id="projSelect" onchange="onProjectChange()">
+    <option value="">— выберите кабинет —</option>
+    {% for p in projects %}
+    <option value="{{ p }}">{{ project_emoji[p] }} {{ p }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn-add" id="btnAdd" disabled onclick="addRow()">+ Строка</button>
+  <div class="tsep"></div>
+  <span class="save-indicator" id="saveInd"></span>
 </div>
 
-<!-- Panel -->
-<div class="panel-overlay" id="overlay" onclick="closePanel()"></div>
-<div class="panel" id="panel">
-  <div class="panel-hdr">
-    <span class="panel-title" id="panelTitle">Добавить артикул</span>
-    <button class="panel-close" onclick="closePanel()">✕</button>
-  </div>
-  <div class="panel-body" id="panelBody"></div>
-  <div class="panel-footer">
-    <button class="btn-save" onclick="saveRow()">Сохранить</button>
-    <button class="btn-delete" id="btnDelete" style="display:none" onclick="deleteRow()">Удалить</button>
-  </div>
+<div class="tbl-outer">
+  <div id="content"></div>
 </div>
 
 <script>
+// ─── Данные ──────────────────────────────────────────────────────────────────
+const PROJECTS_DATA = {{ projects | tojson }};
 const WAREHOUSE_COEFS = {
   'Обухово СГТ':75,'Голицыно СГТ':75,'Радумля СГТ':95,'Шушары СГТ':95,
   'Волгоград':110,'Рязань':120,'Маркетплейс':125,'Подольск 4':125,'Атакент':125,
@@ -219,610 +168,376 @@ const WAREHOUSE_COEFS = {
 };
 const WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
 
-let rows = [];
-let editId = null;
-let sortCol = null;
-let sortDir = 1;
+let rows = [];       // [{id, _key, _dirty, project, ...fields}]
+let currentProject = '';
+let saveTimers = {};
+let keySeq = 0;
+const newKey = () => 'k' + (++keySeq);
 
-// ─── Формулы ────────────────────────────────────────────────────────────────
+// ─── Формулы ─────────────────────────────────────────────────────────────────
 function compute(r) {
-  const costPrice     = +r.cost_price     || 0;
-  const logToWb       = +r.logistics_to_wb|| 0;
-  const packaging     = +r.packaging      || 0;
-  const overhead      = +r.overhead       || 0;
-  const defectPct     = +r.defect_pct     || 0;
-  const wbPrice       = +r.wb_price       || 0;
-  const commissionPct = +r.commission_pct || 36;
-  const redemptionPct = +r.redemption_pct || 100;
-  const irp           = +r.irp            || 1.0;
-  const drrPct        = +r.drr_pct        || 0;
-  const drrExtRub     = +r.drr_external_rub || 0;
-  const qty           = +r.quantity       || 0;
+  const cp  = +r.cost_price     || 0;
+  const lw  = +r.logistics_to_wb|| 0;
+  const pkg = +r.packaging      || 0;
+  const ovh = +r.overhead       || 0;
+  const def = +r.defect_pct     || 0;
+  const wp  = +r.wb_price       || 0;
+  const com = +r.commission_pct || 36;
+  const red = +r.redemption_pct || 100;
+  const irp = +r.irp            || 1.0;
+  const dp  = +r.drr_pct        || 0;
+  const de  = +r.drr_external_rub || 0;
+  const qty = +r.quantity       || 0;
 
-  const totalCost = costPrice + logToWb + packaging + overhead;
+  const totalCost = cp + lw + pkg + ovh;
 
-  // Литраж
   const w = +r.width_cm, l = +r.length_cm, h = +r.height_cm;
   const liters = (w && l && h) ? w * l * h / 1000 : (+r.liters || 0);
+  const wCoef  = WAREHOUSE_COEFS[r.warehouse] || 0;
 
-  const wCoef = WAREHOUSE_COEFS[r.warehouse] || 0;
+  const storageDay = (liters && wCoef) ? 0.08 * liters * wCoef / 100 : (+r.storage_per_day || 0);
+  const storage30  = storageDay * 30;
 
-  // Хранение в день = 0.08 * литраж * коэф / 100
-  const storagePerDay = liters && wCoef ? 0.08 * liters * wCoef / 100 : (+r.storage_per_day || 0);
-  const storage30d = storagePerDay * 30;
-
-  // Логистика + КТР: если задана вручную — берём её, иначе считаем
-  let logisticsKtr;
+  let logKtr;
   if (r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== '') {
-    logisticsKtr = +r.logistics_ktr;
-  } else if (liters && wCoef && redemptionPct > 0) {
-    const basePerDelivery = (223.2 + 2.1 * liters) * wCoef / 100 * irp;
-    logisticsKtr = basePerDelivery / (redemptionPct / 100);
+    logKtr = +r.logistics_ktr;
+  } else if (liters && wCoef && red > 0) {
+    logKtr = (223.2 + 2.1 * liters) * wCoef / 100 * irp / (red / 100);
   } else {
-    logisticsKtr = 0;
+    logKtr = 0;
   }
 
-  const commission   = wbPrice * commissionPct / 100;
-  const wbClub       = wbPrice * 0.95;
-  const price10pct   = wbPrice * 0.9;
-  // Цена клиенту = WB цена * (1 - (комиссия% + 1%) / 100)  — 1% эквайринг
-  const priceToSeller      = wbPrice * (1 - (commissionPct + 1) / 100);
-  const wbClubToSeller     = wbClub  * (1 - (commissionPct + 1) / 100);
+  const commission  = wp * com / 100;
+  const wbClub      = wp * 0.95;
+  const usn         = wp * 0.07;
+  const drrRub      = wp * dp / 100 + de;
+  const brakCost    = totalCost * def / 100;
+  const revenue     = wp - commission - logKtr - storage30 - usn - drrRub;
+  const profit      = revenue - totalCost - brakCost;
+  const margin      = wp > 0 ? profit / wp * 100 : 0;
+  const roi         = totalCost > 0 ? profit / totalCost * 100 : 0;
+  const batchProfit = profit * qty;
+  const batchMargin = (qty > 0 && wp > 0) ? batchProfit / (wp * qty) * 100 : 0;
+  const invested    = totalCost * qty;
 
-  const markup   = totalCost > 0 ? wbPrice / totalCost : 0;
-  const usn      = wbPrice * 0.07;
-  const drrRub   = wbPrice * drrPct / 100 + drrExtRub;
-  const brakCost = totalCost * defectPct / 100;
+  return {totalCost, liters, wCoef, storageDay, storage30,
+          logKtr, commission, wbClub, usn, drrRub, brakCost,
+          revenue, profit, margin, roi, batchProfit, batchMargin, invested};
+}
 
-  // Выручка = WB - комиссия - логистика - хранение - УСН - ДРР
-  const revenue = wbPrice - commission - logisticsKtr - storage30d - usn - drrRub;
-  const profit  = revenue - totalCost - brakCost;
+// ─── Форматирование ──────────────────────────────────────────────────────────
+const fmt2 = v => v != null && !isNaN(v) ? Math.round(v).toLocaleString('ru-RU') : '—';
+const fmtR = v => v != null && !isNaN(v) ? (v < 0 ? '−' : '') + '₽ ' + Math.abs(Math.round(v)).toLocaleString('ru-RU') : '—';
+const fmtP = v => v != null && !isNaN(v) ? v.toFixed(1) + '%' : '—';
 
-  // ВБ клуб
-  const commissionWbClub = wbClub * commissionPct / 100;
-  const usnWbClub  = wbClub * 0.07;
-  const drrRubWbClub = wbClub * drrPct / 100 + drrExtRub;
-  const revenueWbClub = wbClub - commissionWbClub - logisticsKtr - storage30d - usnWbClub - drrRubWbClub;
-  const profitWbClub  = revenueWbClub - totalCost - brakCost;
+function mClass(m) {
+  if (isNaN(m)) return '';
+  return m >= 20 ? 'hi' : m >= 10 ? 'mid' : 'lo';
+}
+function profitCls(v) {
+  return v > 0 ? 'profit-pos' : v < 0 ? 'profit-neg' : '';
+}
 
-  const margin       = wbPrice > 0 ? profit / wbPrice * 100 : 0;
-  const marginWbClub = wbClub  > 0 ? profitWbClub / wbClub * 100 : 0;
-  const roi          = totalCost > 0 ? profit / totalCost * 100 : 0;
+// ─── Загрузка ─────────────────────────────────────────────────────────────────
+async function onProjectChange() {
+  currentProject = document.getElementById('projSelect').value;
+  document.getElementById('btnAdd').disabled = !currentProject;
+  if (!currentProject) { rows = []; renderContent(); return; }
+  const resp = await fetch('/api/unit-rows?project=' + encodeURIComponent(currentProject));
+  rows = await resp.json();
+  rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+  renderContent();
+}
 
-  const qtyInvested  = totalCost * qty;
-  const totalProfit  = profit * qty;
-  const batchMargin  = (qty > 0 && wbPrice > 0) ? totalProfit / (wbPrice * qty) * 100 : 0;
+// ─── Автосохранение ──────────────────────────────────────────────────────────
+function schedSave(key) {
+  clearTimeout(saveTimers[key]);
+  saveTimers[key] = setTimeout(() => doSave(key), 600);
+  showInd('saving');
+}
 
-  return {
-    totalCost, liters, wCoef, storagePerDay, storage30d, logisticsKtr,
-    commission, wbClub, price10pct, priceToSeller, wbClubToSeller,
-    markup, usn, drrRub, brakCost, revenue,
-    profit, profitWbClub, margin, marginWbClub, roi,
-    qtyInvested, totalProfit, batchMargin
+async function doSave(key) {
+  const r = rows.find(x => x._key === key);
+  if (!r || !r._dirty) return;
+  const body = {...r, project: currentProject};
+  delete body._key; delete body._dirty;
+  const url  = r.id ? `/api/unit-rows/${r.id}` : '/api/unit-rows';
+  const meth = r.id ? 'PUT' : 'POST';
+  const res  = await fetch(url, {method: meth, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const json = await res.json();
+  if (json.id) r.id = json.id;
+  r._dirty = false;
+  // update delete button
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  if (tr) tr.querySelector('.del-btn').dataset.id = r.id || '';
+  checkAllSaved();
+}
+
+function showInd(state) {
+  const el = document.getElementById('saveInd');
+  el.className = 'save-indicator ' + state;
+  el.textContent = state === 'saving' ? '⏳ Сохранение…' : state === 'saved' ? '✓ Сохранено' : '';
+  if (state === 'saved') setTimeout(() => { if (el.textContent === '✓ Сохранено') el.textContent = ''; }, 2000);
+}
+
+function checkAllSaved() {
+  if (!rows.some(r => r._dirty)) showInd('saved');
+}
+
+// ─── Изменение ячейки ────────────────────────────────────────────────────────
+function onInput(key, field, val) {
+  const r = rows.find(x => x._key === key);
+  if (!r) return;
+  const numFields = ['cost_price','logistics_to_wb','packaging','overhead','defect_pct',
+    'width_cm','length_cm','height_cm','liters','redemption_pct','irp','logistics_ktr',
+    'commission_pct','wb_price','drr_pct','drr_external_rub','quantity'];
+  r[field] = numFields.includes(field) ? (val === '' ? (field === 'logistics_ktr' || field === 'liters' ? null : 0) : +val) : val;
+  r._dirty = true;
+  updateComputedCells(key);
+  schedSave(key);
+}
+
+function updateComputedCells(key) {
+  const r = rows.find(x => x._key === key);
+  if (!r) return;
+  const c = compute(r);
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  if (!tr) return;
+  const set = (cls, val, extra) => {
+    const el = tr.querySelector('.' + cls);
+    if (!el) return;
+    el.textContent = val;
+    el.className = el.className.replace(/profit-\w+/g, '').replace(/mbadge \w+/g, 'mbadge').trim();
+    if (extra) el.classList.add(...extra.split(' '));
   };
+  set('cv-totalcost',  fmtR(c.totalCost));
+  set('cv-logtgtr',    r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
+                         ? fmtR(+r.logistics_ktr) : fmtR(c.logKtr));
+  set('cv-stor30',     fmtR(c.storage30));
+  set('cv-commission', fmtR(c.commission));
+  const pm = tr.querySelector('.cv-profit');
+  if (pm) { pm.textContent = fmtR(c.profit); pm.className = 'comp cv-profit ' + profitCls(c.profit); }
+  const mm = tr.querySelector('.cv-margin');
+  if (mm) { mm.innerHTML = `<span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span>`; }
+  const rm = tr.querySelector('.cv-roi');
+  if (rm) { rm.textContent = fmtP(c.roi); rm.className = 'comp cv-roi ' + profitCls(c.roi); }
+  const bm = tr.querySelector('.cv-bmargin');
+  if (bm) { bm.innerHTML = `<span class="mbadge ${mClass(c.batchMargin)}">${fmtP(c.batchMargin)}</span>`; }
+  updateFooter();
 }
 
-// ─── Утилиты форматирования ──────────────────────────────────────────────────
-const rub = v => v == null || isNaN(v) ? '—' : (v < 0 ? '−' : '') + '₽ ' + Math.abs(v).toLocaleString('ru-RU', {minimumFractionDigits:0,maximumFractionDigits:0});
-const pct = v => v == null || isNaN(v) ? '—' : v.toFixed(1) + '%';
-const num = v => v == null || isNaN(v) ? '—' : v.toLocaleString('ru-RU', {minimumFractionDigits:0,maximumFractionDigits:2});
-
-function marginClass(m) {
-  if (m === null || isNaN(m)) return '';
-  if (m >= 20) return 'margin-high';
-  if (m >= 10) return 'margin-mid';
-  return 'margin-low';
+// ─── Добавить строку ─────────────────────────────────────────────────────────
+function addRow() {
+  if (!currentProject) return;
+  const k = newKey();
+  const r = {
+    id: null, _key: k, _dirty: true, project: currentProject, brand: currentProject,
+    wb_article: '', seller_article: '',
+    cost_price: 0, logistics_to_wb: 0, packaging: 0, overhead: 0, defect_pct: 0,
+    width_cm: null, length_cm: null, height_cm: null, liters: null,
+    redemption_pct: 100, warehouse: '', irp: 1.0, logistics_ktr: null,
+    reception_coef: 'x0', storage_per_day: 0,
+    commission_pct: 36, wb_price: 0, drr_pct: 0, drr_external_rub: 0, quantity: 0
+  };
+  rows.push(r);
+  const tbody = document.getElementById('unit-tbody');
+  const tr = document.createElement('tr');
+  tr.dataset.key = k;
+  tr.innerHTML = rowHTML(r);
+  tbody.appendChild(tr);
+  updateFooter();
+  // фокус на артикул продавца
+  const inp = tr.querySelector('.inp-seller');
+  if (inp) inp.focus();
+  schedSave(k);
 }
 
-function profitClass(v) {
-  if (v > 0) return 'profit-pos';
-  if (v < 0) return 'profit-neg';
-  return '';
-}
-
-// ─── Загрузка данных ──────────────────────────────────────────────────────────
-async function loadRows() {
-  const r = await fetch('/api/unit-rows');
-  rows = await r.json();
-  renderTable();
+// ─── Удалить строку ──────────────────────────────────────────────────────────
+async function deleteRow(key, id) {
+  if (!confirm('Удалить эту строку?')) return;
+  if (id) await fetch(`/api/unit-rows/${id}`, {method:'DELETE'});
+  rows = rows.filter(r => r._key !== key);
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  if (tr) tr.remove();
+  updateFooter();
 }
 
 // ─── Рендер таблицы ──────────────────────────────────────────────────────────
-function filterRows(q) {
-  const s = q.toLowerCase();
-  document.querySelectorAll('#tbody tr').forEach(tr => {
-    tr.style.display = tr.dataset.search.includes(s) ? '' : 'none';
-  });
-  updateStats();
+function warehouseOptions(selected) {
+  return WAREHOUSES.map(w =>
+    `<option value="${w}" ${w===selected?'selected':''}>${w}</option>`
+  ).join('');
 }
 
-function sortBy(col) {
-  if (sortCol === col) sortDir = -sortDir;
-  else { sortCol = col; sortDir = 1; }
-  document.querySelectorAll('thead th').forEach(th => {
-    th.classList.remove('sort-asc', 'sort-desc');
-  });
-  const idx = ['seller_article','wb_article','brand','cost_price','wb_price',
-    '_logistics_ktr','_storage_30d','_commission','_profit','_margin','_roi',
-    'drr_pct','_batch_margin'].indexOf(col);
-  if (idx >= 0) {
-    const cls = sortDir > 0 ? 'sort-asc' : 'sort-desc';
-    document.querySelectorAll('thead th')[idx].classList.add(cls);
-  }
-  rows.sort((a, b) => {
-    const ca = compute(a), cb = compute(b);
-    const map = {_logistics_ktr:'logisticsKtr',_storage_30d:'storage30d',
-      _commission:'commission',_profit:'profit',_margin:'margin',
-      _roi:'roi',_batch_margin:'batchMargin'};
-    let va = col.startsWith('_') ? ca[map[col]] : a[col];
-    let vb = col.startsWith('_') ? cb[map[col]] : b[col];
-    if (va == null) va = -Infinity;
-    if (vb == null) vb = -Infinity;
-    if (typeof va === 'string') return sortDir * va.localeCompare(vb);
-    return sortDir * (va - vb);
-  });
-  renderTable();
+function rowHTML(r) {
+  const c   = compute(r);
+  const key = r._key;
+  const n   = (v, field, cls='', ph='0', min='') =>
+    `<input type="number" class="${cls}" value="${v??''}" placeholder="${ph}"
+      ${min?'min="'+min+'"':''} step="any"
+      oninput="onInput('${key}','${field}',this.value)">`;
+  const s   = (v, field, cls='') =>
+    `<input type="text" class="${cls} art" value="${esc(v??'')}"
+      oninput="onInput('${key}','${field}',this.value)">`;
+
+  const lktr = r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
+    ? +r.logistics_ktr : c.logKtr;
+
+  return `
+  <td class="del-cell">
+    <button class="del-btn" data-id="${r.id||''}" onclick="deleteRow('${key}',${r.id||'null'})">✕</button>
+  </td>
+  <td class="ed">${s(r.seller_article,'seller_article','inp-seller')}</td>
+  <td class="ed">${n(r.wb_article,'wb_article','','артикул')}</td>
+  <td class="ed">${n(r.cost_price,'cost_price')}</td>
+  <td class="ed">${n(r.packaging,'packaging')}</td>
+  <td class="ed">${n(r.logistics_to_wb,'logistics_to_wb')}</td>
+  <td class="ed">${n(r.overhead,'overhead')}</td>
+  <td class="ed">${n(r.defect_pct,'defect_pct','','0','0')}</td>
+  <td class="comp cv-totalcost">${fmtR(c.totalCost)}</td>
+  <td class="ed">${n(r.liters||'','liters','','авто')}</td>
+  <td class="ed">${n(r.redemption_pct,'redemption_pct','','100','0')}</td>
+  <td class="ed" style="padding:3px 4px">
+    <select onchange="onInput('${key}','warehouse',this.value)">
+      <option value="">—</option>${warehouseOptions(r.warehouse||'')}
+    </select>
+  </td>
+  <td class="ed">${n(r.irp||1,'irp','','1.0')}</td>
+  <td class="ed">${n(r.logistics_ktr??'','logistics_ktr','','авто')}</td>
+  <td class="comp cv-stor30">${fmtR(c.storage30)}</td>
+  <td class="ed">${n(r.commission_pct,'commission_pct','','36')}</td>
+  <td class="ed">${n(r.wb_price,'wb_price')}</td>
+  <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
+  <td class="ed">${n(r.drr_external_rub,'drr_external_rub','','0')}</td>
+  <td class="ed">${n(r.quantity,'quantity','','0','0')}</td>
+  <td class="comp cv-commission">${fmtR(c.commission)}</td>
+  <td class="comp cv-profit ${profitCls(c.profit)}">${fmtR(c.profit)}</td>
+  <td class="comp cv-margin"><span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span></td>
+  <td class="comp cv-roi ${profitCls(c.roi)}">${fmtP(c.roi)}</td>
+  <td class="comp cv-bmargin"><span class="mbadge ${mClass(c.batchMargin)}">${fmtP(c.batchMargin)}</span></td>`;
 }
 
-function renderTable() {
-  const tbody = document.getElementById('tbody');
-  const search = document.getElementById('searchBox').value.toLowerCase();
-
-  if (!rows.length) {
-    document.getElementById('tblWrap').querySelector('table').style.display = 'none';
-    document.getElementById('emptyState').style.display = '';
-    updateStats();
+function renderContent() {
+  const div = document.getElementById('content');
+  if (!currentProject) {
+    div.innerHTML = `<div class="placeholder">
+      <div class="placeholder-icon">💰</div>
+      <div class="placeholder-text">Юнит-экономика</div>
+      <div class="placeholder-sub">Выберите кабинет для загрузки данных</div>
+    </div>`;
     return;
   }
-  document.getElementById('tblWrap').querySelector('table').style.display = '';
-  document.getElementById('emptyState').style.display = 'none';
+  if (!rows.length) {
+    div.innerHTML = `<div class="placeholder">
+      <div class="placeholder-icon">📋</div>
+      <div class="placeholder-text">Нет артикулов</div>
+      <div class="placeholder-sub">Нажмите «+ Строка» чтобы добавить первый артикул</div>
+    </div>`;
+    return;
+  }
 
-  tbody.innerHTML = rows.map(r => {
-    const c = compute(r);
-    const mClass = marginClass(c.margin);
-    const searchStr = [r.seller_article, r.wb_article, r.brand].join(' ').toLowerCase();
-    const vis = searchStr.includes(search) ? '' : 'display:none';
-    return `<tr data-id="${r.id}" data-search="${searchStr}" style="${vis}" onclick="openPanel(${r.id})">
-      <td class="brand">${esc(r.seller_article||'—')}</td>
-      <td class="article">${r.wb_article||'—'}</td>
-      <td>${esc(r.brand||'—')}</td>
-      <td class="num">${rub(c.totalCost)}</td>
-      <td class="num">${rub(r.wb_price||0)}</td>
-      <td class="num">${rub(c.logisticsKtr)}</td>
-      <td class="num">${rub(c.storage30d)}</td>
-      <td class="num">${rub(c.commission)}</td>
-      <td class="num ${profitClass(c.profit)}">${rub(c.profit)}</td>
-      <td class="num"><span class="margin-badge ${mClass}">${pct(c.margin)}</span></td>
-      <td class="num ${profitClass(c.roi)}">${pct(c.roi)}</td>
-      <td class="num">${pct(r.drr_pct)}</td>
-      <td class="num"><span class="margin-badge ${marginClass(c.batchMargin)}">${pct(c.batchMargin)}</span></td>
-    </tr>`;
-  }).join('');
-
-  renderSummary();
-  updateStats();
+  div.innerHTML = `<div class="tbl-wrap"><table>
+  <thead>
+    <tr class="grp-row">
+      <th></th>
+      <th colspan="2" class="left">Идентификация</th>
+      <th colspan="5">Себестоимость</th>
+      <th class="grp-comp">↓</th>
+      <th colspan="5">Параметры ВБ</th>
+      <th class="grp-comp">↓</th>
+      <th colspan="4">Цена и реклама</th>
+      <th colspan="1"></th>
+      <th class="grp-comp" colspan="5">Результаты расчёта</th>
+    </tr>
+    <tr class="col-row">
+      <th class="left"></th>
+      <th class="left">Арт. продавца</th>
+      <th class="left">WB арт.</th>
+      <th>Себест.₽</th>
+      <th>Упак.₽</th>
+      <th>Лог.ВБ₽</th>
+      <th>Накл.₽</th>
+      <th>Брак%</th>
+      <th class="comp" title="Итоговая себестоимость">Ит.себест.</th>
+      <th>Литраж</th>
+      <th>%выкупа</th>
+      <th class="left">Склад</th>
+      <th>ИРП</th>
+      <th title="Логистика + КТР (авто если пусто)">Лог+КТР</th>
+      <th class="comp" title="Хранение за 30 дней">Хран/30д</th>
+      <th>Комис.%</th>
+      <th>Цена ВБ₽</th>
+      <th>ДРР%</th>
+      <th>ДРР₽</th>
+      <th>Кол-во</th>
+      <th class="comp">Комис.₽</th>
+      <th class="comp">Прибыль</th>
+      <th class="comp">Маржа</th>
+      <th class="comp">ROI</th>
+      <th class="comp">Маржа пар.</th>
+    </tr>
+  </thead>
+  <tbody id="unit-tbody">
+    ${rows.map(r => `<tr data-key="${r._key}">${rowHTML(r)}</tr>`).join('')}
+  </tbody>
+  <tfoot id="unit-tfoot"></tfoot>
+</table></div>`;
+  updateFooter();
 }
 
-function renderSummary() {
-  const visible = rows.filter(r => {
-    const search = document.getElementById('searchBox').value.toLowerCase();
-    return [r.seller_article, r.wb_article, r.brand].join(' ').toLowerCase().includes(search);
-  });
-  if (!visible.length) { document.getElementById('tfoot').innerHTML = ''; return; }
-
-  const tots = visible.reduce((acc, r) => {
+function updateFooter() {
+  const tfoot = document.getElementById('unit-tfoot');
+  if (!tfoot) return;
+  if (!rows.length) { tfoot.innerHTML = ''; return; }
+  const totals = rows.reduce((a, r) => {
     const c = compute(r);
-    acc.totalCost    += c.totalCost;
-    acc.logisticsKtr += c.logisticsKtr;
-    acc.storage30d   += c.storage30d;
-    acc.commission   += c.commission;
-    acc.profit       += c.profit;
-    acc.qty          += (+r.quantity || 0);
-    acc.invested     += c.qtyInvested;
-    acc.totalProfit  += c.totalProfit;
-    acc.revenue      += (r.wb_price || 0) * (+r.quantity || 0);
-    return acc;
-  }, {totalCost:0,logisticsKtr:0,storage30d:0,commission:0,profit:0,qty:0,invested:0,totalProfit:0,revenue:0});
+    a.cost     += c.totalCost;
+    a.logKtr   += c.logKtr;
+    a.stor30   += c.storage30;
+    a.comm     += c.commission;
+    a.profit   += c.profit;
+    a.revenue  += (+r.wb_price || 0);
+    a.invested += c.invested;
+    a.bprofit  += c.batchProfit;
+    a.brev     += (+r.wb_price || 0) * (+r.quantity || 0);
+    return a;
+  }, {cost:0,logKtr:0,stor30:0,comm:0,profit:0,revenue:0,invested:0,bprofit:0,brev:0});
 
-  const avgMargin = tots.revenue > 0 ? tots.totalProfit / tots.revenue * 100 : 0;
+  const avgM  = totals.revenue > 0 ? totals.profit / totals.revenue * 100 : 0;
+  const avgBM = totals.brev    > 0 ? totals.bprofit / totals.brev * 100   : 0;
 
-  document.getElementById('tfoot').innerHTML = `<tr>
-    <td class="sum-label" colspan="3">Итого (${visible.length})</td>
-    <td class="num">${rub(tots.totalCost)}</td>
-    <td class="num">—</td>
-    <td class="num">${rub(tots.logisticsKtr)}</td>
-    <td class="num">${rub(tots.storage30d)}</td>
-    <td class="num">${rub(tots.commission)}</td>
-    <td class="num ${profitClass(tots.profit)}">${rub(tots.profit)}</td>
-    <td class="num"><span class="margin-badge ${marginClass(avgMargin)}">${pct(avgMargin)}</span></td>
-    <td class="num">—</td>
-    <td class="num">—</td>
-    <td class="num"><span class="margin-badge ${marginClass(avgMargin)}">${pct(avgMargin)}</span></td>
+  tfoot.innerHTML = `<tr>
+    <td></td>
+    <td class="left" colspan="2">Итого (${rows.length})</td>
+    <td>${fmtR(totals.cost)}</td>
+    <td></td><td></td><td></td><td></td>
+    <td class="fcomp">${fmtR(totals.cost)}</td>
+    <td></td><td></td><td class="left"></td><td></td>
+    <td></td>
+    <td class="fcomp">${fmtR(totals.stor30)}</td>
+    <td></td>
+    <td></td>
+    <td></td><td></td><td></td>
+    <td class="fcomp">${fmtR(totals.comm)}</td>
+    <td class="fcomp ${profitCls(totals.profit)}">${fmtR(totals.profit)}</td>
+    <td class="fcomp"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
+    <td class="fcomp"></td>
+    <td class="fcomp"><span class="mbadge ${mClass(avgBM)}">${fmtP(avgBM)}</span></td>
   </tr>`;
 }
 
-function updateStats() {
-  const visible = rows.filter(r => {
-    const s = document.getElementById('searchBox').value.toLowerCase();
-    return [r.seller_article, r.wb_article, r.brand].join(' ').toLowerCase().includes(s);
-  });
-  const profits = visible.map(r => compute(r).profit);
-  const totalP = profits.reduce((a,b)=>a+b,0);
-  const revenues = visible.map(r => (r.wb_price||0));
-  const totalR = revenues.reduce((a,b)=>a+b,0);
-  const avgM = totalR > 0 ? (totalP / totalR * 100) : 0;
-  document.getElementById('statRows').innerHTML = `<b>${visible.length}</b> артикулов`;
-  document.getElementById('statProfit').innerHTML = `Прибыль: <b class="${profitClass(totalP)}">${rub(totalP)}</b>`;
-  document.getElementById('statMargin').innerHTML = `Маржа: <b class="${marginClass(avgM)}">${pct(avgM)}</b>`;
-}
+// ─── Вспомогательные ─────────────────────────────────────────────────────────
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-// ─── Панель редактирования ───────────────────────────────────────────────────
-const WHOUSE_OPTIONS = WAREHOUSES.map(w =>
-  `<option value="${esc(w)}">${esc(w)} (${WAREHOUSE_COEFS[w]}%)</option>`
-).join('');
-
-function panelHTML(r) {
-  const c = r ? compute(r) : {};
-  const v = (key, def='') => r ? (r[key]??def) : def;
-  const warehouseOpts = `<option value="">— выберите —</option>` + WAREHOUSES.map(w =>
-    `<option value="${esc(w)}" ${v('warehouse')===w?'selected':''}>${esc(w)} (${WAREHOUSE_COEFS[w]}%)</option>`
-  ).join('');
-
-  return `
-  <div class="form-section">
-    <div class="form-section-title">Идентификация</div>
-    <div class="field-row">
-      <div class="field">
-        <label>Бренд / Проект</label>
-        <input id="f_brand" value="${esc(v('brand'))}" placeholder="KSF">
-      </div>
-      <div class="field">
-        <label>Артикул продавца</label>
-        <input id="f_seller_article" value="${esc(v('seller_article'))}" placeholder="13 kurtka bel">
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label>Артикул WB</label>
-        <input id="f_wb_article" type="number" value="${v('wb_article','')}" placeholder="687473154">
-      </div>
-    </div>
-  </div>
-
-  <div class="form-section">
-    <div class="form-section-title">Себестоимость</div>
-    <div class="field-row">
-      <div class="field">
-        <label>Цена закупки, ₽</label>
-        <input id="f_cost_price" type="number" step="0.01" value="${v('cost_price',0)}" oninput="updateCalc()">
-      </div>
-      <div class="field">
-        <label>Упаковка, ₽</label>
-        <input id="f_packaging" type="number" step="0.01" value="${v('packaging',0)}" oninput="updateCalc()">
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label>Лог. до склада ВБ, ₽</label>
-        <input id="f_logistics_to_wb" type="number" step="0.01" value="${v('logistics_to_wb',0)}" oninput="updateCalc()">
-      </div>
-      <div class="field">
-        <label>Накладные расходы, ₽</label>
-        <input id="f_overhead" type="number" step="0.01" value="${v('overhead',0)}" oninput="updateCalc()">
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label>Итоговая себестоимость, ₽</label>
-        <input id="f_total_cost" class="auto" readonly value="${r ? rub(c.totalCost).replace('₽ ','').replace('−','') : ''}">
-        <span class="hint">= закупка + упаковка + лог. до ВБ + накладные</span>
-      </div>
-      <div class="field">
-        <label>Брак, %</label>
-        <input id="f_defect_pct" type="number" step="0.1" value="${v('defect_pct',0)}" oninput="updateCalc()">
-      </div>
-    </div>
-  </div>
-
-  <div class="form-section">
-    <div class="form-section-title">Физические параметры</div>
-    <div class="field-row">
-      <div class="field">
-        <label>Ширина, см</label>
-        <input id="f_width_cm" type="number" step="0.1" value="${v('width_cm','')}" oninput="updateCalc()">
-      </div>
-      <div class="field">
-        <label>Длина, см</label>
-        <input id="f_length_cm" type="number" step="0.1" value="${v('length_cm','')}" oninput="updateCalc()">
-      </div>
-      <div class="field">
-        <label>Высота, см</label>
-        <input id="f_height_cm" type="number" step="0.1" value="${v('height_cm','')}" oninput="updateCalc()">
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label>Литраж (авто или вручную)</label>
-        <input id="f_liters" type="number" step="0.01" value="${v('liters','')}" placeholder="авто" oninput="updateCalc()">
-        <span class="hint">Если заданы размеры — считается автоматически</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="form-section">
-    <div class="form-section-title">Параметры WB</div>
-    <div class="field-row">
-      <div class="field">
-        <label>Склад</label>
-        <select id="f_warehouse" onchange="updateCalc()">${warehouseOpts}</select>
-      </div>
-      <div class="field">
-        <label>Коэф. склада, %</label>
-        <input id="f_wcoef" class="auto" readonly value="${r && c.wCoef ? c.wCoef : ''}">
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label>ИРП (индекс рек. цен)</label>
-        <input id="f_irp" type="number" step="0.01" value="${v('irp',1.0)}" oninput="updateCalc()">
-        <span class="hint">1.0 = без коэф., 1.15 = стандарт для большинства складов</span>
-      </div>
-      <div class="field">
-        <label>% выкупа</label>
-        <input id="f_redemption_pct" type="number" step="1" min="0" max="100" value="${v('redemption_pct',100)}" oninput="updateCalc()">
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label>Логистика + КТР, ₽ (авто)</label>
-        <input id="f_logistics_ktr" type="number" step="0.01" value="${v('logistics_ktr','')}" placeholder="авто" oninput="updateCalc()">
-        <span class="hint">Пусто = авт. расчёт по объёму, складу, ИРП и % выкупа</span>
-      </div>
-      <div class="field">
-        <label>Коэф. приёмки</label>
-        <select id="f_reception_coef" onchange="updateCalc()">
-          <option value="x0" ${v('reception_coef','x0')==='x0'?'selected':''}>x0 (бесплатно)</option>
-          <option value="x1" ${v('reception_coef')==='x1'?'selected':''}>x1</option>
-          <option value="x2" ${v('reception_coef')==='x2'?'selected':''}>x2</option>
-        </select>
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label>Хранение в день, ₽ (авто)</label>
-        <input id="f_storage_per_day" class="auto" readonly
-          value="${r && c.storagePerDay ? c.storagePerDay.toFixed(4) : (r ? (r.storage_per_day||0) : '')}">
-        <span class="hint">= 0.08 × литраж × коэф.склада / 100</span>
-      </div>
-      <div class="field">
-        <label>Хранение за 30 дней, ₽</label>
-        <input id="f_storage_30d" class="auto" readonly
-          value="${r ? rub(c.storage30d).replace('₽ ','').replace('−','') : ''}">
-      </div>
-    </div>
-  </div>
-
-  <div class="form-section">
-    <div class="form-section-title">Цена и комиссия</div>
-    <div class="field-row">
-      <div class="field">
-        <label>Стоимость на WB, ₽</label>
-        <input id="f_wb_price" type="number" step="1" value="${v('wb_price',0)}" oninput="updateCalc()">
-      </div>
-      <div class="field">
-        <label>Комиссия в категории, %</label>
-        <input id="f_commission_pct" type="number" step="0.1" value="${v('commission_pct',36)}" oninput="updateCalc()">
-      </div>
-    </div>
-  </div>
-
-  <div class="form-section">
-    <div class="form-section-title">Реклама</div>
-    <div class="field-row">
-      <div class="field">
-        <label>ДРР % (от WB цены)</label>
-        <input id="f_drr_pct" type="number" step="0.1" value="${v('drr_pct',0)}" oninput="updateCalc()">
-      </div>
-      <div class="field">
-        <label>ДРР фикс, ₽</label>
-        <input id="f_drr_external_rub" type="number" step="0.01" value="${v('drr_external_rub',0)}" oninput="updateCalc()">
-      </div>
-    </div>
-  </div>
-
-  <div class="form-section">
-    <div class="form-section-title">Партия</div>
-    <div class="field-row">
-      <div class="field">
-        <label>Количество, шт</label>
-        <input id="f_quantity" type="number" step="1" value="${v('quantity',0)}" oninput="updateCalc()">
-      </div>
-    </div>
-  </div>
-
-  <div class="form-section">
-    <div class="form-section-title">Результаты расчёта</div>
-    <div class="results-grid" id="resultsGrid">
-      ${resultsHTML(r ? c : null, r)}
-    </div>
-  </div>`;
-}
-
-function resultsHTML(c, r) {
-  if (!c) return `<div class="res-card full" style="color:var(--text3);text-align:center;padding:20px">
-    Заполните поля для расчёта</div>`;
-
-  const vc = (v, pos, neg) => v > 0 ? pos : (v < 0 ? neg : 'neu');
-  return `
-    <div class="res-card">
-      <div class="res-label">Себестоимость</div>
-      <div class="res-value neu">${rub(c.totalCost)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Логистика + КТР</div>
-      <div class="res-value neu">${rub(c.logisticsKtr)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Хранение 30д</div>
-      <div class="res-value neu">${rub(c.storage30d)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Комиссия ВБ</div>
-      <div class="res-value neu">${rub(c.commission)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Наценка (×)</div>
-      <div class="res-value neu">${c.markup > 0 ? c.markup.toFixed(1)+'×' : '—'}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">УСН 7%</div>
-      <div class="res-value neu">${rub(c.usn)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Цена клиенту</div>
-      <div class="res-value neu">${rub(c.priceToSeller)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">ВБ Клуб</div>
-      <div class="res-value neu">${rub(c.wbClub)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Прибыль</div>
-      <div class="res-value ${vc(c.profit,'pos','neg')}">${rub(c.profit)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Прибыль ВБ Клуб</div>
-      <div class="res-value ${vc(c.profitWbClub,'pos','neg')}">${rub(c.profitWbClub)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Маржинальность</div>
-      <div class="res-value ${vc(c.margin,'pos','neg')}">${pct(c.margin)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Маржа ВБ Клуб</div>
-      <div class="res-value ${vc(c.marginWbClub,'pos','neg')}">${pct(c.marginWbClub)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">ROI</div>
-      <div class="res-value ${vc(c.roi,'pos','neg')}">${pct(c.roi)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">ДРР (факт)</div>
-      <div class="res-value neu">${rub(c.drrRub)}</div>
-    </div>
-    ${(r && +r.quantity > 0) ? `
-    <div class="res-card">
-      <div class="res-label">Вложено в партию</div>
-      <div class="res-value neu">${rub(c.qtyInvested)}</div>
-    </div>
-    <div class="res-card">
-      <div class="res-label">Прибыль партии</div>
-      <div class="res-value ${vc(c.totalProfit,'pos','neg')}">${rub(c.totalProfit)}</div>
-    </div>
-    <div class="res-card full">
-      <div class="res-label">Маржинальность партии</div>
-      <div class="res-value ${vc(c.batchMargin,'pos','neg')}" style="font-size:20px">${pct(c.batchMargin)}</div>
-    </div>` : ''}`;
-}
-
-function openPanel(id) {
-  editId = id;
-  const r = id ? rows.find(x => x.id === id) : null;
-  document.getElementById('panelTitle').textContent = id ? 'Редактировать артикул' : 'Добавить артикул';
-  document.getElementById('btnDelete').style.display = id ? '' : 'none';
-  document.getElementById('panelBody').innerHTML = panelHTML(r);
-  document.getElementById('overlay').classList.add('open');
-  document.getElementById('panel').classList.add('open');
-}
-
-function closePanel() {
-  document.getElementById('overlay').classList.remove('open');
-  document.getElementById('panel').classList.remove('open');
-  editId = null;
-}
-
-function readForm() {
-  const g = id => { const el = document.getElementById(id); return el ? el.value : null; };
-  const n = id => { const v = g(id); return v === '' || v === null ? null : +v; };
-  return {
-    brand:            g('f_brand'),
-    wb_article:       n('f_wb_article'),
-    seller_article:   g('f_seller_article'),
-    cost_price:       n('f_cost_price') || 0,
-    logistics_to_wb:  n('f_logistics_to_wb') || 0,
-    packaging:        n('f_packaging') || 0,
-    overhead:         n('f_overhead') || 0,
-    defect_pct:       n('f_defect_pct') || 0,
-    width_cm:         n('f_width_cm'),
-    length_cm:        n('f_length_cm'),
-    height_cm:        n('f_height_cm'),
-    liters:           n('f_liters'),
-    redemption_pct:   n('f_redemption_pct') ?? 100,
-    warehouse:        g('f_warehouse'),
-    irp:              n('f_irp') ?? 1.0,
-    logistics_ktr:    n('f_logistics_ktr'),
-    reception_coef:   g('f_reception_coef'),
-    storage_per_day:  0,
-    commission_pct:   n('f_commission_pct') ?? 36,
-    wb_price:         n('f_wb_price') || 0,
-    drr_pct:          n('f_drr_pct') || 0,
-    drr_external_rub: n('f_drr_external_rub') || 0,
-    quantity:         n('f_quantity') || 0,
-  };
-}
-
-function updateCalc() {
-  const r = readForm();
-  const c = compute(r);
-
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-  set('f_total_cost',    c.totalCost > 0 ? c.totalCost.toFixed(2) : '');
-  set('f_wcoef',         c.wCoef || '');
-  set('f_storage_per_day', c.storagePerDay > 0 ? c.storagePerDay.toFixed(4) : '');
-  set('f_storage_30d',   c.storage30d > 0 ? c.storage30d.toFixed(2) : '');
-
-  const w = +r.width_cm, l = +r.length_cm, h = +r.height_cm;
-  if (w && l && h) {
-    const litersEl = document.getElementById('f_liters');
-    if (litersEl && !litersEl.value) litersEl.placeholder = (w*l*h/1000).toFixed(2);
-  }
-
-  document.getElementById('resultsGrid').innerHTML = resultsHTML(c, r);
-}
-
-async function saveRow() {
-  const d = readForm();
-  const url = editId ? `/api/unit-rows/${editId}` : '/api/unit-rows';
-  const method = editId ? 'PUT' : 'POST';
-  const resp = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(d)});
-  const result = await resp.json();
-  if (result.error) { alert('Ошибка: ' + result.error); return; }
-  closePanel();
-  await loadRows();
-}
-
-async function deleteRow() {
-  if (!editId) return;
-  if (!confirm('Удалить этот артикул?')) return;
-  await fetch(`/api/unit-rows/${editId}`, {method:'DELETE'});
-  closePanel();
-  await loadRows();
-}
-
-function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function toggleTheme() {
+function toggleTheme(){
   const t = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
   document.body.dataset.theme = t;
   localStorage.setItem('theme', t);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
-const savedTheme = localStorage.getItem('theme') || 'dark';
-document.body.dataset.theme = savedTheme;
-loadRows();
+document.body.dataset.theme = localStorage.getItem('theme') || 'dark';
+renderContent();
 </script>
 </body>
 </html>

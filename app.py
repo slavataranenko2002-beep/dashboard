@@ -161,10 +161,12 @@ def _ensure_design_tables():
                         drr_pct          NUMERIC(5,2) DEFAULT 0,
                         drr_external_rub NUMERIC(12,2) DEFAULT 0,
                         quantity         INTEGER DEFAULT 0,
+                        project          TEXT NOT NULL DEFAULT '',
                         created_at       TIMESTAMPTZ DEFAULT NOW(),
                         updated_at       TIMESTAMPTZ DEFAULT NOW()
                     )
                 """)
+                cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS project TEXT NOT NULL DEFAULT ''")
                 # Логи активности пользователей
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS user_activity (
@@ -2169,25 +2171,61 @@ def api_design_attachment_delete(att_id):
 @require_auth
 def unit_page():
     u = _session_user()
-    return render_template("unit.html", current_user=u)
+    return render_template(
+        "unit.html",
+        current_user=u,
+        projects=PROJECTS,
+        project_emoji=PROJECT_EMOJI,
+    )
+
+
+def _unit_row_params(d):
+    return {
+        "project":          d.get("project", ""),
+        "brand":            d.get("brand", ""),
+        "wb_article":       d.get("wb_article") or None,
+        "seller_article":   d.get("seller_article", ""),
+        "cost_price":       d.get("cost_price") or 0,
+        "logistics_to_wb":  d.get("logistics_to_wb") or 0,
+        "packaging":        d.get("packaging") or 0,
+        "overhead":         d.get("overhead") or 0,
+        "defect_pct":       d.get("defect_pct") or 0,
+        "width_cm":         d.get("width_cm") or None,
+        "length_cm":        d.get("length_cm") or None,
+        "height_cm":        d.get("height_cm") or None,
+        "liters":           d.get("liters") or None,
+        "redemption_pct":   d.get("redemption_pct") or 100,
+        "warehouse":        d.get("warehouse", ""),
+        "irp":              d.get("irp") or 1.0,
+        "logistics_ktr":    d.get("logistics_ktr") or None,
+        "reception_coef":   d.get("reception_coef", "x0"),
+        "storage_per_day":  0,
+        "commission_pct":   d.get("commission_pct") or 36,
+        "wb_price":         d.get("wb_price") or 0,
+        "drr_pct":          d.get("drr_pct") or 0,
+        "drr_external_rub": d.get("drr_external_rub") or 0,
+        "quantity":         d.get("quantity") or 0,
+    }
 
 
 @app.route("/api/unit-rows")
 @require_auth
 def api_unit_rows_get():
+    project = request.args.get("project", "")
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT id, brand, wb_article, seller_article,
+                    SELECT id, project, brand, wb_article, seller_article,
                            cost_price, logistics_to_wb, packaging, overhead,
                            defect_pct, width_cm, length_cm, height_cm, liters,
                            redemption_pct, warehouse, irp, logistics_ktr,
                            reception_coef, storage_per_day, commission_pct,
                            wb_price, drr_pct, drr_external_rub, quantity
                     FROM unit_economics
+                    WHERE project = %s
                     ORDER BY id ASC
-                """)
+                """, (project,))
                 cols = [d[0] for d in cur.description]
                 rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         for row in rows:
@@ -2202,51 +2240,27 @@ def api_unit_rows_get():
 @app.route("/api/unit-rows", methods=["POST"])
 @require_auth
 def api_unit_rows_create():
-    d = request.get_json(silent=True) or {}
+    p = _unit_row_params(request.get_json(silent=True) or {})
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO unit_economics
-                        (brand, wb_article, seller_article,
+                        (project, brand, wb_article, seller_article,
                          cost_price, logistics_to_wb, packaging, overhead,
                          defect_pct, width_cm, length_cm, height_cm, liters,
                          redemption_pct, warehouse, irp, logistics_ktr,
                          reception_coef, storage_per_day, commission_pct,
                          wb_price, drr_pct, drr_external_rub, quantity)
                     VALUES
-                        (%(brand)s, %(wb_article)s, %(seller_article)s,
+                        (%(project)s, %(brand)s, %(wb_article)s, %(seller_article)s,
                          %(cost_price)s, %(logistics_to_wb)s, %(packaging)s, %(overhead)s,
                          %(defect_pct)s, %(width_cm)s, %(length_cm)s, %(height_cm)s, %(liters)s,
                          %(redemption_pct)s, %(warehouse)s, %(irp)s, %(logistics_ktr)s,
                          %(reception_coef)s, %(storage_per_day)s, %(commission_pct)s,
                          %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(quantity)s)
                     RETURNING id
-                """, {
-                    "brand": d.get("brand", ""),
-                    "wb_article": d.get("wb_article") or None,
-                    "seller_article": d.get("seller_article", ""),
-                    "cost_price": d.get("cost_price") or 0,
-                    "logistics_to_wb": d.get("logistics_to_wb") or 0,
-                    "packaging": d.get("packaging") or 0,
-                    "overhead": d.get("overhead") or 0,
-                    "defect_pct": d.get("defect_pct") or 0,
-                    "width_cm": d.get("width_cm") or None,
-                    "length_cm": d.get("length_cm") or None,
-                    "height_cm": d.get("height_cm") or None,
-                    "liters": d.get("liters") or None,
-                    "redemption_pct": d.get("redemption_pct") or 100,
-                    "warehouse": d.get("warehouse", ""),
-                    "irp": d.get("irp") or 1.0,
-                    "logistics_ktr": d.get("logistics_ktr") or None,
-                    "reception_coef": d.get("reception_coef", "x0"),
-                    "storage_per_day": d.get("storage_per_day") or 0,
-                    "commission_pct": d.get("commission_pct") or 36,
-                    "wb_price": d.get("wb_price") or 0,
-                    "drr_pct": d.get("drr_pct") or 0,
-                    "drr_external_rub": d.get("drr_external_rub") or 0,
-                    "quantity": d.get("quantity") or 0,
-                })
+                """, p)
                 new_id = cur.fetchone()[0]
             conn.commit()
         return jsonify({"id": new_id})
@@ -2257,13 +2271,15 @@ def api_unit_rows_create():
 @app.route("/api/unit-rows/<int:row_id>", methods=["PUT"])
 @require_auth
 def api_unit_rows_update(row_id):
-    d = request.get_json(silent=True) or {}
+    p = _unit_row_params(request.get_json(silent=True) or {})
+    p["id"] = row_id
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE unit_economics SET
-                        brand=%(brand)s, wb_article=%(wb_article)s, seller_article=%(seller_article)s,
+                        project=%(project)s, brand=%(brand)s,
+                        wb_article=%(wb_article)s, seller_article=%(seller_article)s,
                         cost_price=%(cost_price)s, logistics_to_wb=%(logistics_to_wb)s,
                         packaging=%(packaging)s, overhead=%(overhead)s,
                         defect_pct=%(defect_pct)s, width_cm=%(width_cm)s,
@@ -2275,32 +2291,7 @@ def api_unit_rows_update(row_id):
                         drr_pct=%(drr_pct)s, drr_external_rub=%(drr_external_rub)s,
                         quantity=%(quantity)s, updated_at=NOW()
                     WHERE id=%(id)s
-                """, {
-                    "id": row_id,
-                    "brand": d.get("brand", ""),
-                    "wb_article": d.get("wb_article") or None,
-                    "seller_article": d.get("seller_article", ""),
-                    "cost_price": d.get("cost_price") or 0,
-                    "logistics_to_wb": d.get("logistics_to_wb") or 0,
-                    "packaging": d.get("packaging") or 0,
-                    "overhead": d.get("overhead") or 0,
-                    "defect_pct": d.get("defect_pct") or 0,
-                    "width_cm": d.get("width_cm") or None,
-                    "length_cm": d.get("length_cm") or None,
-                    "height_cm": d.get("height_cm") or None,
-                    "liters": d.get("liters") or None,
-                    "redemption_pct": d.get("redemption_pct") or 100,
-                    "warehouse": d.get("warehouse", ""),
-                    "irp": d.get("irp") or 1.0,
-                    "logistics_ktr": d.get("logistics_ktr") or None,
-                    "reception_coef": d.get("reception_coef", "x0"),
-                    "storage_per_day": d.get("storage_per_day") or 0,
-                    "commission_pct": d.get("commission_pct") or 36,
-                    "wb_price": d.get("wb_price") or 0,
-                    "drr_pct": d.get("drr_pct") or 0,
-                    "drr_external_rub": d.get("drr_external_rub") or 0,
-                    "quantity": d.get("quantity") or 0,
-                })
+                """, p)
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
