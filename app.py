@@ -2311,6 +2311,41 @@ def api_unit_rows_delete(row_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/unit-import-articles")
+@require_auth
+def api_unit_import_articles():
+    """Загружает список артикулов из воронки WB за последние 30 дней."""
+    project = request.args.get("project", "")
+    if not project:
+        return jsonify({"error": "project required"}), 400
+    try:
+        from datetime import date, timedelta
+        from wb_api import WBClient, fmt_date
+        today    = date.today()
+        d_from   = fmt_date(today - timedelta(days=30))
+        d_to     = fmt_date(today)
+        with WBClient(project) as wb:
+            funnel = wb.get_sales_funnel(d_from, d_to)
+        products = (funnel.get("data") or {}).get("products") or []
+        result, seen = [], set()
+        for p in products:
+            prod    = p.get("product") or {}
+            nm_id   = prod.get("nmId")
+            if not nm_id or nm_id in seen:
+                continue
+            seen.add(nm_id)
+            result.append({
+                "wb_article":     nm_id,
+                "seller_article": prod.get("vendorCode", ""),
+                "name":           prod.get("name", ""),
+                "brand":          prod.get("brandName", ""),
+            })
+        return jsonify(result)
+    except Exception as e:
+        logging.error(f"unit-import-articles {project}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

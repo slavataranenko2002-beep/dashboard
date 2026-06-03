@@ -96,6 +96,42 @@ td.del-cell{width:32px;padding:3px 6px;text-align:center}
   background:transparent;color:var(--text3);cursor:pointer;font-size:14px;line-height:1}
 .del-btn:hover{background:rgba(248,81,73,.15);color:var(--red)}
 
+/* Import modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;
+  align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  width:520px;max-width:96vw;max-height:80vh;display:flex;flex-direction:column;
+  box-shadow:0 24px 64px rgba(0,0,0,.5)}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-title{font-weight:600;font-size:15px}
+.modal-close{width:28px;height:28px;border-radius:5px;border:none;
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:16px}
+.modal-close:hover{color:var(--text)}
+.modal-search{padding:10px 20px;border-bottom:1px solid var(--border)}
+.modal-search input{width:100%;padding:7px 10px;border-radius:6px;
+  border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px}
+.modal-search input:focus{outline:none;border-color:var(--blue)}
+.modal-body{flex:1;overflow-y:auto;padding:8px 0}
+.modal-loading{display:flex;align-items:center;justify-content:center;
+  padding:40px;color:var(--text3);font-size:14px;gap:10px}
+.import-item{display:flex;align-items:center;gap:10px;padding:7px 20px;cursor:pointer}
+.import-item:hover{background:var(--bg3)}
+.import-item input[type=checkbox]{width:15px;height:15px;accent-color:var(--blue);flex-shrink:0}
+.import-item-info{flex:1;min-width:0}
+.import-item-name{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.import-item-meta{font-size:11px;color:var(--text3);font-family:monospace}
+.import-item.exists .import-item-name{color:var(--text3)}
+.modal-ftr{padding:12px 20px;border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:10px}
+.modal-sel-all{font-size:12px;color:var(--blue);cursor:pointer;border:none;
+  background:none;padding:0;flex:1;text-align:left}
+.btn-import{padding:7px 18px;border-radius:7px;border:none;background:var(--blue);
+  color:#fff;font-size:13px;font-weight:600;cursor:pointer}
+.btn-import:hover{opacity:.85}
+.btn-import:disabled{opacity:.4;cursor:default}
+
 /* Margin badge */
 .mbadge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600}
 .mbadge.hi{background:#1f3a2a;color:var(--green)}
@@ -145,8 +181,35 @@ tfoot td.fcomp{background:var(--comp-bg)}
     {% endfor %}
   </select>
   <button class="btn-add" id="btnAdd" disabled onclick="addRow()">+ Строка</button>
+  <button class="btn-add" id="btnImport" disabled onclick="openImport()"
+    style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
+    📥 Загрузить из WB
+  </button>
   <div class="tsep"></div>
   <span class="save-indicator" id="saveInd"></span>
+</div>
+
+<!-- Import modal -->
+<div class="modal-overlay" id="importOverlay" onclick="closeImport(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-hdr">
+      <span class="modal-title" id="importTitle">Загрузка артикулов из WB</span>
+      <button class="modal-close" onclick="closeImport()">✕</button>
+    </div>
+    <div class="modal-search">
+      <input type="text" id="importSearch" placeholder="Поиск по артикулу или названию…"
+        oninput="filterImport(this.value)">
+    </div>
+    <div class="modal-body" id="importBody">
+      <div class="modal-loading">⏳ Загрузка данных из WB…</div>
+    </div>
+    <div class="modal-ftr">
+      <button class="modal-sel-all" onclick="toggleAll()">Выбрать все</button>
+      <button class="btn-import" id="btnDoImport" disabled onclick="doImport()">
+        Добавить 0 артикулов
+      </button>
+    </div>
+  </div>
 </div>
 
 <div class="tbl-outer">
@@ -173,6 +236,7 @@ let currentProject = '';
 let saveTimers = {};
 let keySeq = 0;
 const newKey = () => 'k' + (++keySeq);
+let importArticles = [];   // [{wb_article, seller_article, name, brand}]
 
 // ─── Формулы ─────────────────────────────────────────────────────────────────
 function compute(r) {
@@ -241,7 +305,9 @@ function profitCls(v) {
 // ─── Загрузка ─────────────────────────────────────────────────────────────────
 async function onProjectChange() {
   currentProject = document.getElementById('projSelect').value;
-  document.getElementById('btnAdd').disabled = !currentProject;
+  const active = !!currentProject;
+  document.getElementById('btnAdd').disabled    = !active;
+  document.getElementById('btnImport').disabled = !active;
   if (!currentProject) { rows = []; renderContent(); return; }
   const resp = await fetch('/api/unit-rows?project=' + encodeURIComponent(currentProject));
   rows = await resp.json();
@@ -327,29 +393,44 @@ function updateComputedCells(key) {
 }
 
 // ─── Добавить строку ─────────────────────────────────────────────────────────
-function addRow() {
-  if (!currentProject) return;
-  const k = newKey();
-  const r = {
-    id: null, _key: k, _dirty: true, project: currentProject, brand: currentProject,
-    wb_article: '', seller_article: '',
+function makeEmptyRow(overrides = {}) {
+  return {
+    id: null, _key: newKey(), _dirty: true, project: currentProject,
+    brand: currentProject, wb_article: '', seller_article: '',
     cost_price: 0, logistics_to_wb: 0, packaging: 0, overhead: 0, defect_pct: 0,
     width_cm: null, length_cm: null, height_cm: null, liters: null,
     redemption_pct: 100, warehouse: '', irp: 1.0, logistics_ktr: null,
     reception_coef: 'x0', storage_per_day: 0,
-    commission_pct: 36, wb_price: 0, drr_pct: 0, drr_external_rub: 0, quantity: 0
+    commission_pct: 36, wb_price: 0, drr_pct: 0, drr_external_rub: 0, quantity: 0,
+    ...overrides
   };
+}
+
+function addRow(overrides = {}) {
+  if (!currentProject) return;
+  const r = makeEmptyRow(overrides);
   rows.push(r);
-  const tbody = document.getElementById('unit-tbody');
-  const tr = document.createElement('tr');
-  tr.dataset.key = k;
-  tr.innerHTML = rowHTML(r);
-  tbody.appendChild(tr);
-  updateFooter();
-  // фокус на артикул продавца
-  const inp = tr.querySelector('.inp-seller');
-  if (inp) inp.focus();
-  schedSave(k);
+
+  // Если таблица ещё не отрисована (пустой кабинет) — рендерим всё заново
+  let tbody = document.getElementById('unit-tbody');
+  if (!tbody) {
+    renderContent();
+  } else {
+    const tr = document.createElement('tr');
+    tr.dataset.key = r._key;
+    tr.innerHTML = rowHTML(r);
+    tbody.appendChild(tr);
+    updateFooter();
+  }
+
+  // Фокус на первую ячейку новой строки
+  setTimeout(() => {
+    const tr = document.querySelector(`tr[data-key="${r._key}"]`);
+    if (tr) tr.querySelector('.inp-seller')?.focus();
+  }, 0);
+
+  schedSave(r._key);
+  return r._key;
 }
 
 // ─── Удалить строку ──────────────────────────────────────────────────────────
@@ -524,6 +605,114 @@ function updateFooter() {
     <td class="fcomp"></td>
     <td class="fcomp"><span class="mbadge ${mClass(avgBM)}">${fmtP(avgBM)}</span></td>
   </tr>`;
+}
+
+// ─── Импорт из WB ────────────────────────────────────────────────────────────
+async function openImport() {
+  if (!currentProject) return;
+  importArticles = [];
+  document.getElementById('importTitle').textContent =
+    `Артикулы из WB — ${currentProject} (30 дней)`;
+  document.getElementById('importBody').innerHTML =
+    '<div class="modal-loading">⏳ Загружаю данные из WB…</div>';
+  document.getElementById('importSearch').value = '';
+  document.getElementById('btnDoImport').disabled = true;
+  document.getElementById('btnDoImport').textContent = 'Добавить 0 артикулов';
+  document.getElementById('importOverlay').classList.add('open');
+
+  try {
+    const resp = await fetch('/api/unit-import-articles?project=' + encodeURIComponent(currentProject));
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    importArticles = data;
+    renderImportList(importArticles);
+  } catch (e) {
+    document.getElementById('importBody').innerHTML =
+      `<div class="modal-loading" style="color:var(--red)">❌ Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+
+function closeImport(e) {
+  if (e && e.target !== document.getElementById('importOverlay')) return;
+  document.getElementById('importOverlay').classList.remove('open');
+}
+
+// Набор уже существующих wb_article в текущем кабинете
+function existingWbArticles() {
+  return new Set(rows.map(r => String(r.wb_article)).filter(Boolean));
+}
+
+function renderImportList(articles, query = '') {
+  const existing = existingWbArticles();
+  const q = query.toLowerCase();
+  const filtered = articles.filter(a =>
+    !q ||
+    String(a.wb_article).includes(q) ||
+    (a.seller_article || '').toLowerCase().includes(q) ||
+    (a.name || '').toLowerCase().includes(q)
+  );
+
+  if (!filtered.length) {
+    document.getElementById('importBody').innerHTML =
+      '<div class="modal-loading">Ничего не найдено</div>';
+    updateImportBtn();
+    return;
+  }
+
+  document.getElementById('importBody').innerHTML = filtered.map(a => {
+    const isExist = existing.has(String(a.wb_article));
+    return `<label class="import-item${isExist ? ' exists' : ''}">
+      <input type="checkbox" data-id="${a.wb_article}" ${isExist ? '' : 'checked'}
+        onchange="updateImportBtn()">
+      <div class="import-item-info">
+        <div class="import-item-name">${esc(a.seller_article || a.name || '—')}</div>
+        <div class="import-item-meta">${a.wb_article}${isExist ? ' · уже добавлен' : ''}${a.brand ? ' · ' + esc(a.brand) : ''}</div>
+      </div>
+    </label>`;
+  }).join('');
+
+  updateImportBtn();
+}
+
+function filterImport(q) {
+  renderImportList(importArticles, q);
+}
+
+function toggleAll() {
+  const boxes = document.querySelectorAll('#importBody input[type=checkbox]');
+  const anyUnchecked = [...boxes].some(b => !b.checked);
+  boxes.forEach(b => b.checked = anyUnchecked);
+  document.querySelector('.modal-sel-all').textContent = anyUnchecked ? 'Снять все' : 'Выбрать все';
+  updateImportBtn();
+}
+
+function updateImportBtn() {
+  const count = document.querySelectorAll('#importBody input[type=checkbox]:checked').length;
+  const btn = document.getElementById('btnDoImport');
+  btn.disabled = count === 0;
+  btn.textContent = `Добавить ${count} артикул${pluralRu(count)}`;
+}
+
+function pluralRu(n) {
+  if (n % 10 === 1 && n % 100 !== 11) return '';
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'а';
+  return 'ов';
+}
+
+async function doImport() {
+  const checked = [...document.querySelectorAll('#importBody input[type=checkbox]:checked')];
+  const ids = new Set(checked.map(b => String(b.dataset.id)));
+  const toAdd = importArticles.filter(a => ids.has(String(a.wb_article)));
+
+  document.getElementById('importOverlay').classList.remove('open');
+
+  for (const a of toAdd) {
+    addRow({
+      wb_article:     a.wb_article,
+      seller_article: a.seller_article || '',
+      brand:          a.brand || currentProject,
+    });
+  }
 }
 
 // ─── Вспомогательные ─────────────────────────────────────────────────────────
