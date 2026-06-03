@@ -788,6 +788,10 @@ function renderContent(state) {
   </tbody>
   <tfoot id="unit-tfoot"></tfoot>
 </table></div>`;
+  requestAnimationFrame(() => {
+    const grpH = div.querySelector('tr.grp-row')?.offsetHeight || 28;
+    div.querySelectorAll('tr.col-row th').forEach(th => th.style.top = grpH + 'px');
+  });
   updateFooter();
 }
 
