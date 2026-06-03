@@ -2321,16 +2321,22 @@ def api_unit_import_articles():
     try:
         from datetime import date, timedelta
         from wb_api import WBClient, fmt_date
-        today    = date.today()
-        d_from   = fmt_date(today - timedelta(days=30))
-        d_to     = fmt_date(today)
+        today  = date.today()
+        d_from = fmt_date(today - timedelta(days=30))
+        d_to   = fmt_date(today)
         with WBClient(project) as wb:
-            funnel = wb.get_sales_funnel(d_from, d_to)
-        products = (funnel.get("data") or {}).get("products") or []
+            raw = wb.raw_sales_funnel(d_from, d_to)
+        status = raw.get("status")
+        if status != 200:
+            msg = raw.get("response_text_preview") or f"HTTP {status}"
+            logging.error(f"unit-import-articles {project}: WB вернул {status}: {msg[:200]}")
+            return jsonify({"error": f"WB API вернул {status}: {msg[:150]}"}), 502
+        rj = raw.get("response_json") or {}
+        products = (rj.get("data") or {}).get("products") or []
         result, seen = [], set()
         for p in products:
-            prod    = p.get("product") or {}
-            nm_id   = prod.get("nmId")
+            prod  = p.get("product") or {}
+            nm_id = prod.get("nmId")
             if not nm_id or nm_id in seen:
                 continue
             seen.add(nm_id)
