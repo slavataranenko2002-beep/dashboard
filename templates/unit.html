@@ -90,6 +90,30 @@ td.comp.profit-pos{color:var(--green)}
 td.comp.profit-neg{color:var(--red)}
 td.comp.profit-mid{color:var(--yellow)}
 
+/* Checkbox cell */
+td.cb-cell,th.cb-cell{width:32px;padding:3px 6px;text-align:center;vertical-align:middle}
+td.cb-cell input[type=checkbox],th.cb-cell input[type=checkbox]{
+  width:14px;height:14px;accent-color:var(--blue);cursor:pointer}
+tbody tr.selected{background:rgba(88,166,255,.07)!important}
+
+/* Bulk edit bar */
+.bulk-bar{display:none;align-items:center;gap:10px;padding:8px 20px;
+  background:rgba(88,166,255,.08);border-bottom:1px solid rgba(88,166,255,.2);
+  flex-shrink:0;flex-wrap:wrap}
+.bulk-bar.open{display:flex}
+.bulk-bar-info{font-size:13px;font-weight:600;color:var(--blue);white-space:nowrap}
+.bulk-field{padding:5px 10px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:12px;cursor:pointer}
+.bulk-val{padding:5px 10px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:12px;width:130px}
+.bulk-val:focus,.bulk-field:focus{outline:none;border-color:var(--blue)}
+.bulk-apply{padding:5px 14px;border-radius:6px;border:none;background:var(--blue);
+  color:#fff;font-size:12px;font-weight:600;cursor:pointer}
+.bulk-apply:hover{opacity:.85}
+.bulk-desel{padding:5px 10px;border-radius:6px;border:1px solid var(--border);
+  background:none;color:var(--text2);font-size:12px;cursor:pointer;margin-left:auto}
+.bulk-desel:hover{color:var(--text)}
+
 /* Delete cell */
 td.del-cell{width:32px;padding:3px 6px;text-align:center}
 .del-btn{width:24px;height:24px;border-radius:5px;border:none;
@@ -189,6 +213,32 @@ tfoot td.fcomp{background:var(--comp-bg)}
   <span class="save-indicator" id="saveInd"></span>
 </div>
 
+<!-- Bulk edit bar -->
+<div class="bulk-bar" id="bulkBar">
+  <span class="bulk-bar-info" id="bulkInfo">Выбрано 0</span>
+  <div class="tsep"></div>
+  <select class="bulk-field" id="bulkField" onchange="onBulkFieldChange()">
+    <option value="warehouse">Склад</option>
+    <option value="commission_pct">Комиссия %</option>
+    <option value="redemption_pct">% выкупа</option>
+    <option value="irp">ИРП</option>
+    <option value="drr_pct">ДРР %</option>
+    <option value="drr_external_rub">ДРР ₽</option>
+    <option value="logistics_to_wb">Лог. до ВБ ₽</option>
+    <option value="overhead">Накладные ₽</option>
+    <option value="packaging">Упаковка ₽</option>
+    <option value="defect_pct">Брак %</option>
+    <option value="wb_price">Цена ВБ ₽</option>
+    <option value="cost_price">Себест. ₽</option>
+  </select>
+  <select class="bulk-val" id="bulkWarehouseVal" style="display:none">
+    <option value="">— склад —</option>
+  </select>
+  <input class="bulk-val" id="bulkNumVal" type="number" step="any" placeholder="Значение">
+  <button class="bulk-apply" onclick="applyBulk()">Применить</button>
+  <button class="bulk-desel" onclick="deselectAll()">Снять выделение</button>
+</div>
+
 <!-- Import modal -->
 <div class="modal-overlay" id="importOverlay" onclick="closeImport(event)">
   <div class="modal" onclick="event.stopPropagation()">
@@ -237,6 +287,7 @@ let saveTimers = {};
 let keySeq = 0;
 const newKey = () => 'k' + (++keySeq);
 let importArticles = [];   // [{wb_article, seller_article, name, brand}]
+let selectedKeys = new Set();
 
 // ─── Формулы ─────────────────────────────────────────────────────────────────
 function compute(r) {
@@ -305,6 +356,8 @@ function profitCls(v) {
 // ─── Загрузка ─────────────────────────────────────────────────────────────────
 async function onProjectChange() {
   currentProject = document.getElementById('projSelect').value;
+  selectedKeys = new Set();
+  updateBulkBar();
   const active = !!currentProject;
   document.getElementById('btnAdd').disabled    = !active;
   document.getElementById('btnImport').disabled = !active;
@@ -464,7 +517,11 @@ function rowHTML(r) {
   const lktr = r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
     ? +r.logistics_ktr : c.logKtr;
 
+  const chk = selectedKeys.has(key);
   return `
+  <td class="cb-cell">
+    <input type="checkbox" ${chk?'checked':''} onchange="onRowCheck('${key}',this.checked)">
+  </td>
   <td class="del-cell">
     <button class="del-btn" data-id="${r.id||''}" onclick="deleteRow('${key}',${r.id||'null'})">✕</button>
   </td>
@@ -520,6 +577,7 @@ function renderContent() {
   div.innerHTML = `<div class="tbl-wrap"><table>
   <thead>
     <tr class="grp-row">
+      <th class="cb-cell"></th>
       <th></th>
       <th colspan="2" class="left">Идентификация</th>
       <th colspan="5">Себестоимость</th>
@@ -531,6 +589,7 @@ function renderContent() {
       <th class="grp-comp" colspan="5">Результаты расчёта</th>
     </tr>
     <tr class="col-row">
+      <th class="cb-cell"><input type="checkbox" id="cbAll" onchange="toggleSelectAll(this.checked)" title="Выбрать все"></th>
       <th class="left"></th>
       <th class="left">Арт. продавца</th>
       <th class="left">WB арт.</th>
@@ -589,6 +648,7 @@ function updateFooter() {
 
   tfoot.innerHTML = `<tr>
     <td></td>
+    <td></td>
     <td class="left" colspan="2">Итого (${rows.length})</td>
     <td>${fmtR(totals.cost)}</td>
     <td></td><td></td><td></td><td></td>
@@ -605,6 +665,90 @@ function updateFooter() {
     <td class="fcomp"></td>
     <td class="fcomp"><span class="mbadge ${mClass(avgBM)}">${fmtP(avgBM)}</span></td>
   </tr>`;
+}
+
+// ─── Массовое редактирование ─────────────────────────────────────────────────
+const BULK_NUM_FIELDS = new Set([
+  'commission_pct','redemption_pct','irp','drr_pct','drr_external_rub',
+  'logistics_to_wb','overhead','packaging','defect_pct','wb_price','cost_price'
+]);
+
+function onRowCheck(key, checked) {
+  if (checked) selectedKeys.add(key); else selectedKeys.delete(key);
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  if (tr) tr.classList.toggle('selected', checked);
+  updateBulkBar();
+}
+
+function toggleSelectAll(checked) {
+  selectedKeys = checked ? new Set(rows.map(r => r._key)) : new Set();
+  document.querySelectorAll('#unit-tbody tr').forEach(tr => {
+    tr.classList.toggle('selected', checked);
+    const cb = tr.querySelector('td.cb-cell input');
+    if (cb) cb.checked = checked;
+  });
+  updateBulkBar();
+}
+
+function deselectAll() {
+  toggleSelectAll(false);
+  const cbAll = document.getElementById('cbAll');
+  if (cbAll) cbAll.checked = false;
+}
+
+function updateBulkBar() {
+  const n = selectedKeys.size;
+  const bar = document.getElementById('bulkBar');
+  bar.classList.toggle('open', n > 0);
+  document.getElementById('bulkInfo').textContent = `Выбрано ${n}`;
+  // sync "select all" checkbox
+  const cbAll = document.getElementById('cbAll');
+  if (cbAll) {
+    cbAll.checked = n > 0 && n === rows.length;
+    cbAll.indeterminate = n > 0 && n < rows.length;
+  }
+}
+
+function onBulkFieldChange() {
+  const field = document.getElementById('bulkField').value;
+  const isWh = field === 'warehouse';
+  document.getElementById('bulkWarehouseVal').style.display = isWh ? '' : 'none';
+  document.getElementById('bulkNumVal').style.display = isWh ? 'none' : '';
+}
+
+function applyBulk() {
+  const field = document.getElementById('bulkField').value;
+  const isWh = field === 'warehouse';
+  const rawVal = isWh
+    ? document.getElementById('bulkWarehouseVal').value
+    : document.getElementById('bulkNumVal').value;
+  if (rawVal === '' && !isWh) return;
+  const val = isWh ? rawVal : (BULK_NUM_FIELDS.has(field) ? +rawVal : rawVal);
+
+  rows.filter(r => selectedKeys.has(r._key)).forEach(r => {
+    r[field] = val;
+    r._dirty = true;
+    // обновить input/select в DOM
+    const tr = document.querySelector(`tr[data-key="${r._key}"]`);
+    if (tr) {
+      if (field === 'warehouse') {
+        const sel = tr.querySelector('select[onchange*="warehouse"]');
+        if (sel) sel.value = val;
+      } else {
+        const inp = tr.querySelector(`input[oninput*="'${field}'"]`);
+        if (inp) inp.value = val;
+      }
+      updateComputedCells(r._key);
+    }
+    schedSave(r._key);
+  });
+}
+
+// Инициализация bulk-warehouse select
+function initBulkWarehouse() {
+  const sel = document.getElementById('bulkWarehouseVal');
+  sel.innerHTML = '<option value="">— склад —</option>' +
+    WAREHOUSES.map(w => `<option value="${w}">${w}</option>`).join('');
 }
 
 // ─── Импорт из WB ────────────────────────────────────────────────────────────
@@ -726,6 +870,8 @@ function toggleTheme(){
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.body.dataset.theme = localStorage.getItem('theme') || 'dark';
+initBulkWarehouse();
+onBulkFieldChange();
 renderContent();
 </script>
 </body>
