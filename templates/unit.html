@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Юнит-экономика</title>
+<style>
+:root{
+  --bg:#0f1117;--bg2:#161b22;--bg3:#1c2333;--bg4:#21262d;
+  --border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;
+  --purple:#a371f7;--orange:#f0883e;
+}
+[data-theme="light"]{
+  --bg:#f6f8fa;--bg2:#fff;--bg3:#f0f2f5;--bg4:#e8ebf0;
+  --border:#d0d7de;--text:#24292f;--text2:#656d76;--text3:#8c959f;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+a{color:var(--blue);text-decoration:none}
+
+.hdr{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:30}
+.hdr-logo{font-weight:700;font-size:15px;letter-spacing:.5px}
+.hdr-sep{flex:1}
+.hbtn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:13px;transition:all .15s;white-space:nowrap}
+.hbtn:hover{background:var(--bg4);color:var(--text)}
+.hbtn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.theme-btn{width:32px;height:32px;padding:0;display:flex;align-items:center;justify-content:center}
+
+/* Layout */
+.layout{display:flex;height:calc(100vh - 52px);overflow:hidden}
+.main{flex:1;overflow:auto;padding:20px 24px}
+
+/* Controls */
+.controls{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.btn-add{padding:7px 16px;border-radius:7px;border:none;background:var(--blue);
+  color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.btn-add:hover{opacity:.85}
+.btn-del-all{padding:7px 14px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--red);font-size:13px;cursor:pointer;display:none}
+.search-box{padding:7px 12px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px;width:220px}
+.search-box:focus{outline:none;border-color:var(--blue)}
+.ctrl-sep{width:1px;height:24px;background:var(--border);margin:0 4px}
+.stat-pill{padding:4px 10px;border-radius:12px;background:var(--bg3);
+  font-size:12px;color:var(--text2);border:1px solid var(--border)}
+.stat-pill b{color:var(--text)}
+
+/* Table */
+.tbl-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--bg2)}
+table{width:100%;border-collapse:collapse;min-width:1100px}
+thead th{
+  background:var(--bg3);color:var(--text2);font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;padding:10px 12px;
+  border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2;
+  user-select:none;cursor:pointer}
+thead th:hover{color:var(--text)}
+thead th.sort-asc::after{content:' ↑'}
+thead th.sort-desc::after{content:' ↓'}
+tbody tr{border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+tbody tr:hover{background:var(--bg3)}
+tbody tr.selected{background:var(--bg4)}
+tbody tr:last-child{border-bottom:none}
+td{padding:9px 12px;font-size:13px;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.article{font-family:monospace;font-size:12px;color:var(--text2)}
+td.brand{font-weight:500}
+.profit-pos{color:var(--green)}
+.profit-neg{color:var(--red)}
+.profit-mid{color:var(--yellow)}
+.margin-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
+.margin-high{background:#1f3a2a;color:var(--green)}
+.margin-mid{background:#2e2a1a;color:var(--yellow)}
+.margin-low{background:#2a1a1a;color:var(--red)}
+
+/* Empty state */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:60px 24px;color:var(--text3);gap:12px}
+.empty-icon{font-size:40px}
+.empty-text{font-size:15px}
+
+/* Summary row */
+tfoot td{background:var(--bg3);font-weight:600;font-size:12px;border-top:2px solid var(--border);
+  padding:8px 12px;white-space:nowrap}
+tfoot td.sum-label{color:var(--text2);text-transform:uppercase;font-size:11px;letter-spacing:.05em}
+
+/* Side panel */
+.panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
+.panel-overlay.open{display:block}
+.panel{position:fixed;right:0;top:0;bottom:0;width:480px;background:var(--bg2);
+  border-left:1px solid var(--border);z-index:41;display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .2s ease}
+.panel.open{transform:none}
+.panel-hdr{display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+.panel-title{font-weight:600;font-size:15px}
+.panel-close{width:32px;height:32px;border-radius:6px;border:none;
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:18px;line-height:1;
+  display:flex;align-items:center;justify-content:center}
+.panel-close:hover{color:var(--text)}
+.panel-body{flex:1;overflow-y:auto;padding:20px}
+.panel-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;flex-shrink:0}
+.btn-save{flex:1;padding:9px;border-radius:7px;border:none;
+  background:var(--blue);color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+.btn-save:hover{opacity:.85}
+.btn-delete{padding:9px 16px;border-radius:7px;border:1px solid var(--red);
+  background:transparent;color:var(--red);font-size:14px;cursor:pointer}
+.btn-delete:hover{background:var(--red);color:#fff}
+
+/* Form groups */
+.form-section{margin-bottom:20px}
+.form-section-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.field-row{display:flex;gap:10px;margin-bottom:10px}
+.field{display:flex;flex-direction:column;gap:4px;flex:1}
+.field label{font-size:11px;color:var(--text2);font-weight:500}
+.field input,.field select{
+  padding:7px 10px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px}
+.field input:focus,.field select:focus{outline:none;border-color:var(--blue)}
+.field input.auto{background:var(--bg4);color:var(--text2);cursor:default}
+.field .hint{font-size:10px;color:var(--text3)}
+
+/* Results panel inside form */
+.results-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
+.res-card{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:10px 12px}
+.res-label{font-size:10px;color:var(--text2);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
+.res-value{font-size:16px;font-weight:700}
+.res-value.pos{color:var(--green)}
+.res-value.neg{color:var(--red)}
+.res-value.neu{color:var(--text)}
+.res-card.full{grid-column:1/-1}
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="hdr">
+  <span class="hdr-logo">📊 Дашборд</span>
+  <div class="hdr-sep"></div>
+  <a href="/" class="hbtn">📋 Задачи</a>
+  <a href="/plan-fact" class="hbtn">📊 План-Факт</a>
+  <a href="/unit" class="hbtn active">💰 Юнит</a>
+  {% if current_user.role == 'admin' %}
+  <a href="/admin" class="hbtn">⚙️ Пользователи</a>
+  {% endif %}
+  <button class="hbtn theme-btn" onclick="toggleTheme()" title="Тема">🌙</button>
+  <a href="/auth/logout" class="hbtn" style="color:var(--red)">Выйти</a>
+</div>
+
+<div class="layout">
+<div class="main">
+  <div class="controls">
+    <button class="btn-add" onclick="openPanel(null)">+ Добавить артикул</button>
+    <div class="ctrl-sep"></div>
+    <input class="search-box" type="text" placeholder="Поиск по артикулу / бренду…" oninput="filterRows(this.value)" id="searchBox">
+    <div class="ctrl-sep"></div>
+    <span class="stat-pill" id="statRows"><b>0</b> артикулов</span>
+    <span class="stat-pill" id="statProfit">Прибыль: <b>—</b></span>
+    <span class="stat-pill" id="statMargin">Маржа: <b>—</b></span>
+  </div>
+
+  <div class="tbl-wrap" id="tblWrap">
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortBy('seller_article')">Артикул продавца</th>
+          <th onclick="sortBy('wb_article')">WB</th>
+          <th onclick="sortBy('brand')">Бренд</th>
+          <th onclick="sortBy('cost_price')" class="num">Себест.</th>
+          <th onclick="sortBy('wb_price')" class="num">Цена ВБ</th>
+          <th onclick="sortBy('_logistics_ktr')" class="num">Логистика</th>
+          <th onclick="sortBy('_storage_30d')" class="num">Хранение</th>
+          <th onclick="sortBy('_commission')" class="num">Комиссия</th>
+          <th onclick="sortBy('_profit')" class="num">Прибыль</th>
+          <th onclick="sortBy('_margin')" class="num">Маржа</th>
+          <th onclick="sortBy('_roi')" class="num">ROI</th>
+          <th onclick="sortBy('drr_pct')" class="num">ДРР %</th>
+          <th onclick="sortBy('_batch_margin')" class="num">Маржа партии</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+      <tfoot id="tfoot"></tfoot>
+    </table>
+    <div class="empty" id="emptyState" style="display:none">
+      <div class="empty-icon">💰</div>
+      <div class="empty-text">Добавьте первый артикул для расчёта юнит-экономики</div>
+      <button class="btn-add" onclick="openPanel(null)">+ Добавить артикул</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Panel -->
+<div class="panel-overlay" id="overlay" onclick="closePanel()"></div>
+<div class="panel" id="panel">
+  <div class="panel-hdr">
+    <span class="panel-title" id="panelTitle">Добавить артикул</span>
+    <button class="panel-close" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+  <div class="panel-footer">
+    <button class="btn-save" onclick="saveRow()">Сохранить</button>
+    <button class="btn-delete" id="btnDelete" style="display:none" onclick="deleteRow()">Удалить</button>
+  </div>
+</div>
+
+<script>
+const WAREHOUSE_COEFS = {
+  'Обухово СГТ':75,'Голицыно СГТ':75,'Радумля СГТ':95,'Шушары СГТ':95,
+  'Волгоград':110,'Рязань':120,'Маркетплейс':125,'Подольск 4':125,'Атакент':125,
+  'Сабурово':130,'Невинномысск':130,'Краснодар':130,'Владимир':140,'Тула':145,
+  'Астана Карагандинское шоссе':145,'Екатеринбург - Перспективный 12':150,
+  'Котовск':150,'Электросталь':170,'Обухово':170,'Щербинка':190,
+  'Белая дача':195,'Подольск':200,'Коледино':205,'Казань':210,
+  'Екатеринбург - Испытателей 14г':220,'Хабаровск':220,'Чехов 2':260,
+  'Санкт-Петербург Уткина Заводь':270,'Белые Столбы':280,'Новосибирск':445
+};
+const WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
+
+let rows = [];
+let editId = null;
+let sortCol = null;
+let sortDir = 1;
+
+// ─── Формулы ────────────────────────────────────────────────────────────────
+function compute(r) {
+  const costPrice     = +r.cost_price     || 0;
+  const logToWb       = +r.logistics_to_wb|| 0;
+  const packaging     = +r.packaging      || 0;
+  const overhead      = +r.overhead       || 0;
+  const defectPct     = +r.defect_pct     || 0;
+  const wbPrice       = +r.wb_price       || 0;
+  const commissionPct = +r.commission_pct || 36;
+  const redemptionPct = +r.redemption_pct || 100;
+  const irp           = +r.irp            || 1.0;
+  const drrPct        = +r.drr_pct        || 0;
+  const drrExtRub     = +r.drr_external_rub || 0;
+  const qty           = +r.quantity       || 0;
+
+  const totalCost = costPrice + logToWb + packaging + overhead;
+
+  // Литраж
+  const w = +r.width_cm, l = +r.length_cm, h = +r.height_cm;
+  const liters = (w && l && h) ? w * l * h / 1000 : (+r.liters || 0);
+
+  const wCoef = WAREHOUSE_COEFS[r.warehouse] || 0;
+
+  // Хранение в день = 0.08 * литраж * коэф / 100
+  const storagePerDay = liters && wCoef ? 0.08 * liters * wCoef / 100 : (+r.storage_per_day || 0);
+  const storage30d = storagePerDay * 30;
+
+  // Логистика + КТР: если задана вручную — берём её, иначе считаем
+  let logisticsKtr;
+  if (r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== '') {
+    logisticsKtr = +r.logistics_ktr;
+  } else if (liters && wCoef && redemptionPct > 0) {
+    const basePerDelivery = (223.2 + 2.1 * liters) * wCoef / 100 * irp;
+    logisticsKtr = basePerDelivery / (redemptionPct / 100);
+  } else {
+    logisticsKtr = 0;
+  }
+
+  const commission   = wbPrice * commissionPct / 100;
+  const wbClub       = wbPrice * 0.95;
+  const price10pct   = wbPrice * 0.9;
+  // Цена клиенту = WB цена * (1 - (комиссия% + 1%) / 100)  — 1% эквайринг
+  const priceToSeller      = wbPrice * (1 - (commissionPct + 1) / 100);
+  const wbClubToSeller     = wbClub  * (1 - (commissionPct + 1) / 100);
+
+  const markup   = totalCost > 0 ? wbPrice / totalCost : 0;
+  const usn      = wbPrice * 0.07;
+  const drrRub   = wbPrice * drrPct / 100 + drrExtRub;
+  const brakCost = totalCost * defectPct / 100;
+
+  // Выручка = WB - комиссия - логистика - хранение - УСН - ДРР
+  const revenue = wbPrice - commission - logisticsKtr - storage30d - usn - drrRub;
+  const profit  = revenue - totalCost - brakCost;
+
+  // ВБ клуб
+  const commissionWbClub = wbClub * commissionPct / 100;
+  const usnWbClub  = wbClub * 0.07;
+  const drrRubWbClub = wbClub * drrPct / 100 + drrExtRub;
+  const revenueWbClub = wbClub - commissionWbClub - logisticsKtr - storage30d - usnWbClub - drrRubWbClub;
+  const profitWbClub  = revenueWbClub - totalCost - brakCost;
+
+  const margin       = wbPrice > 0 ? profit / wbPrice * 100 : 0;
+  const marginWbClub = wbClub  > 0 ? profitWbClub / wbClub * 100 : 0;
+  const roi          = totalCost > 0 ? profit / totalCost * 100 : 0;
+
+  const qtyInvested  = totalCost * qty;
+  const totalProfit  = profit * qty;
+  const batchMargin  = (qty > 0 && wbPrice > 0) ? totalProfit / (wbPrice * qty) * 100 : 0;
+
+  return {
+    totalCost, liters, wCoef, storagePerDay, storage30d, logisticsKtr,
+    commission, wbClub, price10pct, priceToSeller, wbClubToSeller,
+    markup, usn, drrRub, brakCost, revenue,
+    profit, profitWbClub, margin, marginWbClub, roi,
+    qtyInvested, totalProfit, batchMargin
+  };
+}
+
+// ─── Утилиты форматирования ──────────────────────────────────────────────────
+const rub = v => v == null || isNaN(v) ? '—' : (v < 0 ? '−' : '') + '₽ ' + Math.abs(v).toLocaleString('ru-RU', {minimumFractionDigits:0,maximumFractionDigits:0});
+const pct = v => v == null || isNaN(v) ? '—' : v.toFixed(1) + '%';
+const num = v => v == null || isNaN(v) ? '—' : v.toLocaleString('ru-RU', {minimumFractionDigits:0,maximumFractionDigits:2});
+
+function marginClass(m) {
+  if (m === null || isNaN(m)) return '';
+  if (m >= 20) return 'margin-high';
+  if (m >= 10) return 'margin-mid';
+  return 'margin-low';
+}
+
+function profitClass(v) {
+  if (v > 0) return 'profit-pos';
+  if (v < 0) return 'profit-neg';
+  return '';
+}
+
+// ─── Загрузка данных ──────────────────────────────────────────────────────────
+async function loadRows() {
+  const r = await fetch('/api/unit-rows');
+  rows = await r.json();
+  renderTable();
+}
+
+// ─── Рендер таблицы ──────────────────────────────────────────────────────────
+function filterRows(q) {
+  const s = q.toLowerCase();
+  document.querySelectorAll('#tbody tr').forEach(tr => {
+    tr.style.display = tr.dataset.search.includes(s) ? '' : 'none';
+  });
+  updateStats();
+}
+
+function sortBy(col) {
+  if (sortCol === col) sortDir = -sortDir;
+  else { sortCol = col; sortDir = 1; }
+  document.querySelectorAll('thead th').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+  });
+  const idx = ['seller_article','wb_article','brand','cost_price','wb_price',
+    '_logistics_ktr','_storage_30d','_commission','_profit','_margin','_roi',
+    'drr_pct','_batch_margin'].indexOf(col);
+  if (idx >= 0) {
+    const cls = sortDir > 0 ? 'sort-asc' : 'sort-desc';
+    document.querySelectorAll('thead th')[idx].classList.add(cls);
+  }
+  rows.sort((a, b) => {
+    const ca = compute(a), cb = compute(b);
+    const map = {_logistics_ktr:'logisticsKtr',_storage_30d:'storage30d',
+      _commission:'commission',_profit:'profit',_margin:'margin',
+      _roi:'roi',_batch_margin:'batchMargin'};
+    let va = col.startsWith('_') ? ca[map[col]] : a[col];
+    let vb = col.startsWith('_') ? cb[map[col]] : b[col];
+    if (va == null) va = -Infinity;
+    if (vb == null) vb = -Infinity;
+    if (typeof va === 'string') return sortDir * va.localeCompare(vb);
+    return sortDir * (va - vb);
+  });
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tbody');
+  const search = document.getElementById('searchBox').value.toLowerCase();
+
+  if (!rows.length) {
+    document.getElementById('tblWrap').querySelector('table').style.display = 'none';
+    document.getElementById('emptyState').style.display = '';
+    updateStats();
+    return;
+  }
+  document.getElementById('tblWrap').querySelector('table').style.display = '';
+  document.getElementById('emptyState').style.display = 'none';
+
+  tbody.innerHTML = rows.map(r => {
+    const c = compute(r);
+    const mClass = marginClass(c.margin);
+    const searchStr = [r.seller_article, r.wb_article, r.brand].join(' ').toLowerCase();
+    const vis = searchStr.includes(search) ? '' : 'display:none';
+    return `<tr data-id="${r.id}" data-search="${searchStr}" style="${vis}" onclick="openPanel(${r.id})">
+      <td class="brand">${esc(r.seller_article||'—')}</td>
+      <td class="article">${r.wb_article||'—'}</td>
+      <td>${esc(r.brand||'—')}</td>
+      <td class="num">${rub(c.totalCost)}</td>
+      <td class="num">${rub(r.wb_price||0)}</td>
+      <td class="num">${rub(c.logisticsKtr)}</td>
+      <td class="num">${rub(c.storage30d)}</td>
+      <td class="num">${rub(c.commission)}</td>
+      <td class="num ${profitClass(c.profit)}">${rub(c.profit)}</td>
+      <td class="num"><span class="margin-badge ${mClass}">${pct(c.margin)}</span></td>
+      <td class="num ${profitClass(c.roi)}">${pct(c.roi)}</td>
+      <td class="num">${pct(r.drr_pct)}</td>
+      <td class="num"><span class="margin-badge ${marginClass(c.batchMargin)}">${pct(c.batchMargin)}</span></td>
+    </tr>`;
+  }).join('');
+
+  renderSummary();
+  updateStats();
+}
+
+function renderSummary() {
+  const visible = rows.filter(r => {
+    const search = document.getElementById('searchBox').value.toLowerCase();
+    return [r.seller_article, r.wb_article, r.brand].join(' ').toLowerCase().includes(search);
+  });
+  if (!visible.length) { document.getElementById('tfoot').innerHTML = ''; return; }
+
+  const tots = visible.reduce((acc, r) => {
+    const c = compute(r);
+    acc.totalCost    += c.totalCost;
+    acc.logisticsKtr += c.logisticsKtr;
+    acc.storage30d   += c.storage30d;
+    acc.commission   += c.commission;
+    acc.profit       += c.profit;
+    acc.qty          += (+r.quantity || 0);
+    acc.invested     += c.qtyInvested;
+    acc.totalProfit  += c.totalProfit;
+    acc.revenue      += (r.wb_price || 0) * (+r.quantity || 0);
+    return acc;
+  }, {totalCost:0,logisticsKtr:0,storage30d:0,commission:0,profit:0,qty:0,invested:0,totalProfit:0,revenue:0});
+
+  const avgMargin = tots.revenue > 0 ? tots.totalProfit / tots.revenue * 100 : 0;
+
+  document.getElementById('tfoot').innerHTML = `<tr>
+    <td class="sum-label" colspan="3">Итого (${visible.length})</td>
+    <td class="num">${rub(tots.totalCost)}</td>
+    <td class="num">—</td>
+    <td class="num">${rub(tots.logisticsKtr)}</td>
+    <td class="num">${rub(tots.storage30d)}</td>
+    <td class="num">${rub(tots.commission)}</td>
+    <td class="num ${profitClass(tots.profit)}">${rub(tots.profit)}</td>
+    <td class="num"><span class="margin-badge ${marginClass(avgMargin)}">${pct(avgMargin)}</span></td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+    <td class="num"><span class="margin-badge ${marginClass(avgMargin)}">${pct(avgMargin)}</span></td>
+  </tr>`;
+}
+
+function updateStats() {
+  const visible = rows.filter(r => {
+    const s = document.getElementById('searchBox').value.toLowerCase();
+    return [r.seller_article, r.wb_article, r.brand].join(' ').toLowerCase().includes(s);
+  });
+  const profits = visible.map(r => compute(r).profit);
+  const totalP = profits.reduce((a,b)=>a+b,0);
+  const revenues = visible.map(r => (r.wb_price||0));
+  const totalR = revenues.reduce((a,b)=>a+b,0);
+  const avgM = totalR > 0 ? (totalP / totalR * 100) : 0;
+  document.getElementById('statRows').innerHTML = `<b>${visible.length}</b> артикулов`;
+  document.getElementById('statProfit').innerHTML = `Прибыль: <b class="${profitClass(totalP)}">${rub(totalP)}</b>`;
+  document.getElementById('statMargin').innerHTML = `Маржа: <b class="${marginClass(avgM)}">${pct(avgM)}</b>`;
+}
+
+// ─── Панель редактирования ───────────────────────────────────────────────────
+const WHOUSE_OPTIONS = WAREHOUSES.map(w =>
+  `<option value="${esc(w)}">${esc(w)} (${WAREHOUSE_COEFS[w]}%)</option>`
+).join('');
+
+function panelHTML(r) {
+  const c = r ? compute(r) : {};
+  const v = (key, def='') => r ? (r[key]??def) : def;
+  const warehouseOpts = `<option value="">— выберите —</option>` + WAREHOUSES.map(w =>
+    `<option value="${esc(w)}" ${v('warehouse')===w?'selected':''}>${esc(w)} (${WAREHOUSE_COEFS[w]}%)</option>`
+  ).join('');
+
+  return `
+  <div class="form-section">
+    <div class="form-section-title">Идентификация</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Бренд / Проект</label>
+        <input id="f_brand" value="${esc(v('brand'))}" placeholder="KSF">
+      </div>
+      <div class="field">
+        <label>Артикул продавца</label>
+        <input id="f_seller_article" value="${esc(v('seller_article'))}" placeholder="13 kurtka bel">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Артикул WB</label>
+        <input id="f_wb_article" type="number" value="${v('wb_article','')}" placeholder="687473154">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Себестоимость</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Цена закупки, ₽</label>
+        <input id="f_cost_price" type="number" step="0.01" value="${v('cost_price',0)}" oninput="updateCalc()">
+      </div>
+      <div class="field">
+        <label>Упаковка, ₽</label>
+        <input id="f_packaging" type="number" step="0.01" value="${v('packaging',0)}" oninput="updateCalc()">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Лог. до склада ВБ, ₽</label>
+        <input id="f_logistics_to_wb" type="number" step="0.01" value="${v('logistics_to_wb',0)}" oninput="updateCalc()">
+      </div>
+      <div class="field">
+        <label>Накладные расходы, ₽</label>
+        <input id="f_overhead" type="number" step="0.01" value="${v('overhead',0)}" oninput="updateCalc()">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Итоговая себестоимость, ₽</label>
+        <input id="f_total_cost" class="auto" readonly value="${r ? rub(c.totalCost).replace('₽ ','').replace('−','') : ''}">
+        <span class="hint">= закупка + упаковка + лог. до ВБ + накладные</span>
+      </div>
+      <div class="field">
+        <label>Брак, %</label>
+        <input id="f_defect_pct" type="number" step="0.1" value="${v('defect_pct',0)}" oninput="updateCalc()">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Физические параметры</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Ширина, см</label>
+        <input id="f_width_cm" type="number" step="0.1" value="${v('width_cm','')}" oninput="updateCalc()">
+      </div>
+      <div class="field">
+        <label>Длина, см</label>
+        <input id="f_length_cm" type="number" step="0.1" value="${v('length_cm','')}" oninput="updateCalc()">
+      </div>
+      <div class="field">
+        <label>Высота, см</label>
+        <input id="f_height_cm" type="number" step="0.1" value="${v('height_cm','')}" oninput="updateCalc()">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Литраж (авто или вручную)</label>
+        <input id="f_liters" type="number" step="0.01" value="${v('liters','')}" placeholder="авто" oninput="updateCalc()">
+        <span class="hint">Если заданы размеры — считается автоматически</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Параметры WB</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Склад</label>
+        <select id="f_warehouse" onchange="updateCalc()">${warehouseOpts}</select>
+      </div>
+      <div class="field">
+        <label>Коэф. склада, %</label>
+        <input id="f_wcoef" class="auto" readonly value="${r && c.wCoef ? c.wCoef : ''}">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>ИРП (индекс рек. цен)</label>
+        <input id="f_irp" type="number" step="0.01" value="${v('irp',1.0)}" oninput="updateCalc()">
+        <span class="hint">1.0 = без коэф., 1.15 = стандарт для большинства складов</span>
+      </div>
+      <div class="field">
+        <label>% выкупа</label>
+        <input id="f_redemption_pct" type="number" step="1" min="0" max="100" value="${v('redemption_pct',100)}" oninput="updateCalc()">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Логистика + КТР, ₽ (авто)</label>
+        <input id="f_logistics_ktr" type="number" step="0.01" value="${v('logistics_ktr','')}" placeholder="авто" oninput="updateCalc()">
+        <span class="hint">Пусто = авт. расчёт по объёму, складу, ИРП и % выкупа</span>
+      </div>
+      <div class="field">
+        <label>Коэф. приёмки</label>
+        <select id="f_reception_coef" onchange="updateCalc()">
+          <option value="x0" ${v('reception_coef','x0')==='x0'?'selected':''}>x0 (бесплатно)</option>
+          <option value="x1" ${v('reception_coef')==='x1'?'selected':''}>x1</option>
+          <option value="x2" ${v('reception_coef')==='x2'?'selected':''}>x2</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Хранение в день, ₽ (авто)</label>
+        <input id="f_storage_per_day" class="auto" readonly
+          value="${r && c.storagePerDay ? c.storagePerDay.toFixed(4) : (r ? (r.storage_per_day||0) : '')}">
+        <span class="hint">= 0.08 × литраж × коэф.склада / 100</span>
+      </div>
+      <div class="field">
+        <label>Хранение за 30 дней, ₽</label>
+        <input id="f_storage_30d" class="auto" readonly
+          value="${r ? rub(c.storage30d).replace('₽ ','').replace('−','') : ''}">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Цена и комиссия</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Стоимость на WB, ₽</label>
+        <input id="f_wb_price" type="number" step="1" value="${v('wb_price',0)}" oninput="updateCalc()">
+      </div>
+      <div class="field">
+        <label>Комиссия в категории, %</label>
+        <input id="f_commission_pct" type="number" step="0.1" value="${v('commission_pct',36)}" oninput="updateCalc()">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Реклама</div>
+    <div class="field-row">
+      <div class="field">
+        <label>ДРР % (от WB цены)</label>
+        <input id="f_drr_pct" type="number" step="0.1" value="${v('drr_pct',0)}" oninput="updateCalc()">
+      </div>
+      <div class="field">
+        <label>ДРР фикс, ₽</label>
+        <input id="f_drr_external_rub" type="number" step="0.01" value="${v('drr_external_rub',0)}" oninput="updateCalc()">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Партия</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Количество, шт</label>
+        <input id="f_quantity" type="number" step="1" value="${v('quantity',0)}" oninput="updateCalc()">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-section-title">Результаты расчёта</div>
+    <div class="results-grid" id="resultsGrid">
+      ${resultsHTML(r ? c : null, r)}
+    </div>
+  </div>`;
+}
+
+function resultsHTML(c, r) {
+  if (!c) return `<div class="res-card full" style="color:var(--text3);text-align:center;padding:20px">
+    Заполните поля для расчёта</div>`;
+
+  const vc = (v, pos, neg) => v > 0 ? pos : (v < 0 ? neg : 'neu');
+  return `
+    <div class="res-card">
+      <div class="res-label">Себестоимость</div>
+      <div class="res-value neu">${rub(c.totalCost)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Логистика + КТР</div>
+      <div class="res-value neu">${rub(c.logisticsKtr)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Хранение 30д</div>
+      <div class="res-value neu">${rub(c.storage30d)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Комиссия ВБ</div>
+      <div class="res-value neu">${rub(c.commission)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Наценка (×)</div>
+      <div class="res-value neu">${c.markup > 0 ? c.markup.toFixed(1)+'×' : '—'}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">УСН 7%</div>
+      <div class="res-value neu">${rub(c.usn)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Цена клиенту</div>
+      <div class="res-value neu">${rub(c.priceToSeller)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">ВБ Клуб</div>
+      <div class="res-value neu">${rub(c.wbClub)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Прибыль</div>
+      <div class="res-value ${vc(c.profit,'pos','neg')}">${rub(c.profit)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Прибыль ВБ Клуб</div>
+      <div class="res-value ${vc(c.profitWbClub,'pos','neg')}">${rub(c.profitWbClub)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Маржинальность</div>
+      <div class="res-value ${vc(c.margin,'pos','neg')}">${pct(c.margin)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Маржа ВБ Клуб</div>
+      <div class="res-value ${vc(c.marginWbClub,'pos','neg')}">${pct(c.marginWbClub)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">ROI</div>
+      <div class="res-value ${vc(c.roi,'pos','neg')}">${pct(c.roi)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">ДРР (факт)</div>
+      <div class="res-value neu">${rub(c.drrRub)}</div>
+    </div>
+    ${(r && +r.quantity > 0) ? `
+    <div class="res-card">
+      <div class="res-label">Вложено в партию</div>
+      <div class="res-value neu">${rub(c.qtyInvested)}</div>
+    </div>
+    <div class="res-card">
+      <div class="res-label">Прибыль партии</div>
+      <div class="res-value ${vc(c.totalProfit,'pos','neg')}">${rub(c.totalProfit)}</div>
+    </div>
+    <div class="res-card full">
+      <div class="res-label">Маржинальность партии</div>
+      <div class="res-value ${vc(c.batchMargin,'pos','neg')}" style="font-size:20px">${pct(c.batchMargin)}</div>
+    </div>` : ''}`;
+}
+
+function openPanel(id) {
+  editId = id;
+  const r = id ? rows.find(x => x.id === id) : null;
+  document.getElementById('panelTitle').textContent = id ? 'Редактировать артикул' : 'Добавить артикул';
+  document.getElementById('btnDelete').style.display = id ? '' : 'none';
+  document.getElementById('panelBody').innerHTML = panelHTML(r);
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('panel').classList.add('open');
+}
+
+function closePanel() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('panel').classList.remove('open');
+  editId = null;
+}
+
+function readForm() {
+  const g = id => { const el = document.getElementById(id); return el ? el.value : null; };
+  const n = id => { const v = g(id); return v === '' || v === null ? null : +v; };
+  return {
+    brand:            g('f_brand'),
+    wb_article:       n('f_wb_article'),
+    seller_article:   g('f_seller_article'),
+    cost_price:       n('f_cost_price') || 0,
+    logistics_to_wb:  n('f_logistics_to_wb') || 0,
+    packaging:        n('f_packaging') || 0,
+    overhead:         n('f_overhead') || 0,
+    defect_pct:       n('f_defect_pct') || 0,
+    width_cm:         n('f_width_cm'),
+    length_cm:        n('f_length_cm'),
+    height_cm:        n('f_height_cm'),
+    liters:           n('f_liters'),
+    redemption_pct:   n('f_redemption_pct') ?? 100,
+    warehouse:        g('f_warehouse'),
+    irp:              n('f_irp') ?? 1.0,
+    logistics_ktr:    n('f_logistics_ktr'),
+    reception_coef:   g('f_reception_coef'),
+    storage_per_day:  0,
+    commission_pct:   n('f_commission_pct') ?? 36,
+    wb_price:         n('f_wb_price') || 0,
+    drr_pct:          n('f_drr_pct') || 0,
+    drr_external_rub: n('f_drr_external_rub') || 0,
+    quantity:         n('f_quantity') || 0,
+  };
+}
+
+function updateCalc() {
+  const r = readForm();
+  const c = compute(r);
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  set('f_total_cost',    c.totalCost > 0 ? c.totalCost.toFixed(2) : '');
+  set('f_wcoef',         c.wCoef || '');
+  set('f_storage_per_day', c.storagePerDay > 0 ? c.storagePerDay.toFixed(4) : '');
+  set('f_storage_30d',   c.storage30d > 0 ? c.storage30d.toFixed(2) : '');
+
+  const w = +r.width_cm, l = +r.length_cm, h = +r.height_cm;
+  if (w && l && h) {
+    const litersEl = document.getElementById('f_liters');
+    if (litersEl && !litersEl.value) litersEl.placeholder = (w*l*h/1000).toFixed(2);
+  }
+
+  document.getElementById('resultsGrid').innerHTML = resultsHTML(c, r);
+}
+
+async function saveRow() {
+  const d = readForm();
+  const url = editId ? `/api/unit-rows/${editId}` : '/api/unit-rows';
+  const method = editId ? 'PUT' : 'POST';
+  const resp = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(d)});
+  const result = await resp.json();
+  if (result.error) { alert('Ошибка: ' + result.error); return; }
+  closePanel();
+  await loadRows();
+}
+
+async function deleteRow() {
+  if (!editId) return;
+  if (!confirm('Удалить этот артикул?')) return;
+  await fetch(`/api/unit-rows/${editId}`, {method:'DELETE'});
+  closePanel();
+  await loadRows();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toggleTheme() {
+  const t = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.body.dataset.theme = t;
+  localStorage.setItem('theme', t);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+const savedTheme = localStorage.getItem('theme') || 'dark';
+document.body.dataset.theme = savedTheme;
+loadRows();
+</script>
+</body>
+</html>

@@ -134,6 +134,37 @@ def _ensure_design_tables():
                     )
                 """)
                 cur.execute("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS dismissed BOOLEAN DEFAULT FALSE")
+                # Юнит-экономика
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS unit_economics (
+                        id               SERIAL PRIMARY KEY,
+                        brand            TEXT NOT NULL DEFAULT '',
+                        wb_article       BIGINT,
+                        seller_article   TEXT DEFAULT '',
+                        cost_price       NUMERIC(12,2) DEFAULT 0,
+                        logistics_to_wb  NUMERIC(12,2) DEFAULT 0,
+                        packaging        NUMERIC(12,2) DEFAULT 0,
+                        overhead         NUMERIC(12,2) DEFAULT 0,
+                        defect_pct       NUMERIC(5,2) DEFAULT 0,
+                        width_cm         NUMERIC(8,2),
+                        length_cm        NUMERIC(8,2),
+                        height_cm        NUMERIC(8,2),
+                        liters           NUMERIC(8,3),
+                        redemption_pct   NUMERIC(5,2) DEFAULT 100,
+                        warehouse        TEXT DEFAULT '',
+                        irp              NUMERIC(8,3) DEFAULT 1.0,
+                        logistics_ktr    NUMERIC(12,2),
+                        reception_coef   TEXT DEFAULT 'x0',
+                        storage_per_day  NUMERIC(10,4) DEFAULT 0,
+                        commission_pct   NUMERIC(5,2) DEFAULT 36,
+                        wb_price         NUMERIC(12,2) DEFAULT 0,
+                        drr_pct          NUMERIC(5,2) DEFAULT 0,
+                        drr_external_rub NUMERIC(12,2) DEFAULT 0,
+                        quantity         INTEGER DEFAULT 0,
+                        created_at       TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at       TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
                 # Логи активности пользователей
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS user_activity (
@@ -2127,6 +2158,162 @@ def api_design_attachment_delete(att_id):
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM design_attachments WHERE id=%s", (att_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Юнит-экономика ───────────────────────────────────────────────────────────
+@app.route("/unit")
+@require_auth
+def unit_page():
+    u = _session_user()
+    return render_template("unit.html", current_user=u)
+
+
+@app.route("/api/unit-rows")
+@require_auth
+def api_unit_rows_get():
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, brand, wb_article, seller_article,
+                           cost_price, logistics_to_wb, packaging, overhead,
+                           defect_pct, width_cm, length_cm, height_cm, liters,
+                           redemption_pct, warehouse, irp, logistics_ktr,
+                           reception_coef, storage_per_day, commission_pct,
+                           wb_price, drr_pct, drr_external_rub, quantity
+                    FROM unit_economics
+                    ORDER BY id ASC
+                """)
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        for row in rows:
+            for k, v in row.items():
+                if hasattr(v, '__float__'):
+                    row[k] = float(v) if v is not None else None
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/unit-rows", methods=["POST"])
+@require_auth
+def api_unit_rows_create():
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO unit_economics
+                        (brand, wb_article, seller_article,
+                         cost_price, logistics_to_wb, packaging, overhead,
+                         defect_pct, width_cm, length_cm, height_cm, liters,
+                         redemption_pct, warehouse, irp, logistics_ktr,
+                         reception_coef, storage_per_day, commission_pct,
+                         wb_price, drr_pct, drr_external_rub, quantity)
+                    VALUES
+                        (%(brand)s, %(wb_article)s, %(seller_article)s,
+                         %(cost_price)s, %(logistics_to_wb)s, %(packaging)s, %(overhead)s,
+                         %(defect_pct)s, %(width_cm)s, %(length_cm)s, %(height_cm)s, %(liters)s,
+                         %(redemption_pct)s, %(warehouse)s, %(irp)s, %(logistics_ktr)s,
+                         %(reception_coef)s, %(storage_per_day)s, %(commission_pct)s,
+                         %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(quantity)s)
+                    RETURNING id
+                """, {
+                    "brand": d.get("brand", ""),
+                    "wb_article": d.get("wb_article") or None,
+                    "seller_article": d.get("seller_article", ""),
+                    "cost_price": d.get("cost_price") or 0,
+                    "logistics_to_wb": d.get("logistics_to_wb") or 0,
+                    "packaging": d.get("packaging") or 0,
+                    "overhead": d.get("overhead") or 0,
+                    "defect_pct": d.get("defect_pct") or 0,
+                    "width_cm": d.get("width_cm") or None,
+                    "length_cm": d.get("length_cm") or None,
+                    "height_cm": d.get("height_cm") or None,
+                    "liters": d.get("liters") or None,
+                    "redemption_pct": d.get("redemption_pct") or 100,
+                    "warehouse": d.get("warehouse", ""),
+                    "irp": d.get("irp") or 1.0,
+                    "logistics_ktr": d.get("logistics_ktr") or None,
+                    "reception_coef": d.get("reception_coef", "x0"),
+                    "storage_per_day": d.get("storage_per_day") or 0,
+                    "commission_pct": d.get("commission_pct") or 36,
+                    "wb_price": d.get("wb_price") or 0,
+                    "drr_pct": d.get("drr_pct") or 0,
+                    "drr_external_rub": d.get("drr_external_rub") or 0,
+                    "quantity": d.get("quantity") or 0,
+                })
+                new_id = cur.fetchone()[0]
+            conn.commit()
+        return jsonify({"id": new_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/unit-rows/<int:row_id>", methods=["PUT"])
+@require_auth
+def api_unit_rows_update(row_id):
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE unit_economics SET
+                        brand=%(brand)s, wb_article=%(wb_article)s, seller_article=%(seller_article)s,
+                        cost_price=%(cost_price)s, logistics_to_wb=%(logistics_to_wb)s,
+                        packaging=%(packaging)s, overhead=%(overhead)s,
+                        defect_pct=%(defect_pct)s, width_cm=%(width_cm)s,
+                        length_cm=%(length_cm)s, height_cm=%(height_cm)s, liters=%(liters)s,
+                        redemption_pct=%(redemption_pct)s, warehouse=%(warehouse)s,
+                        irp=%(irp)s, logistics_ktr=%(logistics_ktr)s,
+                        reception_coef=%(reception_coef)s, storage_per_day=%(storage_per_day)s,
+                        commission_pct=%(commission_pct)s, wb_price=%(wb_price)s,
+                        drr_pct=%(drr_pct)s, drr_external_rub=%(drr_external_rub)s,
+                        quantity=%(quantity)s, updated_at=NOW()
+                    WHERE id=%(id)s
+                """, {
+                    "id": row_id,
+                    "brand": d.get("brand", ""),
+                    "wb_article": d.get("wb_article") or None,
+                    "seller_article": d.get("seller_article", ""),
+                    "cost_price": d.get("cost_price") or 0,
+                    "logistics_to_wb": d.get("logistics_to_wb") or 0,
+                    "packaging": d.get("packaging") or 0,
+                    "overhead": d.get("overhead") or 0,
+                    "defect_pct": d.get("defect_pct") or 0,
+                    "width_cm": d.get("width_cm") or None,
+                    "length_cm": d.get("length_cm") or None,
+                    "height_cm": d.get("height_cm") or None,
+                    "liters": d.get("liters") or None,
+                    "redemption_pct": d.get("redemption_pct") or 100,
+                    "warehouse": d.get("warehouse", ""),
+                    "irp": d.get("irp") or 1.0,
+                    "logistics_ktr": d.get("logistics_ktr") or None,
+                    "reception_coef": d.get("reception_coef", "x0"),
+                    "storage_per_day": d.get("storage_per_day") or 0,
+                    "commission_pct": d.get("commission_pct") or 36,
+                    "wb_price": d.get("wb_price") or 0,
+                    "drr_pct": d.get("drr_pct") or 0,
+                    "drr_external_rub": d.get("drr_external_rub") or 0,
+                    "quantity": d.get("quantity") or 0,
+                })
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/unit-rows/<int:row_id>", methods=["DELETE"])
+@require_auth
+def api_unit_rows_delete(row_id):
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM unit_economics WHERE id=%s", (row_id,))
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
