@@ -2249,11 +2249,10 @@ def api_unit_rows_get():
                     WHERE project = %s
                     ORDER BY id ASC
                 """, (project,))
-                cols = [d[0] for d in cur.description]
-                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                rows = [dict(r) for r in cur.fetchall()]  # dict_row → copy
         for row in rows:
             for k, v in row.items():
-                if hasattr(v, '__float__'):
+                if hasattr(v, '__float__') and not isinstance(v, (int, bool)):
                     row[k] = float(v) if v is not None else None
         # Ежедневный бэкап (ON CONFLICT DO NOTHING = не дублируем)
         if project and rows:
@@ -2470,13 +2469,12 @@ def api_unit_auto_import():
                            wb_price, drr_pct, drr_external_rub, stock
                     FROM unit_economics WHERE project=%s ORDER BY id ASC
                 """, (project,))
-                cols = [d[0] for d in cur.description]
-                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                rows = [dict(r) for r in cur.fetchall()]  # dict_row → copy
             conn.commit()
 
         for row in rows:
             for k, v in row.items():
-                if hasattr(v, '__float__'):
+                if hasattr(v, '__float__') and not isinstance(v, (int, bool)):
                     row[k] = float(v) if v is not None else None
 
         return jsonify({"inserted": len(to_insert), "rows": rows})
