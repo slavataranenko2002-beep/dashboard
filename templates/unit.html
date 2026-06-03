@@ -236,6 +236,8 @@ tfoot td.fcomp{background:var(--comp-bg)}
   </select>
   <input class="bulk-val" id="bulkNumVal" type="number" step="any" placeholder="Значение">
   <button class="bulk-apply" onclick="applyBulk()">Применить</button>
+  <button class="bulk-apply" onclick="deleteBulk()"
+    style="background:var(--red);margin-left:4px">🗑 Удалить</button>
   <button class="bulk-desel" onclick="deselectAll()">Снять выделение</button>
 </div>
 
@@ -740,6 +742,24 @@ function onBulkFieldChange() {
   const isWh = field === 'warehouse';
   document.getElementById('bulkWarehouseVal').style.display = isWh ? '' : 'none';
   document.getElementById('bulkNumVal').style.display = isWh ? 'none' : '';
+}
+
+async function deleteBulk() {
+  const n = selectedKeys.size;
+  if (!n) return;
+  if (!confirm(`Удалить ${n} строк${n === 1 ? 'у' : n < 5 ? 'и' : ''}?`)) return;
+  const keys = [...selectedKeys];
+  for (const key of keys) {
+    const r = rows.find(x => x._key === key);
+    if (!r) continue;
+    if (r.id) await fetch(`/api/unit-rows/${r.id}`, {method: 'DELETE'});
+    rows = rows.filter(x => x._key !== key);
+    const tr = document.querySelector(`tr[data-key="${key}"]`);
+    if (tr) tr.remove();
+  }
+  selectedKeys = new Set();
+  updateBulkBar();
+  updateFooter();
 }
 
 function applyBulk() {
