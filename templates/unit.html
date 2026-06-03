@@ -369,6 +369,7 @@ async function onProjectChange() {
   const resp = await fetch('/api/unit-rows?project=' + encodeURIComponent(currentProject));
   const data = await resp.json();
   rows = Array.isArray(data) ? data : [];
+  console.log('[unit] DB rows:', rows.length, 'hasRealArticles:', rows.some(r => r.wb_article), rows.slice(0,3));
   rows.forEach(r => { r._key = newKey(); r._dirty = false; });
 
   // Первый раз (или только пустые строки) — авто-импорт из WB без модалки
@@ -378,6 +379,7 @@ async function onProjectChange() {
     try {
       const ir = await fetch('/api/unit-auto-import?project=' + encodeURIComponent(currentProject), {method:'POST'});
       const ij = await ir.json();
+      console.log('[unit] auto-import result:', ij);
       if (ij.error) throw new Error(ij.error);
       rows = ij.rows || [];
       rows.forEach(r => { r._key = newKey(); r._dirty = false; });
