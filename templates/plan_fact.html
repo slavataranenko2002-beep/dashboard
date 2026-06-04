@@ -177,6 +177,15 @@ tbody td.season-cell{text-align:left !important;width:150px;min-width:150px;padd
   color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
 .sn-add-btn:hover{opacity:.85}
 .sn-empty{color:var(--text3);font-size:13px;text-align:center;padding:24px 0}
+/* Тоггл-кнопки столбцов */
+.col-toggle{padding:5px 11px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap}
+.col-toggle.active{background:rgba(88,166,255,.15);border-color:var(--blue);color:var(--blue)}
+.col-toggle:hover{border-color:var(--blue);color:var(--blue)}
+/* Скрытые столбцы */
+.col-ff{} .col-exp{}
+table.hide-ff .col-ff{display:none}
+table.hide-exp .col-exp{display:none}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -208,6 +217,13 @@ tbody td.season-cell{text-align:left !important;width:150px;min-width:150px;padd
     <input type="file" class="xl-upload" id="xl-upload" accept=".xlsx,.xls" onchange="uploadTemplate(event)">
   </label>
   <button class="xl-btn" id="season-btn" onclick="openSeasonModal()" style="display:none">🌸 Сезонность</button>
+  <div class="ctrl-sep"></div>
+  <button class="col-toggle" id="tog-ff"  onclick="toggleCol('ff')"  title="Показать/скрыть столбец «Остаток на ФФ»">📦 ФФ</button>
+  <button class="col-toggle" id="tog-exp" onclick="toggleCol('exp')" title="Показать/скрыть столбец «Ожидаем остатки»">🚚 Ожидаем</button>
+  <label class="xl-btn" id="ff-up-btn" title="Загрузить Excel: Артикул, Остаток на ФФ, Ожидаем остатки" style="display:none">
+    📦 Загрузить ФФ
+    <input type="file" class="xl-upload" id="ff-upload" accept=".xlsx,.xls" onchange="uploadFfStocks(event)">
+  </label>
 </div>
 
 <div id="kpi-bar" class="kpi-bar" style="display:none"></div>
@@ -271,6 +287,55 @@ function toggleTheme(){
   applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light');
 }
 applyTheme(localStorage.getItem('theme')||'dark');
+
+// ── Тоггл столбцов ФФ / Ожидаем ─────────────────────────────────────────────
+function _ffKey(col){ return `pf_col_${col}_${document.getElementById('cabinet-sel').value}`; }
+
+function applyColVisibility(){
+  const tbl = document.querySelector('#table-box table');
+  if(!tbl) return;
+  ['ff','exp'].forEach(col=>{
+    const hidden = localStorage.getItem(_ffKey(col)) === 'hidden';
+    tbl.classList.toggle('hide-'+col, hidden);
+    const btn = document.getElementById('tog-'+col);
+    if(btn) btn.classList.toggle('active', !hidden);
+  });
+}
+
+function toggleCol(col){
+  const key = _ffKey(col);
+  const hidden = localStorage.getItem(key) === 'hidden';
+  localStorage.setItem(key, hidden ? 'visible' : 'hidden');
+  applyColVisibility();
+}
+
+// Инициализация тогглов при смене кабинета
+document.getElementById('cabinet-sel').addEventListener('change', ()=>{
+  applyColVisibility();
+});
+
+// ── Загрузка ФФ-остатков из Excel ────────────────────────────────────────────
+async function uploadFfStocks(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  event.target.value = '';
+  const cabinet = document.getElementById('cabinet-sel').value;
+  if(!cabinet){ alert('Выберите кабинет'); return; }
+  const fd = new FormData();
+  fd.append('file', file);
+  const btn = document.getElementById('ff-up-btn');
+  const orig = btn.textContent.trim();
+  btn.style.opacity = '.5';
+  try {
+    const r = await fetch(`/api/ff-stocks/upload?cabinet=${encodeURIComponent(cabinet)}`, {method:'POST', body:fd});
+    const d = await r.json();
+    if(d.error){ alert('Ошибка: '+d.error); return; }
+    alert(`✅ Загружено ${d.rows} артикулов`);
+    // Перезагружаем данные если уже открыты
+    if(currentData) loadData();
+  } catch(e){ alert('Ошибка соединения: '+e.message); }
+  finally { btn.style.opacity = '1'; }
+}
 
 // ── Sync horizontal scroll: table-box <-> table-footer ───────────────────────
 (function(){
@@ -347,10 +412,12 @@ async function loadData(){
     buildSeasonList(data);
     renderKpi(data);
     renderTable(data);
+    applyColVisibility();
     if(CAN_EDIT) document.getElementById('save-btn').style.display='inline-block';
     document.getElementById('xl-down-btn').style.display='inline-block';
     if(CAN_EDIT) document.getElementById('xl-up-btn').style.display='inline-flex';
     document.getElementById('season-btn').style.display='inline-block';
+    document.getElementById('ff-up-btn').style.display='inline-flex';
   } catch(e){
     showError('Ошибка соединения: '+e.message);
   } finally {
@@ -368,6 +435,7 @@ function showError(msg){
   document.getElementById('season-btn').style.display='none';
   document.getElementById('xl-down-btn').style.display='none';
   document.getElementById('xl-up-btn').style.display='none';
+  document.getElementById('ff-up-btn').style.display='none';
 }
 
 // ── DRR color helpers ─────────────────────────────────────────────────────────
@@ -522,8 +590,8 @@ function buildTableHead(arts){
   const avgBuyout = nzAvg(arts.map(a=>parseFloat(a.buyout_pct)||0));
   const sumPerDay = arts.reduce((acc,a)=>acc+(parseFloat(a.orders_per_day)||0),0).toFixed(1);
 
-  const S = (v,orange=false) =>
-    `<th class="thead-sum"${orange?' style="color:var(--orange)"':''}>${v}</th>`;
+  const S = (v,orange=false,cls='') =>
+    `<th class="thead-sum${cls?' '+cls:''}"${orange?' style="color:var(--orange)"':''}>${v}</th>`;
 
   return `<thead>
   <tr class="thead-sum">
@@ -533,6 +601,8 @@ function buildTableHead(arts){
     ${S(fmt(s('sales_rub_plan')))}
     ${S(fmt(s('sales_qty_plan')))}
     ${S(fmt(s('stocks')))}
+    ${S(fmt(s('ff_stock')),'','col-ff')}
+    ${S(fmt(s('expected_stock')),'','col-exp')}
     ${S(avgPrice!==null?fmt(Math.round(avgPrice)):' —')}
     ${S(avgBuyout!==null?Math.round(avgBuyout)+'%':'—')}
     ${S(fmt(s('orders_rub_fact')))}
@@ -559,6 +629,8 @@ function buildTableHead(arts){
     <th class="grp-plan">Прод. ₽ ПЛАН</th>
     <th class="grp-plan">Прод. шт ПЛАН</th>
     <th>Остаток</th>
+    <th class="col-ff">Остаток на ФФ</th>
+    <th class="col-exp">Ожидаем остатки</th>
     <th>Ср.цена</th>
     <th>% выкупа</th>
     <th class="grp-fact">Заказы ₽ ФАКТ</th>
@@ -611,6 +683,8 @@ function makeRow(a){
     <td>${fmt(a.sales_rub_plan)}</td>
     <td>${fmt(a.sales_qty_plan)}</td>
     <td>${fmt(a.stocks)}</td>
+    <td class="col-ff">${fmt(a.ff_stock||0)}</td>
+    <td class="col-exp">${fmt(a.expected_stock||0)}</td>
     <td>${fmt(a.avg_price)}${a.avg_price_is_prev?'<span title="Данные за прошлый месяц" style="font-size:10px;color:var(--text3);margin-left:3px">пр.м</span>':''}</td>
     <td>${a.buyout_pct}%${a.buyout_pct_is_prev?'<span title="Данные за прошлый месяц" style="font-size:10px;color:var(--text3);margin-left:3px">пр.м</span>':''}</td>
     <td style="font-weight:600">${fmt(a.orders_rub_fact)}</td>

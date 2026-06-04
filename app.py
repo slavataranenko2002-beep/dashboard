@@ -206,6 +206,17 @@ def _ensure_design_tables():
                         UNIQUE (email, date)
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS article_ff_stocks (
+                        id           SERIAL PRIMARY KEY,
+                        project      TEXT NOT NULL,
+                        vendor_code  TEXT NOT NULL,
+                        ff_stock     INTEGER NOT NULL DEFAULT 0,
+                        expected_stock INTEGER NOT NULL DEFAULT 0,
+                        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE (project, vendor_code)
+                    )
+                """)
             conn.commit()
         logging.info("Design tables ready.")
         # Миграция created_by_email — в отдельной транзакции, ошибки не критичны
@@ -1517,6 +1528,18 @@ def api_plan_fact_get():
                 )
                 for r in cur.fetchall():
                     season_coefficients[r["season_name"]] = float(r["coefficient"] or 0)
+                # ФФ-остатки и ожидаемые
+                ff_stocks: dict = {}
+                cur.execute(
+                    "SELECT vendor_code, ff_stock, expected_stock FROM article_ff_stocks "
+                    "WHERE project=%s",
+                    (cabinet,)
+                )
+                for r in cur.fetchall():
+                    ff_stocks[r["vendor_code"]] = {
+                        "ff_stock":       int(r["ff_stock"] or 0),
+                        "expected_stock": int(r["expected_stock"] or 0),
+                    }
         today        = date.today()
         days_elapsed = max(1, (d_to - d_from).days + 1)
         days_remaining = max(0, last_day - today.day)
@@ -1530,6 +1553,8 @@ def api_plan_fact_get():
                 "sales_qty_plan":  plan.get("sales_qty_plan",  0),
                 # Ярлык сезонности — из постоянной таблицы, не из плана
                 "season_name":     article_seasons.get(vc, ""),
+                "ff_stock":        ff_stocks.get(vc, {}).get("ff_stock", 0),
+                "expected_stock":  ff_stocks.get(vc, {}).get("expected_stock", 0),
             })
             orq  = a["orders_qty_fact"]
             orqp = a["orders_qty_plan"]
@@ -1660,6 +1685,61 @@ def api_season_coeff_save():
 
 
 # ─── Ярлыки сезонности (постоянные, по артикулу) ─────────────────────────────
+
+@app.route("/api/ff-stocks/upload", methods=["POST"])
+@require_auth
+def api_ff_stocks_upload():
+    """Загрузка Excel с колонками: Артикул, Остаток на ФФ, Ожидаем остатки."""
+    u = _session_user()
+    if u["role"] not in ("admin", "employee"):
+        return jsonify({"error": "forbidden"}), 403
+    cabinet = request.args.get("cabinet", "").strip()
+    if not cabinet or cabinet not in WB_CABINETS:
+        return jsonify({"error": "unknown cabinet"}), 400
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "no file"}), 400
+    try:
+        import openpyxl, io
+        wb = openpyxl.load_workbook(io.BytesIO(f.read()), data_only=True)
+        ws = wb.active
+        # Определяем индексы нужных колонок по заголовку (первая строка)
+        headers = [str(c.value or "").strip().lower() for c in ws[1]]
+        def find_col(variants):
+            for v in variants:
+                for i, h in enumerate(headers):
+                    if v in h:
+                        return i
+            return None
+        idx_art  = find_col(["артикул"])
+        idx_ff   = find_col(["фф", "ff", "на складе", "склад"])
+        idx_exp  = find_col(["ожидаем", "заказ", "приход", "ожид"])
+        if idx_art is None:
+            return jsonify({"error": "Колонка 'Артикул' не найдена"}), 400
+
+        rows_upserted = 0
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    vc = str(row[idx_art] or "").strip()
+                    if not vc:
+                        continue
+                    ff  = int(row[idx_ff]  or 0) if idx_ff  is not None else 0
+                    exp = int(row[idx_exp] or 0) if idx_exp is not None else 0
+                    cur.execute("""
+                        INSERT INTO article_ff_stocks (project, vendor_code, ff_stock, expected_stock, updated_at)
+                        VALUES (%s, %s, %s, %s, NOW())
+                        ON CONFLICT (project, vendor_code) DO UPDATE
+                          SET ff_stock=EXCLUDED.ff_stock,
+                              expected_stock=EXCLUDED.expected_stock,
+                              updated_at=NOW()
+                    """, (cabinet, vc, ff, exp))
+                    rows_upserted += 1
+            conn.commit()
+        return jsonify({"ok": True, "rows": rows_upserted})
+    except Exception as e:
+        logging.exception("ff_stocks_upload error")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/article-seasons", methods=["POST"])
 @require_auth
