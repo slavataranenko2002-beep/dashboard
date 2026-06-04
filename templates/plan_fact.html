@@ -100,6 +100,15 @@ tbody td{padding:8px 10px;text-align:right;vertical-align:middle}
 tbody td:first-child,tbody td:nth-child(2){text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .foot-table tfoot td{padding:9px 10px;text-align:right;font-weight:600;border-top:2px solid var(--border);background:var(--bg2);color:var(--text)}
 .foot-table tfoot td:first-child,.foot-table tfoot td:nth-child(2){text-align:left}
+/* Закреплённые столбцы 1 (Артикул) и 2 (Название) */
+.sc1{position:sticky;left:0;min-width:110px;width:110px;z-index:2}
+.sc2{position:sticky;left:110px;min-width:160px;width:160px;z-index:2;
+  box-shadow:3px 0 6px -2px rgba(0,0,0,.18)}
+thead .sc1,thead .sc2{z-index:12;background:var(--bg3)}
+thead tr.thead-sum .sc1{background:var(--bg4)}
+thead tr.thead-sum .sc2{background:var(--bg4)}
+tbody .sc1,tbody .sc2{background:var(--bg2)}
+tbody tr:hover .sc1,tbody tr:hover .sc2{background:var(--bg3)}
 .art-code{font-weight:600;color:var(--text)}
 .art-title{font-size:11px;color:var(--text2);margin-top:2px;white-space:normal;max-width:150px}
 .badge-pct{display:inline-block;padding:2px 7px;border-radius:12px;font-weight:600;font-size:12px}
@@ -518,7 +527,7 @@ function buildTableHead(arts){
 
   return `<thead>
   <tr class="thead-sum">
-    <th class="thead-sum" colspan="3" style="text-align:left">ИТОГО / сред. (${n} арт.)</th>
+    <th class="thead-sum sc1" colspan="3" style="text-align:left;min-width:270px">ИТОГО / сред. (${n} арт.)</th>
     ${S(fmt(s('orders_rub_plan')))}
     ${S(fmt(s('orders_qty_plan')))}
     ${S(fmt(s('sales_rub_plan')))}
@@ -542,8 +551,8 @@ function buildTableHead(arts){
     ${S(pFSal!==null?pctBadge(pFSal):'—')}
   </tr>
   <tr class="thead-cols">
-    <th>Артикул</th>
-    <th>Название</th>
+    <th class="sc1">Артикул</th>
+    <th class="sc2">Название</th>
     <th class="season-th">Сезон</th>
     <th class="grp-plan">Заказы ₽ ПЛАН</th>
     <th class="grp-plan">Заказы шт ПЛАН</th>
@@ -594,8 +603,8 @@ function makeRow(a){
     ? `<td class="season-cell"><select class="season-select" data-vc="${esc(vc)}" onchange="onSeasonChange(this,'${esc(vc)}')">${snOpts}</select></td>`
     : `<td class="season-cell">${sn ? `<span style="color:var(--purple);font-size:12px">${esc(sn)}</span>` : '<span style="color:var(--text3);font-size:11px">—</span>'}</td>`;
   return `<tr data-vc="${esc(vc)}">
-    <td class="art-code">${esc(vc)}</td>
-    <td><div class="art-title">${esc(a.title||'')}</div></td>
+    <td class="art-code sc1">${esc(vc)}</td>
+    <td class="sc2"><div class="art-title">${esc(a.title||'')}</div></td>
     ${seasonCell}
     <td>${fmt(a.orders_rub_plan)}</td>
     <td class="${CAN_EDIT?'plan-cell':''}" ${CAN_EDIT?`onclick="editCell(this,'${esc(vc)}','orders_qty_plan')"`:''}>${fmt(a.orders_qty_plan)}</td>
