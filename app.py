@@ -1724,8 +1724,13 @@ def api_ff_stocks_upload():
                     vc = str(row[idx_art] or "").strip()
                     if not vc:
                         continue
-                    ff  = int(row[idx_ff]  or 0) if idx_ff  is not None else 0
-                    exp = int(row[idx_exp] or 0) if idx_exp is not None else 0
+                    def _to_int(val):
+                        try:
+                            return int(float(val)) if val not in (None, "", "#REF!", "#N/A", "#VALUE!", "#DIV/0!", "#NAME?") else 0
+                        except (ValueError, TypeError):
+                            return 0
+                    ff  = _to_int(row[idx_ff]  if idx_ff  is not None else None)
+                    exp = _to_int(row[idx_exp] if idx_exp is not None else None)
                     cur.execute("""
                         INSERT INTO article_ff_stocks (project, vendor_code, ff_stock, expected_stock, updated_at)
                         VALUES (%s, %s, %s, %s, NOW())
