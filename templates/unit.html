@@ -74,7 +74,7 @@ thead tr.col-row th.comp{background:var(--comp-bg);color:var(--text3)}
 .sc3{position:sticky;left:222px;width:100px;min-width:100px;z-index:4;background:var(--bg2)}
 thead .sc0,thead .sc1,thead .sc2,thead .sc3{z-index:13;background:inherit}
 tbody tr:hover .sc0,tbody tr:hover .sc1,tbody tr:hover .sc2,tbody tr:hover .sc3{background:rgba(15,30,48,1)}
-tbody tr.selected .sc0,tbody tr.selected .sc1,tbody tr.selected .sc2,tbody tr.selected .sc3{background:rgba(15,30,56,1)}
+
 tfoot .sc0,tfoot .sc1,tfoot .sc2,tfoot .sc3{background:var(--bg4);z-index:4}
 [data-theme="light"] .sc0,[data-theme="light"] .sc1,[data-theme="light"] .sc2,[data-theme="light"] .sc3{background:var(--bg2)}
 [data-theme="light"] tbody tr:hover .sc0,[data-theme="light"] tbody tr:hover .sc1,
@@ -113,7 +113,10 @@ td.comp.profit-mid{color:var(--yellow)}
 td.cb-cell,th.cb-cell{width:32px;padding:3px 6px;text-align:center;vertical-align:middle}
 td.cb-cell input[type=checkbox],th.cb-cell input[type=checkbox]{
   width:14px;height:14px;accent-color:var(--blue);cursor:pointer}
-tbody tr.selected{background:rgba(88,166,255,.07)!important}
+tbody tr.selected{background:rgba(88,166,255,.14)!important}
+tbody tr.selected .sc0,tbody tr.selected .sc1,tbody tr.selected .sc2,tbody tr.selected .sc3{background:rgb(20,54,105)!important}
+[data-theme="light"] tbody tr.selected{background:rgba(59,130,246,.12)!important}
+[data-theme="light"] tbody tr.selected .sc0,[data-theme="light"] tbody tr.selected .sc1,[data-theme="light"] tbody tr.selected .sc2,[data-theme="light"] tbody tr.selected .sc3{background:rgb(186,220,255)!important}
 
 /* Bulk edit bar */
 .bulk-bar{display:none;align-items:center;gap:10px;padding:8px 20px;
