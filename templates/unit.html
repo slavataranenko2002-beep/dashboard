@@ -1077,46 +1077,69 @@ function updateFooter() {
   if (!tfoot) return;
   const dr = filteredSortedRows();
   if (!dr.length) { tfoot.innerHTML = ''; return; }
-  const totals = dr.reduce((a, r) => {
+  const n = dr.length;
+
+  // Суммы
+  let sumTotalCost = 0, sumStorTotal = 0, sumUsn = 0, sumDrrRub = 0;
+  let sumStock = 0, sumCapital = 0, sumProfit = 0;
+  // Средние (накопитель)
+  let sumRed = 0, sumLogKtr = 0, sumClientPrice = 0;
+  let sumMargin = 0, sumRoi = 0, sumBatchMargin = 0;
+
+  dr.forEach(r => {
     const c = compute(r);
-    a.cost     += c.totalCost;
-    a.logKtr   += c.logKtr;
-    a.stor30   += c.storage30;
-    a.storTotal+= c.storTotal;
-    a.comm     += c.commission;
-    a.profit   += c.profit;
-    a.revenue  += (+r.wb_price || 0);
-    a.invested += c.invested;
-    a.bprofit  += c.batchProfit;
-    a.brev     += (+r.wb_price || 0) * (+r.stock || 0);
-    a.capital  += (+r.wb_price || 0) * (+r.stock || 0);
-    return a;
-  }, {cost:0,logKtr:0,stor30:0,storTotal:0,comm:0,profit:0,revenue:0,invested:0,bprofit:0,brev:0,capital:0});
+    sumTotalCost   += c.totalCost;
+    sumStorTotal   += c.storTotal;
+    sumUsn         += c.usn;
+    sumDrrRub      += c.drrRub;
+    sumStock       += (+r.stock || 0);
+    sumCapital     += (+r.wb_price || 0) * (+r.stock || 0);
+    sumProfit      += c.profit;
+    sumRed         += (+r.redemption_pct || 100);
+    sumLogKtr      += c.logKtr;
+    sumClientPrice += c.clientPrice;
+    sumMargin      += c.margin;
+    sumRoi         += c.roi;
+    sumBatchMargin += c.batchMargin;
+  });
 
-  const avgM  = totals.revenue > 0 ? totals.profit / totals.revenue * 100 : 0;
-  const avgBM = totals.brev    > 0 ? totals.bprofit / totals.brev * 100   : 0;
+  const avg = (s) => s / n;
+  const avgRed    = avg(sumRed);
+  const avgLogKtr = avg(sumLogKtr);
+  const avgCl     = avg(sumClientPrice);
+  const avgM      = avg(sumMargin);
+  const avgRoi    = avg(sumRoi);
+  const avgBM     = avg(sumBatchMargin);
 
+  // Колонки: sc0 sc1 sc2+sc3(colspan=2) | cp pkg ltwb ovh def | totalCost
+  //          | lit red wh irp | logKtr | stor30 storTotal
+  //          | com% wbp spp | clientPrice | tax | usn | drr% | drrRub
+  //          | stock | capital | commission | profit | margin | roi | batchMargin
   tfoot.innerHTML = `<tr>
     <td class="sc0"></td>
     <td class="sc1"></td>
-    <td class="left sc2" colspan="2">Итого (${dr.length}${dr.length !== rows.length ? '/'+rows.length : ''})</td>
-    <td>${fmtR(totals.cost)}</td>
-    <td></td><td></td><td></td><td></td>
-    <td class="fcomp">${fmtR(totals.cost)}</td>
-    <td></td><td></td><td class="left"></td><td></td>
+    <td class="left sc2" colspan="2">Итого (${n}${n !== rows.length ? '/'+rows.length : ''})</td>
+    <td></td><td></td><td></td><td></td><td></td>
+    <td class="fcomp" title="Σ Ит.себест.">${fmtR(sumTotalCost)}</td>
     <td></td>
-    <td class="fcomp">${fmtR(totals.stor30)}</td>
-    <td class="fcomp">${fmtR(totals.storTotal)}</td>
+    <td class="fcomp" title="Ø % выкупа">${fmtP(avgRed)}</td>
+    <td class="left"></td><td></td>
+    <td class="fcomp" title="Ø Лог+КТР">${fmtR(avgLogKtr)}</td>
     <td></td>
-    <td></td>
+    <td class="fcomp" title="Σ Хран×Ост">${fmtR(sumStorTotal)}</td>
     <td></td><td></td><td></td>
-    <td class="fcomp"></td><td class="fcomp"></td>
-    <td class="fcomp">${fmtR(totals.capital)}</td>
-    <td class="fcomp">${fmtR(totals.comm)}</td>
-    <td class="fcomp ${profitCls(totals.profit)}">${fmtR(totals.profit)}</td>
-    <td class="fcomp"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
-    <td class="fcomp"></td>
-    <td class="fcomp"><span class="mbadge ${mClass(avgBM)}">${fmtP(avgBM)}</span></td>
+    <td class="fcomp" title="Ø Цена клиенту">${fmtR(avgCl)}</td>
+    <td></td>
+    <td class="fcomp" title="Σ Налог₽">${fmtR(sumUsn)}</td>
+    <td></td>
+    <td class="fcomp" title="Σ ДРР₽">${fmtR(sumDrrRub)}</td>
+    <td class="fcomp" title="Σ Остаток">${Math.round(sumStock).toLocaleString('ru-RU')} шт</td>
+    <td class="fcomp" title="Σ Капитал">${fmtR(sumCapital)}</td>
+    <td></td>
+    <td class="fcomp ${profitCls(sumProfit)}" title="Σ Прибыль">${fmtR(sumProfit)}</td>
+    <td class="fcomp" title="Ø Маржа"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
+    <td class="fcomp" title="Ø ROI">${fmtP(avgRoi)}</td>
+    <td class="fcomp" title="Ø Маржа пар."><span class="mbadge ${mClass(avgBM)}">${fmtP(avgBM)}</span></td>
   </tr>`;
 }
 
