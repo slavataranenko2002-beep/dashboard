@@ -56,15 +56,14 @@ table{border-collapse:collapse;min-width:max-content;width:100%}
 thead tr.grp-row th{
   background:#0f1e30;font-size:10px;font-weight:700;text-transform:uppercase;
   letter-spacing:.07em;color:#5a89b0;padding:5px 10px;border-bottom:1px solid var(--border);
-  text-align:center;white-space:nowrap;
-  position:sticky;top:0;z-index:11}
+  text-align:center;white-space:nowrap}
 thead tr.grp-row th.grp-results{background:#0d2137;color:#58a6ff;letter-spacing:.1em}
 [data-theme="light"] thead tr.grp-row th{background:#dbeafe;color:#1d4ed8}
 [data-theme="light"] thead tr.grp-row th.grp-results{background:#bfdbfe;color:#1e40af}
 thead tr.col-row th{
   background:var(--bg3);font-size:11px;font-weight:600;color:var(--text2);
   padding:7px 8px;border-bottom:2px solid var(--border);white-space:nowrap;
-  position:sticky;top:28px;z-index:10;text-align:right}
+  position:sticky;top:0;z-index:11;text-align:right}
 thead tr.col-row th.left{text-align:left}
 thead tr.col-row th.comp{background:var(--comp-bg);color:var(--text3)}
 
@@ -73,7 +72,7 @@ thead tr.col-row th.comp{background:var(--comp-bg);color:var(--text3)}
 .sc1{position:sticky;left:36px; width:36px; min-width:36px; z-index:4;background:var(--bg2)}
 .sc2{position:sticky;left:72px; width:150px;min-width:150px;z-index:4;background:var(--bg2)}
 .sc3{position:sticky;left:222px;width:100px;min-width:100px;z-index:4;background:var(--bg2)}
-thead .sc0,thead .sc1,thead .sc2,thead .sc3{z-index:13;background:inherit}
+thead .sc0,thead .sc1,thead .sc2,thead .sc3{z-index:14;background:inherit}
 tbody tr:hover .sc0,tbody tr:hover .sc1,tbody tr:hover .sc2,tbody tr:hover .sc3{background:rgba(15,30,48,1)}
 
 tfoot .sc0,tfoot .sc1,tfoot .sc2,tfoot .sc3{background:var(--bg4);z-index:4}
@@ -205,7 +204,6 @@ tfoot td.left{text-align:left;color:var(--text2)}
 tfoot td.fcomp{background:var(--comp-bg)}
 
 /* ── Sort / filter controls ── */
-thead tr.col-row th{position:relative;white-space:nowrap}
 .ch-lbl{cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:2px}
 .ch-lbl:hover{color:var(--text)}
 .sort-ic{font-size:10px;color:var(--blue)}
@@ -1013,10 +1011,6 @@ function renderContent(state) {
   </tbody>
   <tfoot id="unit-tfoot"></tfoot>
 </table></div>`;
-  requestAnimationFrame(() => {
-    const grpH = div.querySelector('tr.grp-row')?.offsetHeight || 28;
-    div.querySelectorAll('tr.col-row th').forEach(th => th.style.top = grpH + 'px');
-  });
   updateFooter();
 }
 
