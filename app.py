@@ -1712,7 +1712,7 @@ def api_ff_stocks_upload():
                         return i
             return None
         idx_art  = find_col(["артикул"])
-        idx_ff   = find_col(["фф", "ff", "на складе", "склад"])
+        idx_ff   = find_col(["итого остатков", "итого", "фф", "ff", "на складе", "склад"])
         idx_exp  = find_col(["ожидаем", "заказ", "приход", "ожид"])
         if idx_art is None:
             return jsonify({"error": "Колонка 'Артикул' не найдена"}), 400
