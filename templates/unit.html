@@ -73,6 +73,9 @@ thead tr.col-row th.comp{background:var(--comp-bg);color:var(--text3)}
 .sc2{position:sticky;left:72px; width:150px;min-width:150px;z-index:4;background:var(--bg2)}
 .sc3{position:sticky;left:222px;width:100px;min-width:100px;z-index:4;background:var(--bg2)}
 thead .sc0,thead .sc1,thead .sc2,thead .sc3{z-index:14;background:inherit}
+/* Ячейки sc в строке col-row должны быть выше обычных (горизонтальный + вертикальный sticky) */
+thead tr.col-row th.sc0,thead tr.col-row th.sc1,
+thead tr.col-row th.sc2,thead tr.col-row th.sc3{z-index:15!important}
 tbody tr:hover .sc0,tbody tr:hover .sc1,tbody tr:hover .sc2,tbody tr:hover .sc3{background:rgba(15,30,48,1)}
 
 tfoot .sc0,tfoot .sc1,tfoot .sc2,tfoot .sc3{background:var(--bg4);z-index:4}
@@ -279,6 +282,10 @@ tfoot td.fcomp{background:var(--comp-bg)}
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     📊 Excel
   </button>
+  <button class="btn-add" onclick="openWCoef()"
+    style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
+    ⚙️ Склады
+  </button>
   <div class="tsep"></div>
   <span class="save-indicator" id="saveInd"></span>
 </div>
@@ -313,6 +320,7 @@ tfoot td.fcomp{background:var(--comp-bg)}
       <option value="drr_external_rub">ДРР ₽</option>
     </optgroup>
     <optgroup label="Налог">
+      <option value="tax_system">Система налогообложения</option>
       <option value="tax_pct">Налог %</option>
     </optgroup>
     <optgroup label="Прочее">
@@ -322,12 +330,33 @@ tfoot td.fcomp{background:var(--comp-bg)}
   <select class="bulk-val" id="bulkWarehouseVal" style="display:none">
     <option value="">— склад —</option>
   </select>
+  <select class="bulk-val" id="bulkTaxSysVal" style="display:none"></select>
   <input class="bulk-val" id="bulkTextVal" type="text" placeholder="Значение" style="display:none">
   <input class="bulk-val" id="bulkNumVal" type="number" step="any" placeholder="Значение">
   <button class="bulk-apply" onclick="applyBulk()">Применить</button>
   <button class="bulk-apply" onclick="deleteBulk()"
     style="background:var(--red);margin-left:4px">🗑 Удалить</button>
   <button class="bulk-desel" onclick="deselectAll()">Снять выделение</button>
+</div>
+
+<!-- Warehouse coefficients modal -->
+<div class="modal-overlay" id="wcoefOverlay" onclick="closeWCoef(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="width:400px">
+    <div class="modal-hdr">
+      <span class="modal-title">⚙️ Коэффициенты складов</span>
+      <button class="modal-close" onclick="closeWCoef()">✕</button>
+    </div>
+    <div class="modal-search" style="padding:8px 20px 0">
+      <input type="text" id="wcoefSearch" placeholder="Поиск склада…" oninput="filterWCoef(this.value)"
+        style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px">
+    </div>
+    <div class="modal-body" id="wcoefBody" style="padding:8px 16px;gap:4px;display:flex;flex-direction:column"></div>
+    <div class="modal-ftr">
+      <button onclick="addWCoefRow()" class="modal-sel-all" style="text-align:left">+ Добавить склад</button>
+      <button onclick="resetWCoefs()" class="flt-rst">Сбросить</button>
+      <button onclick="saveWCoefs()" class="btn-import">Сохранить</button>
+    </div>
+  </div>
 </div>
 
 <!-- Import modal -->
@@ -373,7 +402,7 @@ tfoot td.fcomp{background:var(--comp-bg)}
 <script>
 // ─── Данные ──────────────────────────────────────────────────────────────────
 const PROJECTS_DATA = {{ projects | tojson }};
-const WAREHOUSE_COEFS = {
+const WAREHOUSE_COEFS_DEFAULT = {
   'Обухово СГТ':75,'Голицыно СГТ':75,'Радумля СГТ':95,'Шушары СГТ':95,
   'Волгоград':110,'Рязань':120,'Маркетплейс':125,'Подольск 4':125,'Атакент':125,
   'Сабурово':130,'Невинномысск':130,'Краснодар':130,'Владимир':140,'Тула':145,
@@ -383,7 +412,12 @@ const WAREHOUSE_COEFS = {
   'Екатеринбург - Испытателей 14г':220,'Хабаровск':220,'Чехов 2':260,
   'Санкт-Петербург Уткина Заводь':270,'Белые Столбы':280,'Новосибирск':445
 };
-const WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
+function loadWCoefs(){
+  try{const s=JSON.parse(localStorage.getItem('wCoefs')||'null');return s?{...WAREHOUSE_COEFS_DEFAULT,...s}:{...WAREHOUSE_COEFS_DEFAULT};}
+  catch{return{...WAREHOUSE_COEFS_DEFAULT};}
+}
+let WAREHOUSE_COEFS = loadWCoefs();
+let WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
 
 // ─── Системы налогообложения ──────────────────────────────────────────────────
 const TAX_PRESETS_DEFAULT = [
@@ -418,7 +452,7 @@ function onTaxSelect(key, selectEl) {
     if (!label || isNaN(pct)) { selectEl.value = ''; return; }
     TAX_PRESETS.push({label, pct});
     saveTaxPresets(TAX_PRESETS);
-    // Перерисовываем select этой строки
+    // Обновляем строку
     const row = rows.find(r => r._key === key);
     if (row) { row.tax_system = label; row.tax_pct = pct; row._dirty = true; }
     selectEl.outerHTML = `<select class="tax-sel" onchange="onTaxSelect('${key}',this)">${taxOptions(label)}</select>`;
@@ -427,6 +461,10 @@ function onTaxSelect(key, selectEl) {
     if (inp) inp.value = pct;
     updateComputedCells(key);
     schedSave(key);
+    // Перерисовываем все остальные налоговые selects, чтобы новый пресет появился везде
+    refreshAllTaxSelects(key);
+    // Обновляем bulk-налог
+    initBulkTaxSys();
     return;
   }
   const chosen = TAX_PRESETS.find(t => String(t.pct) === val) || TAX_PRESETS.find(t => t.label === selectEl.selectedOptions[0]?.dataset.label);
@@ -481,6 +519,7 @@ const COL_DEFS = [
   {k:'margin',           get:r=>Math.round(compute(r).margin*10)/10,          type:'num'},
   {k:'roi',              get:r=>Math.round(compute(r).roi*10)/10,             type:'num'},
   {k:'batchMargin',      get:r=>Math.round(compute(r).batchMargin*10)/10,     type:'num'},
+  {k:'capital',          get:r=>Math.round((+r.wb_price||0)*(+r.stock||0)),  type:'num'},
 ];
 const COL_MAP = Object.fromEntries(COL_DEFS.map(c => [c.k, c]));
 
@@ -805,6 +844,7 @@ function updateComputedCells(key) {
                          ? fmtR(+r.logistics_ktr) : fmtR(c.logKtr));
   set('cv-stor30',     fmtR(c.storage30));
   set('cv-commission', fmtR(c.commission));
+  set('cv-capital',   fmtR(Math.round((+r.wb_price||0)*(+r.stock||0))));
   const pm = tr.querySelector('.cv-profit');
   if (pm) { pm.textContent = fmtR(c.profit); pm.className = 'comp cv-profit ' + profitCls(c.profit); }
   const mm = tr.querySelector('.cv-margin');
@@ -909,7 +949,9 @@ function rowHTML(r) {
     </select>
   </td>
   <td class="ed">${n(r.irp||1,'irp','','1.0')}</td>
-  <td class="ed">${n(r.logistics_ktr??'','logistics_ktr','','авто')}</td>
+  ${r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
+    ? `<td class="ed">${n(+r.logistics_ktr,'logistics_ktr','','авто')}</td>`
+    : `<td class="comp cv-logtgtr" style="cursor:pointer" title="Авто-расчёт (Литраж × Коэф.склада ÷ %выкупа). Кликните для ручного ввода" onclick="editLogKtr('${key}')">${fmtR(c.logKtr)}</td>`}
   <td class="comp cv-stor30">${fmtR(c.storage30)}</td>
   <td class="ed">${n(r.commission_pct,'commission_pct','','36')}</td>
   <td class="ed">${n(r.wb_price,'wb_price')}</td>
@@ -926,6 +968,7 @@ function rowHTML(r) {
   <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
   <td class="ed">${n(r.drr_external_rub,'drr_external_rub','','0')}</td>
   <td class="ed">${n(r.stock,'stock','','0','0')}</td>
+  <td class="comp cv-capital">${fmtR(Math.round((+r.wb_price||0)*(+r.stock||0)))}</td>
   <td class="comp cv-commission">${fmtR(c.commission)}</td>
   <td class="comp cv-profit ${profitCls(c.profit)}">${fmtR(c.profit)}</td>
   <td class="comp cv-margin"><span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span></td>
@@ -971,7 +1014,7 @@ function renderContent(state) {
       <th colspan="5">Параметры ВБ</th>
       <th class="grp-comp">↓</th>
       <th colspan="8">Цена и реклама</th>
-      <th class="grp-results" colspan="5">Результаты расчёта</th>
+      <th class="grp-results" colspan="7">Результаты расчёта</th>
     </tr>
     <tr class="col-row">
       <th class="cb-cell sc0"><input type="checkbox" id="cbAll" onchange="toggleSelectAll(this.checked)" title="Выбрать все"></th>
@@ -999,6 +1042,7 @@ function renderContent(state) {
       ${thSF('drr_pct','ДРР%')}
       ${thSF('drr_external_rub','ДРР₽')}
       ${thSF('stock','Остаток')}
+      ${thSF('capital','Капитал ост.','comp','Цена ВБ × Остаток')}
       ${thSF('commission','Комис.₽','comp')}
       ${thSF('profit','Прибыль','comp')}
       ${thSF('margin','Маржа','comp')}
@@ -1030,8 +1074,9 @@ function updateFooter() {
     a.invested += c.invested;
     a.bprofit  += c.batchProfit;
     a.brev     += (+r.wb_price || 0) * (+r.stock || 0);
+    a.capital  += (+r.wb_price || 0) * (+r.stock || 0);
     return a;
-  }, {cost:0,logKtr:0,stor30:0,comm:0,profit:0,revenue:0,invested:0,bprofit:0,brev:0});
+  }, {cost:0,logKtr:0,stor30:0,comm:0,profit:0,revenue:0,invested:0,bprofit:0,brev:0,capital:0});
 
   const avgM  = totals.revenue > 0 ? totals.profit / totals.revenue * 100 : 0;
   const avgBM = totals.brev    > 0 ? totals.bprofit / totals.brev * 100   : 0;
@@ -1050,6 +1095,7 @@ function updateFooter() {
     <td></td>
     <td></td><td></td><td></td>
     <td class="fcomp"></td><td class="fcomp"></td>
+    <td class="fcomp">${fmtR(totals.capital)}</td>
     <td class="fcomp">${fmtR(totals.comm)}</td>
     <td class="fcomp ${profitCls(totals.profit)}">${fmtR(totals.profit)}</td>
     <td class="fcomp"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
@@ -1092,7 +1138,7 @@ const BULK_NUM_FIELDS = new Set([
   'logistics_to_wb','overhead','packaging','defect_pct','wb_price','cost_price',
   'spp_pct','liters','logistics_ktr','stock','tax_pct'
 ]);
-const BULK_TEXT_FIELDS = new Set(['brand']);
+const BULK_TEXT_FIELDS = new Set(['brand','tax_system']);
 
 function onRowCheck(key, checked) {
   if (checked) selectedKeys.add(key); else selectedKeys.delete(key);
@@ -1131,12 +1177,14 @@ function updateBulkBar() {
 }
 
 function onBulkFieldChange() {
-  const field = document.getElementById('bulkField').value;
-  const isWh  = field === 'warehouse';
-  const isTxt = BULK_TEXT_FIELDS.has(field);
+  const field  = document.getElementById('bulkField').value;
+  const isWh   = field === 'warehouse';
+  const isTax  = field === 'tax_system';
+  const isTxt  = BULK_TEXT_FIELDS.has(field) && !isTax;
   document.getElementById('bulkWarehouseVal').style.display = isWh  ? '' : 'none';
+  document.getElementById('bulkTaxSysVal').style.display    = isTax ? '' : 'none';
   document.getElementById('bulkTextVal').style.display      = isTxt ? '' : 'none';
-  document.getElementById('bulkNumVal').style.display       = (!isWh && !isTxt) ? '' : 'none';
+  document.getElementById('bulkNumVal').style.display       = (!isWh && !isTax && !isTxt) ? '' : 'none';
 }
 
 async function deleteBulk() {
@@ -1158,27 +1206,35 @@ async function deleteBulk() {
 }
 
 function applyBulk() {
-  const field = document.getElementById('bulkField').value;
-  const isWh  = field === 'warehouse';
-  const isTxt = BULK_TEXT_FIELDS.has(field);
+  const field  = document.getElementById('bulkField').value;
+  const isWh   = field === 'warehouse';
+  const isTax  = field === 'tax_system';
+  const isTxt  = BULK_TEXT_FIELDS.has(field) && !isTax;
   const rawVal = isWh  ? document.getElementById('bulkWarehouseVal').value
+               : isTax ? document.getElementById('bulkTaxSysVal').value
                : isTxt ? document.getElementById('bulkTextVal').value
                :          document.getElementById('bulkNumVal').value;
   if (rawVal === '' && !isWh) return;
-  const val = isWh ? rawVal : (BULK_NUM_FIELDS.has(field) ? +rawVal : rawVal);
+  const val = isWh || isTax ? rawVal : (BULK_NUM_FIELDS.has(field) ? +rawVal : rawVal);
 
   rows.filter(r => selectedKeys.has(r._key)).forEach(r => {
-    r[field] = val;
-    r._dirty = true;
-    // обновить input/select в DOM
+    if (isTax) {
+      // Применяем систему налога — берём pct из пресета
+      const preset = TAX_PRESETS.find(t => t.label === val);
+      r.tax_system = val; r._dirty = true;
+      if (preset) { r.tax_pct = preset.pct; }
+    } else {
+      r[field] = val; r._dirty = true;
+    }
     const tr = document.querySelector(`tr[data-key="${r._key}"]`);
     if (tr) {
       if (field === 'warehouse') {
-        const sel = tr.querySelector('select[onchange*="warehouse"]');
-        if (sel) sel.value = val;
+        const sel = tr.querySelector('select[onchange*="warehouse"]'); if (sel) sel.value = val;
+      } else if (isTax) {
+        const sel = tr.querySelector('.tax-sel'); if (sel) sel.value = TAX_PRESETS.find(t=>t.label===val)?.pct || '';
+        const inp = tr.querySelector('.tax-pct-inp'); if (inp && TAX_PRESETS.find(t=>t.label===val)) inp.value = TAX_PRESETS.find(t=>t.label===val).pct;
       } else {
-        const inp = tr.querySelector(`input[oninput*="'${field}'"]`);
-        if (inp) inp.value = val;
+        const inp = tr.querySelector(`input[oninput*="'${field}'"]`); if (inp) inp.value = val;
       }
       updateComputedCells(r._key);
     }
@@ -1186,11 +1242,96 @@ function applyBulk() {
   });
 }
 
-// Инициализация bulk-warehouse select
+// ─── Инициализация bulk-selects ──────────────────────────────────────────────
 function initBulkWarehouse() {
   const sel = document.getElementById('bulkWarehouseVal');
   sel.innerHTML = '<option value="">— склад —</option>' +
     WAREHOUSES.map(w => `<option value="${w}">${w}</option>`).join('');
+}
+function initBulkTaxSys() {
+  const sel = document.getElementById('bulkTaxSysVal');
+  sel.innerHTML = TAX_PRESETS.map(t => `<option value="${esc(t.label)}">${esc(t.label)}</option>`).join('');
+}
+
+// ─── Обновить все налоговые дропдауны в таблице (после добавления нового пресета) ─
+function refreshAllTaxSelects(skipKey) {
+  rows.forEach(r => {
+    if (r._key === skipKey) return;
+    const tr = document.querySelector(`tr[data-key="${r._key}"]`);
+    if (!tr) return;
+    const sel = tr.querySelector('.tax-sel');
+    if (sel) sel.innerHTML = taxOptions(r.tax_system || 'УСН 7%');
+  });
+}
+
+// ─── Коэффициенты складов ─────────────────────────────────────────────────────
+let _wcoefAll = [];
+function openWCoef() {
+  _wcoefAll = Object.entries(WAREHOUSE_COEFS).map(([name,coef])=>({name,coef}));
+  renderWCoefList('');
+  document.getElementById('wcoefSearch').value = '';
+  document.getElementById('wcoefOverlay').classList.add('open');
+}
+function closeWCoef(e) {
+  if (e && e.target !== document.getElementById('wcoefOverlay')) return;
+  document.getElementById('wcoefOverlay').classList.remove('open');
+}
+function filterWCoef(q) { renderWCoefList(q); }
+function renderWCoefList(q) {
+  const ql = q.toLowerCase();
+  const items = ql ? _wcoefAll.filter(x => x.name.toLowerCase().includes(ql)) : _wcoefAll;
+  document.getElementById('wcoefBody').innerHTML = items.map((x,i) => {
+    const ri = _wcoefAll.indexOf(x);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+      <input type="text" value="${esc(x.name)}" data-idx="${ri}" data-field="name"
+        onchange="_wcoefAll[+this.dataset.idx].name=this.value"
+        style="flex:1;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px">
+      <input type="number" step="1" value="${x.coef}" data-idx="${ri}" data-field="coef"
+        oninput="_wcoefAll[+this.dataset.idx].coef=+this.value||0"
+        style="width:65px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px;text-align:right">
+      <button onclick="_wcoefAll.splice(${ri},1);renderWCoefList(document.getElementById('wcoefSearch').value)"
+        style="border:none;background:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1;padding:0 4px">✕</button>
+    </div>`;
+  }).join('');
+}
+function addWCoefRow() {
+  _wcoefAll.push({name:'Новый склад',coef:100});
+  renderWCoefList('');
+}
+function saveWCoefs() {
+  WAREHOUSE_COEFS = {};
+  _wcoefAll.forEach(x => { if (x.name.trim()) WAREHOUSE_COEFS[x.name.trim()] = x.coef; });
+  WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
+  localStorage.setItem('wCoefs', JSON.stringify(WAREHOUSE_COEFS));
+  initBulkWarehouse();
+  closeWCoef();
+  // пересчитываем всё
+  document.querySelectorAll('#unit-tbody tr').forEach(tr => {
+    if (tr.dataset.key) updateComputedCells(tr.dataset.key);
+  });
+}
+function resetWCoefs() {
+  if (!confirm('Сбросить коэффициенты к значениям по умолчанию?')) return;
+  localStorage.removeItem('wCoefs');
+  WAREHOUSE_COEFS = loadWCoefs();
+  WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
+  _wcoefAll = Object.entries(WAREHOUSE_COEFS).map(([name,coef])=>({name,coef}));
+  renderWCoefList('');
+}
+
+// ─── Ручной ввод Лог+КТР ─────────────────────────────────────────────────────
+function editLogKtr(key) {
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  if (!tr) return;
+  const td = tr.querySelector('.cv-logtgtr');
+  if (!td) return;
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.step = 'any';
+  inp.style.cssText = 'width:100%;border:none;background:transparent;color:var(--text);font-size:12px;padding:4px 5px;text-align:right;';
+  inp.title = 'Ручное значение. Очистить — вернуть авто';
+  inp.oninput = () => onInput(key, 'logistics_ktr', inp.value);
+  inp.onblur = () => { if (!inp.value.trim()) { onInput(key, 'logistics_ktr', null); reRenderBody(); } };
+  td.className = 'ed'; td.innerHTML = ''; td.appendChild(inp); inp.focus();
 }
 
 // ─── Импорт из WB ────────────────────────────────────────────────────────────
@@ -1324,6 +1465,7 @@ document.addEventListener('click', e => {
 
 document.body.dataset.theme = localStorage.getItem('theme') || 'dark';
 initBulkWarehouse();
+initBulkTaxSys();
 onBulkFieldChange();
 renderContent();
 </script>
