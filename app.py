@@ -217,6 +217,23 @@ def _ensure_design_tables():
                         UNIQUE (project, vendor_code)
                     )
                 """)
+                # Подзадачи
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS subtasks (
+                        id               SERIAL PRIMARY KEY,
+                        task_id          INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                        title            TEXT NOT NULL,
+                        assignee         TEXT,
+                        assignee_email   TEXT DEFAULT '',
+                        due              DATE,
+                        done             BOOLEAN DEFAULT FALSE,
+                        done_at          TIMESTAMPTZ,
+                        position         INTEGER DEFAULT 0,
+                        created_by_email TEXT DEFAULT '',
+                        created_at       TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id)")
             conn.commit()
         logging.info("Design tables ready.")
         # Миграция created_by_email — в отдельной транзакции, ошибки не критичны
@@ -342,10 +359,15 @@ def get_tasks(project: str | None = None, projects: list | None = None):
     оба None — все задачи
     """
     base = """
-        SELECT t.*, COALESCE(c.cnt,0) AS comment_count
+        SELECT t.*, COALESCE(c.cnt,0) AS comment_count,
+               COALESCE(s.total,0) AS subtask_count,
+               COALESCE(s.done_cnt,0) AS subtask_done_count
         FROM tasks t
         LEFT JOIN (SELECT task_id, COUNT(*) AS cnt FROM comments GROUP BY task_id) c
                ON t.id = c.task_id
+        LEFT JOIN (SELECT task_id, COUNT(*) AS total, COUNT(*) FILTER (WHERE done) AS done_cnt
+                   FROM subtasks GROUP BY task_id) s
+               ON t.id = s.task_id
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -1160,6 +1182,173 @@ def api_add_comment(task_id):
                                 task_id,
                             )
                             notified.add(email)
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ── Подзадачи ─────────────────────────────────────────────────────────────────
+
+def serialize_subtask(s):
+    d = dict(s)
+    for key in ("created_at", "done_at"):
+        if d.get(key):
+            d[key] = d[key].isoformat()
+    if d.get("due"):
+        d["due"] = d["due"].isoformat()
+    return d
+
+def _recalc_parent_done(cur, task_id, changed_by="system"):
+    """Пересчитывает статус родительской задачи: готова, только если ВСЕ подзадачи выполнены."""
+    cur.execute(
+        "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE done) AS done_cnt FROM subtasks WHERE task_id=%s",
+        (task_id,)
+    )
+    row = cur.fetchone()
+    total, done_cnt = row["total"], row["done_cnt"]
+    if total == 0:
+        return
+    all_done = (total == done_cnt)
+    cur.execute("SELECT done, title, created_by_email FROM tasks WHERE id=%s", (task_id,))
+    trow = cur.fetchone()
+    if not trow:
+        return
+    if all_done and not trow["done"]:
+        cur.execute("UPDATE tasks SET done=TRUE, done_at=NOW() WHERE id=%s", (task_id,))
+        cur.execute(
+            "INSERT INTO task_history (task_id,changed_by,field,old_value,new_value) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (task_id, changed_by, "Статус", "В работе", "Готово (все подзадачи выполнены)")
+        )
+        owner_email = _resolve_owner_email(cur, task_id, trow["created_by_email"] or "")
+        if owner_email:
+            _push_notification(
+                cur, owner_email, "status_changed",
+                f"Задача закрыта: {trow['title']}",
+                "Все подзадачи выполнены — задача автоматически закрыта",
+                task_id,
+            )
+    elif not all_done and trow["done"]:
+        cur.execute("UPDATE tasks SET done=FALSE, done_at=NULL WHERE id=%s", (task_id,))
+        cur.execute(
+            "INSERT INTO task_history (task_id,changed_by,field,old_value,new_value) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (task_id, changed_by, "Статус", "Готово", "В работе (есть невыполненные подзадачи)")
+        )
+
+@app.route("/api/tasks/<int:task_id>/subtasks")
+@require_auth
+def api_get_subtasks(task_id):
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM subtasks WHERE task_id=%s ORDER BY position ASC, id ASC",
+                    (task_id,)
+                )
+                return jsonify([serialize_subtask(s) for s in cur.fetchall()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tasks/<int:task_id>/subtasks", methods=["POST"])
+@require_auth
+def api_add_subtask(task_id):
+    try:
+        u = _session_user()
+        creator_email = u.get("email", "") if u else ""
+        d = request.json or {}
+        title = (d.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "title required"}), 400
+        assignee_email = d.get("assignee_email") or ""
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COALESCE(MAX(position),0)+1 AS pos FROM subtasks WHERE task_id=%s", (task_id,))
+                pos = cur.fetchone()["pos"]
+                cur.execute(
+                    "INSERT INTO subtasks (task_id,title,assignee,assignee_email,due,position,created_by_email) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+                    (task_id, title, d.get("assignee"), assignee_email, d.get("due"), pos, creator_email),
+                )
+                sub = cur.fetchone()
+                if assignee_email and assignee_email != creator_email:
+                    cur.execute("SELECT title FROM tasks WHERE id=%s", (task_id,))
+                    trow = cur.fetchone()
+                    _push_notification(
+                        cur, assignee_email, "task_assigned",
+                        f"Новая подзадача: {title}",
+                        f"В задаче «{trow['title'] if trow else task_id}»",
+                        task_id,
+                    )
+            conn.commit()
+        return jsonify(serialize_subtask(sub))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/subtasks/<int:subtask_id>", methods=["PUT"])
+@require_auth
+def api_update_subtask(subtask_id):
+    try:
+        d = request.json or {}
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM subtasks WHERE id=%s", (subtask_id,))
+                cur_sub = cur.fetchone()
+                if not cur_sub:
+                    return jsonify({"error": "not found"}), 404
+                title          = d.get("title", cur_sub["title"])
+                assignee       = d.get("assignee", cur_sub["assignee"])
+                assignee_email = d.get("assignee_email", cur_sub["assignee_email"])
+                due            = d.get("due", cur_sub["due"])
+                cur.execute(
+                    "UPDATE subtasks SET title=%s, assignee=%s, assignee_email=%s, due=%s WHERE id=%s RETURNING *",
+                    (title, assignee, assignee_email, due, subtask_id),
+                )
+                sub = cur.fetchone()
+            conn.commit()
+        return jsonify(serialize_subtask(sub))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/subtasks/<int:subtask_id>/toggle", methods=["POST"])
+@require_auth
+def api_toggle_subtask(subtask_id):
+    try:
+        u = _session_user()
+        changed_by = (u.get("name") or u.get("email", "unknown")) if u else "unknown"
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM subtasks WHERE id=%s", (subtask_id,))
+                sub = cur.fetchone()
+                if not sub:
+                    return jsonify({"error": "not found"}), 404
+                new_done = not sub["done"]
+                if new_done:
+                    cur.execute("UPDATE subtasks SET done=TRUE, done_at=NOW() WHERE id=%s RETURNING *", (subtask_id,))
+                else:
+                    cur.execute("UPDATE subtasks SET done=FALSE, done_at=NULL WHERE id=%s RETURNING *", (subtask_id,))
+                sub = cur.fetchone()
+                _recalc_parent_done(cur, sub["task_id"], changed_by)
+            conn.commit()
+        return jsonify(serialize_subtask(sub))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/subtasks/<int:subtask_id>", methods=["DELETE"])
+@require_auth
+def api_delete_subtask(subtask_id):
+    try:
+        u = _session_user()
+        changed_by = (u.get("name") or u.get("email", "unknown")) if u else "unknown"
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT task_id FROM subtasks WHERE id=%s", (subtask_id,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "not found"}), 404
+                task_id = row["task_id"]
+                cur.execute("DELETE FROM subtasks WHERE id=%s", (subtask_id,))
+                _recalc_parent_done(cur, task_id, changed_by)
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:

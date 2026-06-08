@@ -111,6 +111,29 @@ tr:hover td{background:rgba(128,128,255,.03)}
 .ab:hover.ed{border-color:var(--blue);color:var(--blue)}
 .ab:hover.dl{border-color:var(--red);color:var(--red)}
 
+/* Подзадачи */
+.sub-arrow{background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;margin-right:4px;transition:transform .15s,color .15s;vertical-align:middle}
+.sub-arrow:hover{color:var(--text);background:rgba(128,128,255,.08)}
+.sub-arrow.empty-sub{opacity:.35}
+.sub-badge{display:inline-block;margin-left:7px;font-size:11px;font-weight:600;color:var(--text3);background:rgba(128,128,255,.1);border-radius:8px;padding:1px 7px;vertical-align:middle}
+.sub-badge.all-done{color:var(--green);background:rgba(74,222,128,.12)}
+.subtask-panel-row td{padding:0;background:rgba(128,128,255,.025)}
+.subtask-panel{padding:10px 16px 14px 46px;display:flex;flex-direction:column;gap:6px}
+.subtask-item{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;background:var(--bg2);border:1px solid var(--border)}
+.subtask-item.done{opacity:.5}
+.subtask-item.done .sub-title{text-decoration:line-through}
+.subtask-item input[type="checkbox"]{width:17px;height:17px;cursor:pointer;accent-color:var(--green);flex-shrink:0}
+.subtask-item .sub-title{flex:1;font-size:14px;min-width:120px}
+.subtask-item select,.subtask-item input[type="date"]{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px;padding:4px 6px}
+.subtask-item select{max-width:140px}
+.subtask-add{display:flex;gap:8px;align-items:center;padding:6px 10px;margin-top:2px}
+.subtask-add input[type="text"]{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:13px;padding:7px 10px;min-width:140px}
+.subtask-add select,.subtask-add input[type="date"]{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px;padding:6px 8px}
+.subtask-add select{max-width:140px}
+.subtask-add button{background:var(--blue);color:#fff;border:none;border-radius:5px;font-size:13px;padding:7px 14px;cursor:pointer;white-space:nowrap;transition:opacity .15s}
+.subtask-add button:hover{opacity:.85}
+.subtask-empty{font-size:13px;color:var(--text3);padding:4px 10px}
+
 /* Empty */
 .empty{padding:56px;text-align:center;color:var(--text2);font-size:15px}
 .empty-ic{font-size:38px;margin-bottom:12px;opacity:.5}
@@ -810,6 +833,9 @@ tr:hover td{background:rgba(128,128,255,.03)}
 <script>
 let allTasks = [];
 let taskMap = {};
+let expandedSubtasks = new Set(); // ids задач с раскрытыми подзадачами
+let subtasksMap = {};             // task_id -> [subtask, ...]
+let subtasksLoading = new Set();  // task_id, которые сейчас грузятся
 let allUsers = []; // [{email, first_name}]
 
 async function loadUsers() {
@@ -981,9 +1007,18 @@ function render(){
     const acts = t.done
       ? `<div class="acts">${claimBtn}<button class="${cbClass}" onclick="openComments(${t.id})">${cbLabel}</button><button class="ab ed" onclick="openEdit(${t.id})">✏️</button>${histBtn}<button class="ab dl" onclick="del(${t.id})">🗑</button></div>`
       : `<div class="acts"><button class="ab ok" onclick="done(${t.id})">✓</button>${claimBtn}<button class="${cbClass}" onclick="openComments(${t.id})">${cbLabel}</button><button class="ab ed" onclick="openEdit(${t.id})">✏️</button>${histBtn}<button class="ab dl" onclick="del(${t.id})">🗑</button></div>`;
-    return `<tr class="${t.done?'done-row':''}" translate="no">
+
+    // Подзадачи — стрелочка раскрытия + счётчик
+    const subTotal = t.subtask_count || 0;
+    const subDone  = t.subtask_done_count || 0;
+    const isOpen   = expandedSubtasks.has(t.id);
+    const arrowCls = subTotal ? 'sub-arrow' : 'sub-arrow empty-sub';
+    const subArrow = `<button class="${arrowCls}" onclick="toggleSubtasks(event,${t.id})" title="Подзадачи">${isOpen?'▼':'▶'}</button>`;
+    const subBadge = subTotal ? `<span class="sub-badge ${subDone===subTotal?'all-done':''}">${subDone}/${subTotal}</span>` : '';
+
+    const mainRow = `<tr class="${t.done?'done-row':''}" translate="no">
       <td style="color:var(--text3);font-size:13px">${i+1}</td>
-      <td style="font-weight:500;max-width:280px" class="${t.done?'done-title':''}">${esc(t.title)}</td>
+      <td style="font-weight:500;max-width:280px" class="${t.done?'done-title':''}">${subArrow}${esc(t.title)}${subBadge}</td>
       <td>${projBadge(t.project)}</td>
       <td><span class="badge ${t.priority}">${PRIO[t.priority]||t.priority}</span></td>
       ${USER_ROLE !== 'seller' ? `<td style="color:var(--text2);font-size:14px">${t.assignee?'@'+esc(t.assignee):'—'}</td>` : ''}
@@ -992,7 +1027,149 @@ function render(){
       <td><span class="badge ${t.done?'bdone':'bpend'}">${t.done?'✓ Готово':'● В работе'}</span></td>
       <td>${acts}</td>
     </tr>`;
+
+    return mainRow + (isOpen ? renderSubtaskPanel(t) : '');
   }).join('');
+}
+
+// ── Подзадачи: раскрывающийся список ──────────────────────────────────────────
+
+function _subtaskColspan(){ return USER_ROLE==='seller' ? 7 : 8; }
+
+function renderSubtaskPanel(t){
+  const subs = subtasksMap[t.id];
+  const colspan = _subtaskColspan();
+  let body;
+  if(!subs){
+    body = `<div class="subtask-empty">⏳ Загрузка…</div>`;
+  } else if(!subs.length){
+    body = `<div class="subtask-empty">Пока нет подзадач</div>`;
+  } else {
+    body = subs.map(s=>{
+      const dueVal = s.due || '';
+      return `<div class="subtask-item ${s.done?'done':''}">
+        <input type="checkbox" ${s.done?'checked':''} onchange="toggleSubtask(${s.id},${t.id})" title="Выполнено">
+        <span class="sub-title">${esc(s.title)}</span>
+        <select onchange="updateSubtaskField(${s.id},${t.id},this,'assignee')">
+          <option value="">— не назначен —</option>
+          ${allUsers.map(u=>`<option value="${esc(u.email)}" ${s.assignee_email===u.email?'selected':''}>${esc(u.first_name)}</option>`).join('')}
+        </select>
+        <input type="date" value="${dueVal}" onchange="updateSubtaskField(${s.id},${t.id},this,'due')" title="Дедлайн">
+        <button class="ab dl" onclick="deleteSubtask(${s.id},${t.id})" title="Удалить">🗑</button>
+      </div>`;
+    }).join('');
+  }
+  return `<tr class="subtask-panel-row" data-parent="${t.id}">
+    <td colspan="${colspan}">
+      <div class="subtask-panel">
+        ${body}
+        <div class="subtask-add">
+          <input type="text" placeholder="Новая подзадача…" id="new-sub-title-${t.id}" onkeydown="if(event.key==='Enter')addSubtask(${t.id})">
+          <select id="new-sub-who-${t.id}">
+            <option value="">— не назначен —</option>
+            ${allUsers.map(u=>`<option value="${esc(u.email)}">${esc(u.first_name)}</option>`).join('')}
+          </select>
+          <input type="date" id="new-sub-due-${t.id}">
+          <button onclick="addSubtask(${t.id})">+ Добавить</button>
+        </div>
+      </div>
+    </td>
+  </tr>`;
+}
+
+async function toggleSubtasks(ev, taskId){
+  ev.stopPropagation();
+  if(expandedSubtasks.has(taskId)){
+    expandedSubtasks.delete(taskId);
+    render();
+    return;
+  }
+  expandedSubtasks.add(taskId);
+  render();
+  await _loadSubtasks(taskId);
+}
+
+async function _loadSubtasks(taskId){
+  if(subtasksMap[taskId] || subtasksLoading.has(taskId)) return;
+  subtasksLoading.add(taskId);
+  try{
+    const r = await fetch('/api/tasks/'+taskId+'/subtasks');
+    subtasksMap[taskId] = await r.json();
+  } catch(e){
+    subtasksMap[taskId] = [];
+  } finally {
+    subtasksLoading.delete(taskId);
+    if(expandedSubtasks.has(taskId)) render();
+  }
+}
+
+async function addSubtask(taskId){
+  const titleEl = document.getElementById('new-sub-title-'+taskId);
+  const whoEl   = document.getElementById('new-sub-who-'+taskId);
+  const dueEl   = document.getElementById('new-sub-due-'+taskId);
+  const title = titleEl.value.trim();
+  if(!title) return;
+  const assigneeEmail = whoEl.value || null;
+  const assigneeUser  = assigneeEmail ? _userByEmail(assigneeEmail) : null;
+  try{
+    const r = await fetch('/api/tasks/'+taskId+'/subtasks',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        title,
+        assignee:       assigneeUser ? assigneeUser.first_name : null,
+        assignee_email: assigneeEmail,
+        due:            dueEl.value || null
+      })
+    });
+    const sub = await r.json();
+    if(sub && !sub.error){
+      if(!subtasksMap[taskId]) subtasksMap[taskId] = [];
+      subtasksMap[taskId].push(sub);
+      titleEl.value=''; whoEl.value=''; dueEl.value='';
+      await load();
+    }
+  } catch(e){ alert('Ошибка: '+e.message); }
+}
+
+async function toggleSubtask(subId, taskId){
+  try{
+    await fetch('/api/subtasks/'+subId+'/toggle',{method:'POST'});
+    delete subtasksMap[taskId];
+    await load();
+    await _loadSubtasks(taskId);
+  } catch(e){ alert('Ошибка: '+e.message); }
+}
+
+async function updateSubtaskField(subId, taskId, el, field){
+  try{
+    let body = {};
+    if(field === 'assignee'){
+      const email = el.value || null;
+      const user  = email ? _userByEmail(email) : null;
+      body = {assignee_email: email, assignee: user ? user.first_name : null};
+    } else if(field === 'due'){
+      body = {due: el.value || null};
+    }
+    const r = await fetch('/api/subtasks/'+subId,{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const sub = await r.json();
+    if(sub && !sub.error && subtasksMap[taskId]){
+      const idx = subtasksMap[taskId].findIndex(s=>s.id===subId);
+      if(idx>=0) subtasksMap[taskId][idx] = sub;
+    }
+  } catch(e){ alert('Ошибка: '+e.message); }
+}
+
+async function deleteSubtask(subId, taskId){
+  if(!confirm('Удалить подзадачу?')) return;
+  try{
+    await fetch('/api/subtasks/'+subId,{method:'DELETE'});
+    delete subtasksMap[taskId];
+    await load();
+    await _loadSubtasks(taskId);
+  } catch(e){ alert('Ошибка: '+e.message); }
 }
 
 function updateSidebar(){
