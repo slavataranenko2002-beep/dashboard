@@ -981,6 +981,30 @@ function render(){
   if(af) tasks = tasks.filter(t=>(t.assignee||'')===af);
 
   const tbody = document.getElementById('tbody');
+
+  // Сохраняем активное поле ввода внутри таблицы (например, ввод названия подзадачи),
+  // чтобы периодическая перерисовка (load() каждые 5 сек) не сбивала фокус и набранный текст
+  const _active = document.activeElement;
+  let _savedField = null;
+  if(_active && tbody.contains(_active) && _active.id && /^(INPUT|SELECT|TEXTAREA)$/.test(_active.tagName)){
+    _savedField = {
+      id: _active.id,
+      value: _active.value,
+      selStart: (typeof _active.selectionStart === 'number') ? _active.selectionStart : null,
+      selEnd:   (typeof _active.selectionEnd   === 'number') ? _active.selectionEnd   : null
+    };
+  }
+  const _restoreField = () => {
+    if(!_savedField) return;
+    const el = document.getElementById(_savedField.id);
+    if(!el) return;
+    el.value = _savedField.value;
+    el.focus();
+    if(_savedField.selStart !== null && el.setSelectionRange){
+      try{ el.setSelectionRange(_savedField.selStart, _savedField.selEnd); }catch(e){}
+    }
+  };
+
   if(!tasks.length){
     tbody.innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:8}" class="empty"><div class="empty-ic">📭</div>Задач нет</td></tr>`;
     return;
@@ -1030,6 +1054,8 @@ function render(){
 
     return mainRow + (isOpen ? renderSubtaskPanel(t) : '');
   }).join('');
+
+  _restoreField();
 }
 
 // ── Подзадачи: раскрывающийся список ──────────────────────────────────────────
