@@ -1410,56 +1410,6 @@ def plan_fact_page():
         can_edit=_planfact_can_edit(u),
     )
 
-@app.route("/api/debug/cabinets")
-@require_admin_api
-def api_debug_cabinets():
-    """Показывает какие env-переменные используются для каждого кабинета (без самих ключей)."""
-    from wb_api import cabinet_env_slug, get_cabinet_key
-    result = []
-    for cab in WB_CABINETS:
-        slug    = cabinet_env_slug(cab)
-        env_var = f"WB_API_KEY_{slug}"
-        key_val = os.environ.get(env_var, "")
-        result.append({
-            "cabinet":    cab,
-            "env_var":    env_var,
-            "key_set":    bool(key_val),
-            "key_start":  key_val[:20]  if key_val else "",
-            "key_end":    key_val[-10:] if key_val else "",
-            "key_len":    len(key_val),
-        })
-    # Помечаем дубликаты ключей
-    keys = [r["key_start"] + r["key_end"] for r in result]
-    for i, r in enumerate(result):
-        r["duplicate_of"] = [result[j]["cabinet"] for j in range(len(result))
-                             if j != i and keys[j] == keys[i] and keys[i]]
-    return jsonify(result)
-
-@app.route("/api/debug/stocks")
-@require_admin_api
-def api_debug_stocks():
-    """Диагностика: сколько записей/артикулов возвращает WB stocks API для кабинета."""
-    from wb_api import WBClient, aggregate_stocks_by_article
-    cabinet = request.args.get("cabinet", "").strip()
-    if not cabinet or cabinet not in WB_CABINETS:
-        return jsonify({"error": "unknown cabinet"}), 400
-    date_from = request.args.get("date_from", "2019-01-01")
-    with WBClient(cabinet) as wb:
-        raw = wb.get_stocks(date_from)
-    by_vc, total, meta = aggregate_stocks_by_article(raw)
-    articles_with_stock = {vc: qty for vc, qty in by_vc.items() if qty > 0}
-    sample = sorted(articles_with_stock.items(), key=lambda x: -x[1])[:20]
-    return jsonify({
-        "cabinet":            cabinet,
-        "date_from":          date_from,
-        "raw_rows":           len(raw),
-        "unique_articles":    len(by_vc),
-        "articles_stock_gt0": len(articles_with_stock),
-        "stock_total":        total,
-        "top20":              [{"vc": vc, "qty": qty} for vc, qty in sample],
-        "sample_raw_row":     raw[0] if raw else None,
-    })
-
 @app.route("/api/plan-fact")
 @require_auth
 def api_plan_fact_get():
@@ -1583,12 +1533,6 @@ def api_plan_fact_get():
         }
         data["season_coefficients"] = season_coefficients
         data["season_names"]        = all_season_names
-        data["_debug"] = {
-            "articles_count": len(data["articles"]),
-            "d_from": d_from.isoformat(),
-            "d_to":   d_to.isoformat(),
-            "cabinet": cabinet,
-        }
         return jsonify(data)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
