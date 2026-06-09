@@ -529,6 +529,7 @@ const COL_DEFS = [
   {k:'roi',              get:r=>Math.round(compute(r).roi*10)/10,             type:'num'},
   {k:'batchMargin',      get:r=>Math.round(compute(r).batchMargin*10)/10,     type:'num'},
   {k:'capital',          get:r=>Math.round((+r.wb_price||0)*(+r.stock||0)),  type:'num'},
+  {k:'capitalCost',      get:r=>Math.round((+r.cost_price||0)*(+r.stock||0)),type:'num'},
 ];
 const COL_MAP = Object.fromEntries(COL_DEFS.map(c => [c.k, c]));
 
@@ -874,7 +875,8 @@ function updateComputedCells(key) {
   set('cv-stor-total',  fmtR(c.storTotal));
   set('cv-drrrub',      fmtR(c.drrRub));
   set('cv-commission', fmtR(c.commission));
-  set('cv-capital',   fmtR(Math.round((+r.wb_price||0)*(+r.stock||0))));
+  set('cv-capital',      fmtR(Math.round((+r.wb_price||0)*(+r.stock||0))));
+  set('cv-capital-cost', fmtR(Math.round((+r.cost_price||0)*(+r.stock||0))));
   const pm = tr.querySelector('.cv-profit');
   if (pm) { pm.textContent = fmtR(c.profit); pm.className = 'comp cv-profit ' + profitCls(c.profit); }
   const mm = tr.querySelector('.cv-margin');
@@ -1001,6 +1003,7 @@ function rowHTML(r) {
   <td class="comp cv-drrrub" title="Авто: Цена ВБ × ДРР%">${fmtR(c.drrRub)}</td>
   <td class="comp cv-stock" title="Авто: обновляется из WB">${(+r.stock||0).toLocaleString('ru-RU')}</td>
   <td class="comp cv-capital">${fmtR(Math.round((+r.wb_price||0)*(+r.stock||0)))}</td>
+  <td class="comp cv-capital-cost" title="Себестоимость × Остаток">${fmtR(Math.round((+r.cost_price||0)*(+r.stock||0)))}</td>
   <td class="comp cv-commission">${fmtR(c.commission)}</td>
   <td class="comp cv-profit ${profitCls(c.profit)}">${fmtR(c.profit)}</td>
   <td class="comp cv-margin"><span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span></td>
@@ -1046,7 +1049,7 @@ function renderContent(state) {
       <th colspan="6">Параметры ВБ</th>
       <th class="grp-comp" colspan="2">↓ Хранение</th>
       <th colspan="8">Цена и реклама</th>
-      <th class="grp-results" colspan="7">Результаты расчёта</th>
+      <th class="grp-results" colspan="8">Результаты расчёта</th>
     </tr>
     <tr class="col-row">
       <th class="cb-cell sc0"><input type="checkbox" id="cbAll" onchange="toggleSelectAll(this.checked)" title="Выбрать все"></th>
@@ -1077,6 +1080,7 @@ function renderContent(state) {
       ${thSF('drr_external_rub','ДРР₽')}
       ${thSF('stock','Остаток')}
       ${thSF('capital','Капитал ост.','comp','Цена ВБ × Остаток')}
+      ${thSF('capitalCost','Капитал себес.','comp','Себестоимость × Остаток')}
       ${thSF('commission','Комис.₽','comp')}
       ${thSF('profit','Прибыль','comp')}
       ${thSF('margin','Маржа','comp')}
@@ -1101,7 +1105,7 @@ function updateFooter() {
 
   // Суммы
   let sumTotalCost = 0, sumStorTotal = 0, sumUsn = 0, sumDrrRub = 0;
-  let sumStock = 0, sumCapital = 0, sumProfit = 0;
+  let sumStock = 0, sumCapital = 0, sumCapitalCost = 0, sumProfit = 0;
   // Средние (накопитель)
   let sumRed = 0, sumLogKtr = 0, sumClientPrice = 0;
   let sumMargin = 0, sumRoi = 0, sumBatchMargin = 0;
@@ -1114,6 +1118,7 @@ function updateFooter() {
     sumDrrRub      += c.drrRub;
     sumStock       += (+r.stock || 0);
     sumCapital     += (+r.wb_price || 0) * (+r.stock || 0);
+    sumCapitalCost += (+r.cost_price || 0) * (+r.stock || 0);
     sumProfit      += c.profit;
     sumRed         += (+r.redemption_pct || 100);
     sumLogKtr      += c.logKtr;
@@ -1154,7 +1159,8 @@ function updateFooter() {
     <td></td>
     <td class="fcomp" title="Σ ДРР₽">${fmtR(sumDrrRub)}</td>
     <td class="fcomp" title="Σ Остаток">${Math.round(sumStock).toLocaleString('ru-RU')} шт</td>
-    <td class="fcomp" title="Σ Капитал">${fmtR(sumCapital)}</td>
+    <td class="fcomp" title="Σ Капитал ост.">${fmtR(sumCapital)}</td>
+    <td class="fcomp" title="Σ Капитал себес.">${fmtR(sumCapitalCost)}</td>
     <td></td>
     <td class="fcomp ${profitCls(sumProfit)}" title="Σ Прибыль">${fmtR(sumProfit)}</td>
     <td class="fcomp" title="Ø Маржа"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
