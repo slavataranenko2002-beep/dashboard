@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 ADV_BASE        = "https://advert-api.wildberries.ru"
 STATS_BASE      = "https://seller-analytics-api.wildberries.ru"
 STATISTICS_BASE = "https://statistics-api.wildberries.ru"
+PRICES_BASE     = "https://discounts-prices-api.wildberries.ru"
 
 # Соответствие статусов рекламных кампаний (для UI)
 ADVERT_STATUS = {
@@ -433,6 +434,60 @@ class WBClient:
             return r.json() or []
         except Exception:
             return []
+
+    # ── 7. Цены и скидки ────────────────────────────────────────────────
+    def get_goods_prices(self, nm_id: int | None = None) -> list[dict]:
+        """
+        Возвращает список товаров с ценами и скидками.
+        GET /api/v2/list/goods/filter (discounts-prices-api.wildberries.ru)
+
+        Если nm_id указан — возвращает только этот товар.
+        Иначе — постранично получает все товары кабинета.
+
+        Каждый элемент: {nmID, vendorCode, sizes: [{price, discountedPrice, ...}]}
+        discountedPrice — цена после скидки продавца (= Цена ВБ для покупателя до СПП).
+
+        Rate limit: 10 req / 6s → пауза 0.7 сек между страницами.
+        """
+        all_goods: list[dict] = []
+        limit = 1000
+        offset = 0
+
+        while True:
+            params: dict = {"limit": limit, "offset": offset}
+            if nm_id is not None:
+                params["filterNmID"] = nm_id
+
+            r = self._request(
+                "GET",
+                f"{PRICES_BASE}/api/v2/list/goods/filter",
+                params=params,
+            )
+            if not r.is_success:
+                logger.error(
+                    f"[WB:{self.cabinet}] goods/filter {r.status_code}: {r.text[:200]}"
+                )
+                break
+            try:
+                data = r.json()
+                goods = (data.get("data") or {}).get("listGoods") or []
+            except Exception:
+                logger.error(f"[WB:{self.cabinet}] goods/filter: bad JSON")
+                break
+
+            if not goods:
+                break
+
+            all_goods.extend(goods)
+
+            # Если запрашивали конкретный nmId или получили меньше лимита — всё
+            if nm_id is not None or len(goods) < limit:
+                break
+
+            offset += limit
+            time.sleep(0.7)  # соблюдаем rate-limit: 10 req/6 сек
+
+        return all_goods
 
     def raw_sales(self, date_from: str) -> dict:
         """Возвращает сырой ответ Statistics API (для отладки):

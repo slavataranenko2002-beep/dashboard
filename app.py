@@ -2695,12 +2695,12 @@ def api_unit_export_excel():
 @app.route("/api/unit-refresh", methods=["POST"])
 @require_auth
 def api_unit_refresh():
-    """Обновляет Остаток и %выкупа из WB API для всех артикулов кабинета."""
+    """Обновляет из WB API: Остаток, %выкупа, Литраж, Цена ВБ."""
     project = request.args.get("project", "")
     if not project:
         return jsonify({"error": "project required"}), 400
     try:
-        from wb_api import WBClient, fmt_date, aggregate_stocks_by_article
+        from wb_api import WBClient, fmt_date, _funnel_metric, get_product_field
         today  = date.today()
         d_from = fmt_date(today - timedelta(days=30))
         d_to   = fmt_date(today)
@@ -2720,21 +2720,32 @@ def api_unit_refresh():
             return jsonify({"updated": 0})
 
         with WBClient(project) as wb:
-            # Остатки — по nmId
+            # 1. Остатки со склада (также содержат volume = литраж)
             stocks_raw = wb.get_stocks(fmt_date(today - timedelta(days=180)))
-            # Воронка — %выкупа
+            # 2. Воронка продаж — %выкупа
             funnel = wb.get_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to, limit=1000)
+            # 3. Цены и скидки
+            prices_raw = wb.get_goods_prices()
 
-        # Агрегируем остатки по nmId
-        stock_by_nm = {}
+        # ── Агрегация остатков по nmId ──────────────────────────────────────
+        # Остаток = на складе (quantity) + в пути от клиента (inWayFromClient)
+        # НЕ включаем inWayToClient (в пути до клиента)
+        stock_by_nm: dict[int, int] = {}
+        liters_by_nm: dict[int, float] = {}
         for s in stocks_raw:
             nm = s.get("nmId")
-            if nm:
-                stock_by_nm[nm] = stock_by_nm.get(nm, 0) + (s.get("quantityFull") or 0)
+            if not nm:
+                continue
+            qty = (s.get("quantity") or 0) + (s.get("inWayFromClient") or 0)
+            stock_by_nm[nm] = stock_by_nm.get(nm, 0) + qty
+            # Литраж — берём из первой записи по nmId (одинаков для всех складов)
+            if nm not in liters_by_nm:
+                vol = s.get("volume")
+                if vol:
+                    liters_by_nm[nm] = float(vol)
 
-        # %выкупа по nmId из воронки
-        from wb_api import _funnel_metric, get_product_field
-        redemption_by_nm = {}
+        # ── %выкупа по nmId из воронки ─────────────────────────────────────
+        redemption_by_nm: dict[int, float] = {}
         for p in (funnel.get("data") or {}).get("products") or []:
             nm = get_product_field(p, "nmId")
             if not nm:
@@ -2744,27 +2755,54 @@ def api_unit_refresh():
             if orders > 0:
                 redemption_by_nm[nm] = round(buyouts / orders * 100, 1)
 
-        # Обновляем в БД
+        # ── Цена ВБ по nmId из goods/filter ────────────────────────────────
+        # discountedPrice = цена после скидки продавца (Цена ВБ до СПП)
+        price_by_nm: dict[int, float] = {}
+        for g in prices_raw:
+            nm = g.get("nmID")
+            if not nm:
+                continue
+            sizes = g.get("sizes") or []
+            if sizes:
+                dp = sizes[0].get("discountedPrice") or sizes[0].get("price")
+                if dp:
+                    price_by_nm[nm] = float(dp)
+
+        # ── Обновляем в БД ──────────────────────────────────────────────────
         updated = 0
         with get_conn() as conn:
             with conn.cursor() as cur:
                 for nm_id, row_id in db_rows.items():
                     stock   = stock_by_nm.get(nm_id)
                     red_pct = redemption_by_nm.get(nm_id)
-                    if stock is None and red_pct is None:
+                    liters  = liters_by_nm.get(nm_id)
+                    wb_price = price_by_nm.get(nm_id)
+
+                    if all(v is None for v in (stock, red_pct, liters, wb_price)):
                         continue
+
                     sets, vals = [], []
                     if stock is not None:
                         sets.append("stock=%s"); vals.append(stock)
                     if red_pct is not None:
                         sets.append("redemption_pct=%s"); vals.append(red_pct)
+                    if liters is not None:
+                        sets.append("liters=%s"); vals.append(liters)
+                    if wb_price is not None:
+                        sets.append("wb_price=%s"); vals.append(wb_price)
                     sets.append("updated_at=NOW()")
                     vals.append(row_id)
                     cur.execute(f"UPDATE unit_economics SET {', '.join(sets)} WHERE id=%s", vals)
                     updated += 1
             conn.commit()
 
-        return jsonify({"updated": updated, "stock_found": len(stock_by_nm), "redemption_found": len(redemption_by_nm)})
+        return jsonify({
+            "updated": updated,
+            "stock_found": len(stock_by_nm),
+            "redemption_found": len(redemption_by_nm),
+            "liters_found": len(liters_by_nm),
+            "prices_found": len(price_by_nm),
+        })
     except Exception as e:
         logging.error(f"unit-refresh {project}: {e}")
         return jsonify({"error": str(e)}), 500
