@@ -533,7 +533,8 @@ class WBClient:
                 w = float(dims.get("width")  or 0)
                 h = float(dims.get("height") or 0)
                 if nm and l > 0 and w > 0 and h > 0:
-                    result[nm] = round(l * w * h / 1000, 2)
+                    import math as _math
+                    result[nm] = _math.ceil(l * w * h / 1000)
 
             # Проверяем курсор для следующей страницы
             resp_cursor = data.get("cursor") or {}

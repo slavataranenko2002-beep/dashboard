@@ -693,7 +693,7 @@ function compute(r) {
   const totalCost = cp + lw + pkg + ovh;
 
   const w = +r.width_cm, l = +r.length_cm, h = +r.height_cm;
-  const liters = (w && l && h) ? w * l * h / 1000 : (+r.liters || 0);
+  const liters = (w && l && h) ? Math.ceil(w * l * h / 1000) : (+r.liters || 0);
   const wCoef  = WAREHOUSE_COEFS[r.warehouse] || 0;
 
   const storageDay = (liters && wCoef) ? 0.08 * liters * wCoef / 100 : (+r.storage_per_day || 0);
