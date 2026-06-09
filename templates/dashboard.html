@@ -432,7 +432,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
     {% if current_user.role in ('admin', 'employee') or current_user.planfact_projects %}
     <a href="/plan-fact" class="hbtn" title="План-Факт продаж">📊 План-Факт</a>
     {% endif %}
-    {% if current_user.role in ('admin', 'employee') %}
+    {% if current_user.role in ('admin', 'employee') or current_user.unit_access %}
     <a href="/unit" class="hbtn" title="Юнит-экономика">💰 Юнит</a>
     {% endif %}
     {% if current_user.role == 'admin' %}

@@ -156,6 +156,12 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
              style="accent-color:var(--purple);width:16px;height:16px">
       <span>🎨 Доступ к разделу «Дизайнеру» (только задачи своих проектов)</span>
     </label>
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+      <input type="checkbox" id="unit-access-{{ u.id }}"
+             {% if u.unit_access %}checked{% endif %}
+             style="accent-color:var(--blue);width:16px;height:16px">
+      <span>💰 Доступ к разделу «Юнит-экономика»</span>
+    </label>
   </div>
   {% endif %}
 
@@ -248,6 +254,8 @@ async function saveUser(userId) {
   const planfact_edit = pfEditEl ? pfEditEl.checked : false;
   const designAccessEl = document.getElementById('design-access-' + userId);
   const design_access = designAccessEl ? designAccessEl.checked : false;
+  const unitAccessEl = document.getElementById('unit-access-' + userId);
+  const unit_access = unitAccessEl ? unitAccessEl.checked : false;
   const btn = document.querySelector('#card-' + userId + ' .btn-save');
   const msg = document.getElementById('msg-' + userId);
   btn.disabled = true;
@@ -255,7 +263,7 @@ async function saveUser(userId) {
     const r = await fetch('/api/admin/users/' + userId, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access}),
+      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access, unit_access}),
     });
     const data = await r.json();
     if (data.ok) {

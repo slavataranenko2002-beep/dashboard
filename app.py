@@ -183,6 +183,7 @@ def _ensure_design_tables():
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS tax_system TEXT DEFAULT 'УСН 7%'")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS tax_pct NUMERIC(5,2) DEFAULT 7")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS il NUMERIC(6,4) DEFAULT 1")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_access BOOLEAN DEFAULT FALSE")
                 # Ежедневные бэкапы
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS unit_economics_backup (
@@ -299,6 +300,7 @@ def _make_session_dict(user: dict) -> dict:
         "planfact_projects":  list(user.get("planfact_projects") or []),
         "planfact_edit":      bool(user.get("planfact_edit")),
         "design_access":      bool(user.get("design_access")),
+        "unit_access":        bool(user.get("unit_access")),
     }
 
 def _design_projects(u) -> list | None:
@@ -316,6 +318,12 @@ def _planfact_allowed(u) -> list | None:
     # seller — только явно назначенные кабинеты
     pf = list(u.get("planfact_projects") or [])
     return pf
+
+def _unit_allowed(u) -> bool:
+    """Admin и employee всегда имеют доступ к юниту; seller — только если unit_access=True."""
+    if u["role"] in ("admin", "employee"):
+        return True
+    return bool(u.get("unit_access"))
 
 def _planfact_can_edit(u) -> bool:
     """Admin всегда может редактировать; остальные — только если planfact_edit=True."""
@@ -440,6 +448,32 @@ def require_admin_api(f):
         return f(*args, **kwargs)
     return wrapper
 
+def require_unit_page(f):
+    """Декоратор страницы /unit: redirect если нет доступа."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        u = _session_user()
+        if not u:
+            return redirect("/auth/login")
+        if u["role"] == "pending":
+            return redirect("/")
+        if not _unit_allowed(u):
+            return redirect("/")
+        return f(*args, **kwargs)
+    return wrapper
+
+def require_unit_api(f):
+    """Декоратор API /api/unit-*: 403 если нет доступа."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        u = _session_user()
+        if not u:
+            return jsonify({"error": "unauthorized"}), 401
+        if not _unit_allowed(u):
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
 def api_error(f):
     """Декоратор: ловит Exception → 500 JSON. Убирает try/except boilerplate."""
     @functools.wraps(f)
@@ -536,13 +570,14 @@ def api_admin_update_user(user_id):
     planfact_projects = d.get("planfact_projects", [])
     planfact_edit = bool(d.get("planfact_edit", False))
     design_access = bool(d.get("design_access", False))
+    unit_access   = bool(d.get("unit_access", False))
     if role not in ("pending", "employee", "seller", "admin"):
         return jsonify({"error": "invalid role"}), 400
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE users SET role=%s, projects=%s, planfact_projects=%s, planfact_edit=%s, design_access=%s WHERE id=%s RETURNING id",
-                (role, projects, planfact_projects, planfact_edit, design_access, user_id),
+                "UPDATE users SET role=%s, projects=%s, planfact_projects=%s, planfact_edit=%s, design_access=%s, unit_access=%s WHERE id=%s RETURNING id",
+                (role, projects, planfact_projects, planfact_edit, design_access, unit_access, user_id),
             )
             if not cur.fetchone():
                 return jsonify({"error": "not found"}), 404
@@ -2413,7 +2448,7 @@ def api_design_attachment_delete(att_id):
 
 # ─── Юнит-экономика ───────────────────────────────────────────────────────────
 @app.route("/unit")
-@require_auth
+@require_unit_page
 def unit_page():
     u = _session_user()
     return render_template(
@@ -2457,7 +2492,7 @@ def _unit_row_params(d):
 
 
 @app.route("/api/unit-rows")
-@require_auth
+@require_unit_api
 def api_unit_rows_get():
     project = request.args.get("project", "")
     try:
@@ -2500,7 +2535,7 @@ def api_unit_rows_get():
 
 
 @app.route("/api/unit-rows", methods=["POST"])
-@require_auth
+@require_unit_api
 def api_unit_rows_create():
     p = _unit_row_params(request.get_json(silent=True) or {})
     try:
@@ -2533,7 +2568,7 @@ def api_unit_rows_create():
 
 
 @app.route("/api/unit-rows/<int:row_id>", methods=["PUT"])
-@require_auth
+@require_unit_api
 def api_unit_rows_update(row_id):
     p = _unit_row_params(request.get_json(silent=True) or {})
     p["id"] = row_id
@@ -2564,7 +2599,7 @@ def api_unit_rows_update(row_id):
 
 
 @app.route("/api/unit-rows/<int:row_id>", methods=["DELETE"])
-@require_auth
+@require_unit_api
 def api_unit_rows_delete(row_id):
     try:
         with get_conn() as conn:
@@ -2577,7 +2612,7 @@ def api_unit_rows_delete(row_id):
 
 
 @app.route("/api/unit-import-articles")
-@require_auth
+@require_unit_api
 def api_unit_import_articles():
     """Загружает список артикулов из воронки WB за последние 30 дней."""
     project = request.args.get("project", "")
@@ -2620,7 +2655,7 @@ def api_unit_import_articles():
 
 
 @app.route("/api/unit-export-excel")
-@require_auth
+@require_unit_api
 def api_unit_export_excel():
     """Выгрузка таблицы юнит-экономики в Excel."""
     project = request.args.get("project", "")
@@ -2694,7 +2729,7 @@ def api_unit_export_excel():
 
 
 @app.route("/api/unit-refresh", methods=["POST"])
-@require_auth
+@require_unit_api
 def api_unit_refresh():
     """Обновляет из WB API: Остаток, %выкупа, Литраж, Цена ВБ."""
     project = request.args.get("project", "")
@@ -2806,7 +2841,7 @@ def api_unit_refresh():
 
 
 @app.route("/api/unit-auto-import", methods=["POST"])
-@require_auth
+@require_unit_api
 def api_unit_auto_import():
     """Первичный авто-импорт: добавляет артикулы из WB только если их нет в БД.
     Удаляет «пустые» строки (wb_article IS NULL). Возвращает все строки после вставки."""
