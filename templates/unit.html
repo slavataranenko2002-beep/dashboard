@@ -1137,9 +1137,9 @@ function updateFooter() {
   const avgBM     = avg(sumBatchMargin);
 
   // Колонки: sc0 sc1 sc2+sc3(colspan=2) | cp pkg ltwb ovh def | totalCost
-  //          | lit red wh irp | logKtr | stor30 storTotal
+  //          | lit red wh irp il | logKtr | stor30 storTotal
   //          | com% wbp spp | clientPrice | tax | usn | drr% | drrRub
-  //          | stock | capital | commission | profit | margin | roi | batchMargin
+  //          | stock | capital | capitalCost | commission | profit | margin | roi | batchMargin
   tfoot.innerHTML = `<tr>
     <td class="sc0"></td>
     <td class="sc1"></td>
@@ -1148,7 +1148,7 @@ function updateFooter() {
     <td class="fcomp" title="Σ Ит.себест.">${fmtR(sumTotalCost)}</td>
     <td></td>
     <td class="fcomp" title="Ø % выкупа">${fmtP(avgRed)}</td>
-    <td class="left"></td><td></td>
+    <td class="left"></td><td></td><td></td>
     <td class="fcomp" title="Ø Лог+КТР">${fmtR(avgLogKtr)}</td>
     <td></td>
     <td class="fcomp" title="Σ Хран×Ост">${fmtR(sumStorTotal)}</td>
