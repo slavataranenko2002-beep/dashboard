@@ -28,6 +28,7 @@ ADV_BASE        = "https://advert-api.wildberries.ru"
 STATS_BASE      = "https://seller-analytics-api.wildberries.ru"
 STATISTICS_BASE = "https://statistics-api.wildberries.ru"
 PRICES_BASE     = "https://discounts-prices-api.wildberries.ru"
+CONTENT_BASE    = "https://content-api.wildberries.ru"
 
 # Соответствие статусов рекламных кампаний (для UI)
 ADVERT_STATUS = {
@@ -488,6 +489,67 @@ class WBClient:
             time.sleep(0.7)  # соблюдаем rate-limit: 10 req/6 сек
 
         return all_goods
+
+    # ── 8. Габариты карточек товаров (Content API) ──────────────────────
+    def get_cards_dimensions(self) -> dict[int, float]:
+        """
+        Возвращает {nmID: liters} для всех карточек кабинета.
+        Источник: POST /content/v2/get/cards/list (content-api.wildberries.ru)
+        Литраж = length_cm × width_cm × height_cm / 1000.
+
+        Пагинация по cursor.updatedAt + cursor.nmID.
+        """
+        result: dict[int, float] = {}
+        cursor: dict = {"limit": 100}
+
+        while True:
+            payload = {
+                "settings": {
+                    "cursor": cursor,
+                    "filter": {"withPhoto": -1},
+                }
+            }
+            r = self._request(
+                "POST",
+                f"{CONTENT_BASE}/content/v2/get/cards/list",
+                json=payload,
+            )
+            if not r.is_success:
+                logger.error(
+                    f"[WB:{self.cabinet}] cards/list {r.status_code}: {r.text[:200]}"
+                )
+                break
+            try:
+                data = r.json()
+            except Exception:
+                logger.error(f"[WB:{self.cabinet}] cards/list: bad JSON")
+                break
+
+            cards = data.get("cards") or []
+            for card in cards:
+                nm = card.get("nmID")
+                dims = card.get("dimensions") or {}
+                l = float(dims.get("length") or 0)
+                w = float(dims.get("width")  or 0)
+                h = float(dims.get("height") or 0)
+                if nm and l > 0 and w > 0 and h > 0:
+                    result[nm] = round(l * w * h / 1000, 2)
+
+            # Проверяем курсор для следующей страницы
+            resp_cursor = data.get("cursor") or {}
+            total = resp_cursor.get("total", 0)
+            if not cards or total < cursor.get("limit", 100):
+                break
+
+            # Обновляем курсор для следующего запроса
+            cursor = {
+                "limit":     100,
+                "updatedAt": resp_cursor.get("updatedAt"),
+                "nmID":      resp_cursor.get("nmID"),
+            }
+            time.sleep(0.3)
+
+        return result
 
     def raw_sales(self, date_from: str) -> dict:
         """Возвращает сырой ответ Statistics API (для отладки):

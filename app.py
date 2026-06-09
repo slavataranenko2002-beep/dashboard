@@ -2720,29 +2720,25 @@ def api_unit_refresh():
             return jsonify({"updated": 0})
 
         with WBClient(project) as wb:
-            # 1. Остатки со склада (также содержат volume = литраж)
+            # 1. Остатки со склада
             stocks_raw = wb.get_stocks(fmt_date(today - timedelta(days=180)))
             # 2. Воронка продаж — %выкупа
             funnel = wb.get_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to, limit=1000)
             # 3. Цены и скидки
             prices_raw = wb.get_goods_prices()
+            # 4. Габариты карточек — литраж
+            liters_by_nm = wb.get_cards_dimensions()
 
         # ── Агрегация остатков по nmId ──────────────────────────────────────
         # Остаток = на складе (quantity) + в пути от клиента (inWayFromClient)
         # НЕ включаем inWayToClient (в пути до клиента)
         stock_by_nm: dict[int, int] = {}
-        liters_by_nm: dict[int, float] = {}
         for s in stocks_raw:
             nm = s.get("nmId")
             if not nm:
                 continue
             qty = (s.get("quantity") or 0) + (s.get("inWayFromClient") or 0)
             stock_by_nm[nm] = stock_by_nm.get(nm, 0) + qty
-            # Литраж — берём из первой записи по nmId (одинаков для всех складов)
-            if nm not in liters_by_nm:
-                vol = s.get("volume")
-                if vol:
-                    liters_by_nm[nm] = float(vol)
 
         # ── %выкупа по nmId из воронки ─────────────────────────────────────
         redemption_by_nm: dict[int, float] = {}

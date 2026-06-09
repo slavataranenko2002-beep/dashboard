@@ -980,7 +980,7 @@ function rowHTML(r) {
   <td class="comp cv-usn">${fmtR(c.usn)}</td>
   <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
   <td class="comp cv-drrrub" title="Авто: Цена ВБ × ДРР%">${fmtR(c.drrRub)}</td>
-  <td class="ed">${n(r.stock,'stock','','0','0')}</td>
+  <td class="comp cv-stock" title="Авто: обновляется из WB">${(+r.stock||0).toLocaleString('ru-RU')}</td>
   <td class="comp cv-capital">${fmtR(Math.round((+r.wb_price||0)*(+r.stock||0)))}</td>
   <td class="comp cv-commission">${fmtR(c.commission)}</td>
   <td class="comp cv-profit ${profitCls(c.profit)}">${fmtR(c.profit)}</td>
