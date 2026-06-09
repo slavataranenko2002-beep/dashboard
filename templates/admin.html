@@ -140,6 +140,20 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
         {% endfor %}
       </div>
     </div>
+
+    <div class="ctrl-group" id="unit-group-{{ u.id }}">
+      <label>💰 Юнит-экономика кабинеты</label>
+      <div class="proj-checks" id="unit-checks-{{ u.id }}">
+        {% for c in wb_cabinets %}
+        <label class="proj-check {% if c in (u.unit_projects or []) %}checked{% endif %}" style="border-color:{% if c in (u.unit_projects or []) %}var(--blue){% else %}var(--border){% endif %}">
+          <input type="checkbox" value="{{ c }}"
+                 {% if c in (u.unit_projects or []) %}checked{% endif %}
+                 onchange="toggleUnitCheck(this)">
+          {{ c }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
   </div>
 
   {% if u.role not in ('pending', 'admin') %}
@@ -243,6 +257,11 @@ function togglePfCheck(el) {
   lbl.classList.toggle('checked', el.checked);
   lbl.style.borderColor = el.checked ? 'var(--purple)' : '';
 }
+function toggleUnitCheck(el) {
+  const lbl = el.closest('.proj-check');
+  lbl.classList.toggle('checked', el.checked);
+  lbl.style.borderColor = el.checked ? 'var(--blue)' : '';
+}
 
 async function saveUser(userId) {
   const role = document.getElementById('role-' + userId).value;
@@ -256,6 +275,8 @@ async function saveUser(userId) {
   const design_access = designAccessEl ? designAccessEl.checked : false;
   const unitAccessEl = document.getElementById('unit-access-' + userId);
   const unit_access = unitAccessEl ? unitAccessEl.checked : false;
+  const unitChecks = document.querySelectorAll('#unit-checks-' + userId + ' input[type=checkbox]');
+  const unit_projects = Array.from(unitChecks).filter(c => c.checked).map(c => c.value);
   const btn = document.querySelector('#card-' + userId + ' .btn-save');
   const msg = document.getElementById('msg-' + userId);
   btn.disabled = true;
@@ -263,7 +284,7 @@ async function saveUser(userId) {
     const r = await fetch('/api/admin/users/' + userId, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access, unit_access}),
+      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects}),
     });
     const data = await r.json();
     if (data.ok) {

@@ -184,6 +184,7 @@ def _ensure_design_tables():
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS tax_pct NUMERIC(5,2) DEFAULT 7")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS il NUMERIC(6,4) DEFAULT 1")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_access BOOLEAN DEFAULT FALSE")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_projects TEXT[] DEFAULT '{}'::TEXT[]")
                 # Ежедневные бэкапы
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS unit_economics_backup (
@@ -301,6 +302,7 @@ def _make_session_dict(user: dict) -> dict:
         "planfact_edit":      bool(user.get("planfact_edit")),
         "design_access":      bool(user.get("design_access")),
         "unit_access":        bool(user.get("unit_access")),
+        "unit_projects":      list(user.get("unit_projects") or []),
     }
 
 def _design_projects(u) -> list | None:
@@ -324,6 +326,19 @@ def _unit_allowed(u) -> bool:
     if u["role"] in ("admin", "employee"):
         return True
     return bool(u.get("unit_access"))
+
+def _unit_projects(u) -> list | None:
+    """None = доступ ко всем кабинетам (admin/employee), list = только эти кабинеты."""
+    if u["role"] in ("admin", "employee"):
+        return None
+    return list(u.get("unit_projects") or [])
+
+def _check_unit_project(u, project: str) -> bool:
+    """Проверяет, разрешён ли доступ пользователя к конкретному кабинету юнита."""
+    allowed = _unit_projects(u)
+    if allowed is None:
+        return True  # admin/employee — все кабинеты
+    return project in allowed
 
 def _planfact_can_edit(u) -> bool:
     """Admin всегда может редактировать; остальные — только если planfact_edit=True."""
@@ -570,14 +585,15 @@ def api_admin_update_user(user_id):
     planfact_projects = d.get("planfact_projects", [])
     planfact_edit = bool(d.get("planfact_edit", False))
     design_access = bool(d.get("design_access", False))
-    unit_access   = bool(d.get("unit_access", False))
+    unit_access    = bool(d.get("unit_access", False))
+    unit_projects  = d.get("unit_projects", [])
     if role not in ("pending", "employee", "seller", "admin"):
         return jsonify({"error": "invalid role"}), 400
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE users SET role=%s, projects=%s, planfact_projects=%s, planfact_edit=%s, design_access=%s, unit_access=%s WHERE id=%s RETURNING id",
-                (role, projects, planfact_projects, planfact_edit, design_access, unit_access, user_id),
+                "UPDATE users SET role=%s, projects=%s, planfact_projects=%s, planfact_edit=%s, design_access=%s, unit_access=%s, unit_projects=%s WHERE id=%s RETURNING id",
+                (role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects, user_id),
             )
             if not cur.fetchone():
                 return jsonify({"error": "not found"}), 404
@@ -2451,10 +2467,12 @@ def api_design_attachment_delete(att_id):
 @require_unit_page
 def unit_page():
     u = _session_user()
+    allowed = _unit_projects(u)
+    cabinets = WB_CABINETS if allowed is None else [c for c in WB_CABINETS if c in allowed]
     return render_template(
         "unit.html",
         current_user=u,
-        projects=WB_CABINETS,
+        projects=cabinets,
         project_emoji=PROJECT_EMOJI,
     )
 
@@ -2495,6 +2513,8 @@ def _unit_row_params(d):
 @require_unit_api
 def api_unit_rows_get():
     project = request.args.get("project", "")
+    if not _check_unit_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -2538,6 +2558,8 @@ def api_unit_rows_get():
 @require_unit_api
 def api_unit_rows_create():
     p = _unit_row_params(request.get_json(silent=True) or {})
+    if not _check_unit_project(_session_user(), p.get("project", "")):
+        return jsonify({"error": "forbidden"}), 403
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -2572,6 +2594,19 @@ def api_unit_rows_create():
 def api_unit_rows_update(row_id):
     p = _unit_row_params(request.get_json(silent=True) or {})
     p["id"] = row_id
+    # Проверяем project как из тела запроса, так и из БД (защита от подмены)
+    u = _session_user()
+    if not _check_unit_project(u, p.get("project", "")):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT project FROM unit_economics WHERE id=%s", (row_id,))
+                existing = cur.fetchone()
+        if existing and not _check_unit_project(u, existing["project"]):
+            return jsonify({"error": "forbidden"}), 403
+    except Exception:
+        pass
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -2601,6 +2636,16 @@ def api_unit_rows_update(row_id):
 @app.route("/api/unit-rows/<int:row_id>", methods=["DELETE"])
 @require_unit_api
 def api_unit_rows_delete(row_id):
+    u = _session_user()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT project FROM unit_economics WHERE id=%s", (row_id,))
+                existing = cur.fetchone()
+        if existing and not _check_unit_project(u, existing["project"]):
+            return jsonify({"error": "forbidden"}), 403
+    except Exception:
+        pass
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -2618,6 +2663,8 @@ def api_unit_import_articles():
     project = request.args.get("project", "")
     if not project:
         return jsonify({"error": "project required"}), 400
+    if not _check_unit_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
     try:
         from datetime import date, timedelta
         from wb_api import WBClient, fmt_date
@@ -2661,6 +2708,8 @@ def api_unit_export_excel():
     project = request.args.get("project", "")
     if not project:
         return jsonify({"error": "project required"}), 400
+    if not _check_unit_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
     try:
         import io
         from openpyxl import Workbook
@@ -2735,6 +2784,8 @@ def api_unit_refresh():
     project = request.args.get("project", "")
     if not project:
         return jsonify({"error": "project required"}), 400
+    if not _check_unit_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
     try:
         from wb_api import WBClient, fmt_date, _funnel_metric, get_product_field
         today  = date.today()
@@ -2848,6 +2899,8 @@ def api_unit_auto_import():
     project = request.args.get("project", "")
     if not project:
         return jsonify({"error": "project required"}), 400
+    if not _check_unit_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
     try:
         from wb_api import WBClient, fmt_date
         today  = date.today()
