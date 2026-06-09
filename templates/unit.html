@@ -510,6 +510,7 @@ const COL_DEFS = [
   {k:'redemption_pct',   get:r=>+r.redemption_pct||100,                       type:'num'},
   {k:'warehouse',        get:r=>r.warehouse||'',                              type:'text'},
   {k:'irp',              get:r=>+r.irp||1,                                    type:'num'},
+  {k:'il',               get:r=>+r.il||1,                                     type:'num'},
   {k:'logKtr',           get:r=>Math.round(compute(r).logKtr),                type:'num'},
   {k:'storage30',        get:r=>Math.round(compute(r).storage30),             type:'num'},
   {k:'storTotal',        get:r=>Math.round(compute(r).storTotal),             type:'num'},
@@ -699,11 +700,28 @@ function compute(r) {
   const storageDay = (liters && wCoef) ? 0.08 * liters * wCoef / 100 : (+r.storage_per_day || 0);
   const storage30  = storageDay * 30;
 
+  // Тарифная сетка WB по литражу
+  function baseLogTariff(lit) {
+    if (lit <= 0.2) return 23;
+    if (lit <= 0.4) return 26;
+    if (lit <= 0.6) return 29;
+    if (lit <= 0.8) return 30;
+    if (lit <= 1.0) return 32;
+    return 46 + (lit - 1) * 14;
+  }
+
   let logKtr;
   if (r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== '') {
     logKtr = +r.logistics_ktr;
   } else if (liters && wCoef && red > 0) {
-    logKtr = (223.2 + 2.1 * liters) * wCoef / 100 * irp / (red / 100);
+    const il         = +r.il || 1;
+    const base       = baseLogTariff(liters);
+    const returnRate = (100 - red) / 100;          // доля возвратов
+    const buyoutRate = red / 100;                  // доля выкупа
+    const forward    = base * (wCoef / 100) * il;  // прямая логистика
+    const returnLog  = returnRate * base;           // обратная логистика (без коэф. и ИЛ)
+    const irpPart    = wp * (irp / 100);            // ИРП
+    logKtr = (forward + irpPart + returnLog) / buyoutRate;
   } else {
     logKtr = 0;
   }
@@ -826,7 +844,7 @@ function onInput(key, field, val) {
   const r = rows.find(x => x._key === key);
   if (!r) return;
   const numFields = ['cost_price','logistics_to_wb','packaging','overhead','defect_pct',
-    'width_cm','length_cm','height_cm','liters','redemption_pct','irp','logistics_ktr',
+    'width_cm','length_cm','height_cm','liters','redemption_pct','irp','il','logistics_ktr',
     'commission_pct','wb_price','drr_pct','drr_external_rub','stock'];
   r[field] = numFields.includes(field) ? (val === '' ? (field === 'logistics_ktr' || field === 'liters' ? null : 0) : +val) : val;
   r._dirty = true;
@@ -875,7 +893,7 @@ function makeEmptyRow(overrides = {}) {
     brand: currentProject, wb_article: '', seller_article: '',
     cost_price: 0, logistics_to_wb: 0, packaging: 0, overhead: 0, defect_pct: 0,
     width_cm: null, length_cm: null, height_cm: null, liters: null,
-    redemption_pct: 100, warehouse: '', irp: 1.0, logistics_ktr: null,
+    redemption_pct: 100, warehouse: '', irp: 1.0, il: 1, logistics_ktr: null,
     reception_coef: 'x0', storage_per_day: 0,
     commission_pct: 36, wb_price: 0, spp_pct: 0, drr_pct: 0, drr_external_rub: 0, stock: 0,
     tax_system: 'УСН 7%', tax_pct: 7,
@@ -961,9 +979,10 @@ function rowHTML(r) {
     </select>
   </td>
   <td class="ed">${n(r.irp||1,'irp','','1.0')}</td>
+  <td class="ed">${n(r.il??1,'il','','1.0')}</td>
   ${r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
     ? `<td class="ed">${n(+r.logistics_ktr,'logistics_ktr','','авто')}</td>`
-    : `<td class="comp cv-logtgtr" title="Авто-расчёт: Литраж × Коэф.склада ÷ %выкупа">${fmtR(c.logKtr)}</td>`}
+    : `<td class="comp cv-logtgtr" title="Авто: (base×коэф×ИЛ + цена×ИРП% + возврат×base) ÷ выкуп%">${fmtR(c.logKtr)}</td>`}
   <td class="comp cv-stor30">${fmtR(c.storage30)}</td>
   <td class="comp cv-stor-total" title="Хранение × Остаток">${fmtR(c.storTotal)}</td>
   <td class="ed">${n(r.commission_pct,'commission_pct','','36')}</td>
@@ -1024,7 +1043,7 @@ function renderContent(state) {
       <th colspan="2" class="left sc2">Идентификация</th>
       <th colspan="5">Себестоимость</th>
       <th class="grp-comp">↓</th>
-      <th colspan="5">Параметры ВБ</th>
+      <th colspan="6">Параметры ВБ</th>
       <th class="grp-comp" colspan="2">↓ Хранение</th>
       <th colspan="8">Цена и реклама</th>
       <th class="grp-results" colspan="7">Результаты расчёта</th>
@@ -1044,6 +1063,7 @@ function renderContent(state) {
       ${thSF('redemption_pct','%выкупа')}
       ${thSF('warehouse','Склад','left')}
       ${thSF('irp','ИРП')}
+      ${thSF('il','ИЛ','','Индекс локализации')}
       ${thSF('logKtr','Лог+КТР','','Логистика + КТР (авто если пусто)')}
       ${thSF('storage30','Хран/30д','comp','Хранение за 30 дней')}
       ${thSF('storTotal','Хран×Ост','comp','Хранение 30 дн × Остаток')}

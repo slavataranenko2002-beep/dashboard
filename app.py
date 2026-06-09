@@ -182,6 +182,7 @@ def _ensure_design_tables():
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS spp_pct NUMERIC(5,2) DEFAULT 0")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS tax_system TEXT DEFAULT 'УСН 7%'")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS tax_pct NUMERIC(5,2) DEFAULT 7")
+                cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS il NUMERIC(6,4) DEFAULT 1")
                 # Ежедневные бэкапы
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS unit_economics_backup (
