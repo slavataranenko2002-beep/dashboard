@@ -440,8 +440,14 @@ const TAX_PRESETS_DEFAULT = [
   {label:USN_DR_LABEL, pct:15},
 ];
 function loadTaxPresets() {
-  try { return JSON.parse(localStorage.getItem('taxPresets') || 'null') || TAX_PRESETS_DEFAULT; }
-  catch { return TAX_PRESETS_DEFAULT; }
+  let list;
+  try { list = JSON.parse(localStorage.getItem('taxPresets') || 'null') || TAX_PRESETS_DEFAULT; }
+  catch { list = TAX_PRESETS_DEFAULT; }
+  if (!list.some(t => t.label === USN_DR_LABEL)) {
+    list = [...list, {label: USN_DR_LABEL, pct: 15}];
+    saveTaxPresets(list);
+  }
+  return list;
 }
 function saveTaxPresets(list) { localStorage.setItem('taxPresets', JSON.stringify(list)); }
 let TAX_PRESETS = loadTaxPresets();
