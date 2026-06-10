@@ -1300,12 +1300,12 @@ function applyBulk() {
   if (rawVal === '' && !isWh) return;
   const val = isWh || isTax ? rawVal : (BULK_NUM_FIELDS.has(field) ? +rawVal : rawVal);
 
+  const taxPreset = isTax ? TAX_PRESETS.find(t => t.label === val) : null;
   rows.filter(r => selectedKeys.has(r._key)).forEach(r => {
     if (isTax) {
       // Применяем систему налога — берём pct из пресета
-      const preset = TAX_PRESETS.find(t => t.label === val);
       r.tax_system = val; r._dirty = true;
-      if (preset) { r.tax_pct = preset.pct; }
+      if (taxPreset) { r.tax_pct = taxPreset.pct; }
     } else {
       r[field] = val; r._dirty = true;
     }
@@ -1315,7 +1315,7 @@ function applyBulk() {
         const sel = tr.querySelector('select[onchange*="warehouse"]'); if (sel) sel.value = val;
       } else if (isTax) {
         const sel = tr.querySelector('.tax-sel'); if (sel) sel.value = TAX_PRESETS.findIndex(t=>t.label===val);
-        const inp = tr.querySelector('.tax-pct-inp'); if (inp && preset) inp.value = preset.pct;
+        const inp = tr.querySelector('.tax-pct-inp'); if (inp && taxPreset) inp.value = taxPreset.pct;
       } else {
         const inp = tr.querySelector(`input[oninput*="'${field}'"]`); if (inp) inp.value = val;
       }
