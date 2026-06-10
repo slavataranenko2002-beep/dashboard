@@ -427,6 +427,7 @@ let WAREHOUSE_COEFS = loadWCoefs();
 let WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
 
 // ─── Системы налогообложения ──────────────────────────────────────────────────
+const USN_DR_LABEL = 'УСН Доход-Расход (15%) + НДС 5%';
 const TAX_PRESETS_DEFAULT = [
   {label:'УСН 6%',   pct:6},
   {label:'УСН 7%',   pct:7},
@@ -436,6 +437,7 @@ const TAX_PRESETS_DEFAULT = [
   {label:'УСН 6% + НДС 5%', pct:11},
   {label:'УСН 6% + НДС 20%',pct:26},
   {label:'ОСНО НДС 20%',    pct:20},
+  {label:USN_DR_LABEL, pct:15},
 ];
 function loadTaxPresets() {
   try { return JSON.parse(localStorage.getItem('taxPresets') || 'null') || TAX_PRESETS_DEFAULT; }
@@ -445,8 +447,8 @@ function saveTaxPresets(list) { localStorage.setItem('taxPresets', JSON.stringif
 let TAX_PRESETS = loadTaxPresets();
 
 function taxOptions(selectedLabel) {
-  const opts = TAX_PRESETS.map(t =>
-    `<option value="${t.pct}" data-label="${esc(t.label)}" ${t.label===selectedLabel?'selected':''}>${esc(t.label)}</option>`
+  const opts = TAX_PRESETS.map((t, i) =>
+    `<option value="${i}" ${t.label===selectedLabel?'selected':''}>${esc(t.label)}</option>`
   ).join('');
   return opts + `<option value="__custom__">+ Своя…</option>`;
 }
@@ -474,7 +476,7 @@ function onTaxSelect(key, selectEl) {
     initBulkTaxSys();
     return;
   }
-  const chosen = TAX_PRESETS.find(t => String(t.pct) === val) || TAX_PRESETS.find(t => t.label === selectEl.selectedOptions[0]?.dataset.label);
+  const chosen = TAX_PRESETS[parseInt(val, 10)];
   if (!chosen) return;
   onInput(key, 'tax_system', chosen.label);
   onInput(key, 'tax_pct', chosen.pct);
@@ -729,8 +731,18 @@ function compute(r) {
 
   const commission  = wp * com / 100;
   const wbClub      = wp * 0.95;
-  const usn         = wp * taxPct / 100;
   const drrRub      = wp * dp / 100;
+
+  let usn;
+  if (r.tax_system === USN_DR_LABEL) {
+    const ndsAmount = wp / 105 * 5;
+    const expenses  = logKtr + commission + totalCost + storage30 + drrRub;
+    const usnBase   = Math.max(0, wp - ndsAmount - expenses);
+    usn = usnBase * 0.15 + ndsAmount;
+  } else {
+    usn = wp * taxPct / 100;
+  }
+
   const brakCost    = totalCost * def / 100;
   const revenue     = wp - commission - logKtr - storage30 - usn - drrRub;
   const profit      = revenue - totalCost - brakCost;
@@ -998,7 +1010,7 @@ function rowHTML(r) {
         oninput="onInput('${key}','tax_pct',this.value)">%
     </div>
   </td>
-  <td class="comp cv-usn">${fmtR(c.usn)}</td>
+  <td class="comp cv-usn"${r.tax_system === USN_DR_LABEL ? ` title="НДС 5% от цены ВБ + 15% от (Цена − НДС − Лог − Комиссия − Себест/доп.расходы − Хранение − ДРР)"` : ''}>${fmtR(c.usn)}</td>
   <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
   <td class="comp cv-drrrub" title="Авто: Цена ВБ × ДРР%">${fmtR(c.drrRub)}</td>
   <td class="comp cv-stock" title="Авто: обновляется из WB">${(+r.stock||0).toLocaleString('ru-RU')}</td>
@@ -1296,8 +1308,8 @@ function applyBulk() {
       if (field === 'warehouse') {
         const sel = tr.querySelector('select[onchange*="warehouse"]'); if (sel) sel.value = val;
       } else if (isTax) {
-        const sel = tr.querySelector('.tax-sel'); if (sel) sel.value = TAX_PRESETS.find(t=>t.label===val)?.pct || '';
-        const inp = tr.querySelector('.tax-pct-inp'); if (inp && TAX_PRESETS.find(t=>t.label===val)) inp.value = TAX_PRESETS.find(t=>t.label===val).pct;
+        const sel = tr.querySelector('.tax-sel'); if (sel) sel.value = TAX_PRESETS.findIndex(t=>t.label===val);
+        const inp = tr.querySelector('.tax-pct-inp'); if (inp && preset) inp.value = preset.pct;
       } else {
         const inp = tr.querySelector(`input[oninput*="'${field}'"]`); if (inp) inp.value = val;
       }
