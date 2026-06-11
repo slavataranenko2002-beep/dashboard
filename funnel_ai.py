@@ -199,23 +199,6 @@ table.wh tr.total td{font-weight:700;background:var(--gray-light)}
 """
 
 
-def _mc_delta(cur, prev) -> str:
-    if not prev:
-        return '<div class="mc-delta dn">нет данных за пред. период</div>'
-    pct = (cur - prev) / prev * 100
-    arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "■")
-    cls = "du" if pct > 0 else ("dd" if pct < 0 else "dn")
-    return f'<div class="mc-delta {cls}">{arrow} {abs(pct):.0f}% к пред. периоду</div>'
-
-
-def _delta_text(cur, prev) -> str:
-    if not prev:
-        return "нет данных за пред. период"
-    pct = (cur - prev) / prev * 100
-    arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "■")
-    return f"{arrow} {abs(pct):.0f}% к пред. периоду"
-
-
 def _mc(label: str, val: str, delta_html: str = "") -> str:
     return (
         f'<div class="mc"><div class="mc-label">{escape(label)}</div>'
@@ -252,32 +235,7 @@ def render_brief_html(funnel: dict, slides: list[dict], own_data: dict) -> str:
     parts.append(f'<p class="subtitle">{subtitle}</p>')
     parts.append("<hr>")
 
-    funnel_data = own_data.get("funnel") or {}
-    price_data = own_data.get("price") or {}
-    stocks_data = own_data.get("stocks") or {}
     unit_data = own_data.get("unit_economics") or {}
-
-    if funnel_data or price_data:
-        parts.append('<div class="section-label">Свои данные · воронка продаж (30 дней)</div>')
-        cards = []
-        if funnel_data:
-            cards.append(_mc("Показы", fmt_int(funnel_data.get("views")),
-                              _mc_delta(funnel_data.get("views"), funnel_data.get("views_prev"))))
-            cards.append(_mc("CTR (корзина/показы)", fmt_pct(funnel_data.get("ctr_pct"))))
-            cards.append(_mc("Заказы", fmt_int(funnel_data.get("orders")),
-                              _mc_delta(funnel_data.get("orders"), funnel_data.get("orders_prev"))))
-            cards.append(_mc("% выкупа", fmt_pct(funnel_data.get("buyout_pct"))))
-            cards.append(_mc("Корзина", fmt_int(funnel_data.get("cart")),
-                              _mc_delta(funnel_data.get("cart"), funnel_data.get("cart_prev"))))
-            cards.append(_mc("Конв. в заказ из корзины", fmt_pct(funnel_data.get("cart_to_order_pct"))))
-            cards.append(_mc("Оборот заказов", fmt_money(funnel_data.get("order_sum"))))
-            cards.append(_mc("Выкупы", fmt_int(funnel_data.get("buyouts")),
-                              _mc_delta(funnel_data.get("buyouts"), funnel_data.get("buyouts_prev"))))
-        if price_data.get("discounted_price") is not None:
-            cards.append(_mc("Цена со скидкой", fmt_money(price_data.get("discounted_price"))))
-        if stocks_data.get("total") is not None:
-            cards.append(_mc("Остатки на складах", f"{fmt_int(stocks_data.get('total'))} шт"))
-        parts.append(f'<div class="metrics-grid">{"".join(cards)}</div>')
 
     if unit_data:
         parts.append('<div class="section-label">Юнит-экономика</div>')
@@ -292,23 +250,6 @@ def render_brief_html(funnel: dict, slides: list[dict], own_data: dict) -> str:
             cards.append(_mc("Остаток (юнит-эконом.)", f"{fmt_int(unit_data.get('stock'))} шт"))
         if cards:
             parts.append(f'<div class="metrics-grid">{"".join(cards)}</div>')
-
-    by_warehouse = stocks_data.get("by_warehouse") or []
-    if by_warehouse:
-        parts.append("<hr>")
-        parts.append('<div class="section-label">Остатки по складам</div>')
-        rows = "".join(
-            f'<tr><td>{escape(w["warehouse"])}</td><td class="num">{fmt_int(w["qty"])}</td></tr>'
-            for w in by_warehouse
-        )
-        total = fmt_int(stocks_data.get("total"))
-        parts.append(
-            '<div class="cmp-wrap"><table class="wh"><thead><tr>'
-            '<th>Склад</th><th style="text-align:right">Остаток, шт</th>'
-            f'</tr></thead><tbody>{rows}'
-            f'<tr class="total"><td>Итого</td><td class="num">{total}</td></tr>'
-            '</tbody></table></div>'
-        )
 
     parts.append("<hr>")
     parts.append('<div class="section-label">Контентная воронка · слайды карточки</div>')
@@ -382,25 +323,7 @@ def _brief_sections(funnel: dict, slides: list[dict], own_data: dict) -> dict:
         subtitle += f" · Артикул продавца: {seller_article}"
     subtitle += f" · Сформировано: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
 
-    funnel_data = own_data.get("funnel") or {}
-    price_data = own_data.get("price") or {}
-    stocks_data = own_data.get("stocks") or {}
     unit_data = own_data.get("unit_economics") or {}
-
-    funnel_rows = []
-    if funnel_data:
-        funnel_rows.append(("Показы", f"{fmt_int(funnel_data.get('views'))}  ({_delta_text(funnel_data.get('views'), funnel_data.get('views_prev'))})"))
-        funnel_rows.append(("CTR (корзина/показы)", fmt_pct(funnel_data.get("ctr_pct"))))
-        funnel_rows.append(("Корзина", f"{fmt_int(funnel_data.get('cart'))}  ({_delta_text(funnel_data.get('cart'), funnel_data.get('cart_prev'))})"))
-        funnel_rows.append(("Конв. в заказ из корзины", fmt_pct(funnel_data.get("cart_to_order_pct"))))
-        funnel_rows.append(("Заказы", f"{fmt_int(funnel_data.get('orders'))}  ({_delta_text(funnel_data.get('orders'), funnel_data.get('orders_prev'))})"))
-        funnel_rows.append(("Оборот заказов", fmt_money(funnel_data.get("order_sum"))))
-        funnel_rows.append(("Выкупы", f"{fmt_int(funnel_data.get('buyouts'))}  ({_delta_text(funnel_data.get('buyouts'), funnel_data.get('buyouts_prev'))})"))
-        funnel_rows.append(("% выкупа", fmt_pct(funnel_data.get("buyout_pct"))))
-    if price_data.get("discounted_price") is not None:
-        funnel_rows.append(("Цена со скидкой", fmt_money(price_data.get("discounted_price"))))
-    if stocks_data.get("total") is not None:
-        funnel_rows.append(("Остатки на складах", f"{fmt_int(stocks_data.get('total'))} шт"))
 
     unit_rows = []
     if unit_data.get("cost_price") is not None:
@@ -411,10 +334,6 @@ def _brief_sections(funnel: dict, slides: list[dict], own_data: dict) -> dict:
         unit_rows.append(("% выкупа (юнит-эконом.)", fmt_pct(unit_data.get("redemption_pct"))))
     if unit_data.get("stock") is not None:
         unit_rows.append(("Остаток (юнит-эконом.)", f"{fmt_int(unit_data.get('stock'))} шт"))
-
-    by_warehouse = stocks_data.get("by_warehouse") or []
-    warehouse_rows = [(str(w.get("warehouse", "")), fmt_int(w.get("qty"))) for w in by_warehouse]
-    warehouse_total = fmt_int(stocks_data.get("total")) if by_warehouse else None
 
     slide_items = []
     for s in slides:
@@ -431,10 +350,7 @@ def _brief_sections(funnel: dict, slides: list[dict], own_data: dict) -> dict:
     return {
         "title": title,
         "subtitle": subtitle,
-        "funnel_rows": funnel_rows,
         "unit_rows": unit_rows,
-        "warehouse_rows": warehouse_rows,
-        "warehouse_total": warehouse_total,
         "slides": slide_items,
         "ab_context": (funnel.get("ab_context") or "").strip(),
     }
@@ -486,33 +402,9 @@ def render_brief_pdf(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
         ]))
         return t
 
-    if sec["funnel_rows"]:
-        elements.append(Paragraph("Свои данные · воронка продаж (30 дней)", style_h2))
-        elements.append(metric_table(sec["funnel_rows"]))
-
     if sec["unit_rows"]:
         elements.append(Paragraph("Юнит-экономика", style_h2))
         elements.append(metric_table(sec["unit_rows"]))
-
-    if sec["warehouse_rows"]:
-        elements.append(Paragraph("Остатки по складам", style_h2))
-        data = [[Paragraph("Склад", style_bold), Paragraph("Остаток, шт", style_bold)]]
-        for wh, qty in sec["warehouse_rows"]:
-            data.append([Paragraph(escape(wh), style_body), Paragraph(escape(qty), style_body)])
-        data.append([Paragraph("Итого", style_bold), Paragraph(escape(sec["warehouse_total"] or ""), style_bold)])
-        t = Table(data, colWidths=[110 * mm, 60 * mm])
-        t.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
-            ("BACKGROUND", (0, 0), (-1, 0), BG),
-            ("BACKGROUND", (0, -1), (-1, -1), BG),
-            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        elements.append(t)
 
     elements.append(Paragraph("Контентная воронка · слайды карточки", style_h2))
     if sec["slides"]:
@@ -569,29 +461,9 @@ def render_brief_docx(funnel: dict, slides: list[dict], own_data: dict) -> bytes
             cells[1].text = value
         doc.add_paragraph()
 
-    if sec["funnel_rows"]:
-        doc.add_heading("Свои данные · воронка продаж (30 дней)", level=2)
-        add_table(sec["funnel_rows"])
-
     if sec["unit_rows"]:
         doc.add_heading("Юнит-экономика", level=2)
         add_table(sec["unit_rows"])
-
-    if sec["warehouse_rows"]:
-        doc.add_heading("Остатки по складам", level=2)
-        table = doc.add_table(rows=1, cols=2)
-        table.style = "Light Grid Accent 1"
-        hdr = table.rows[0].cells
-        hdr[0].text = "Склад"
-        hdr[1].text = "Остаток, шт"
-        for wh, qty in sec["warehouse_rows"]:
-            cells = table.add_row().cells
-            cells[0].text = wh
-            cells[1].text = qty
-        cells = table.add_row().cells
-        cells[0].text = "Итого"
-        cells[1].text = sec["warehouse_total"] or ""
-        doc.add_paragraph()
 
     doc.add_heading("Контентная воронка · слайды карточки", level=2)
     if sec["slides"]:
