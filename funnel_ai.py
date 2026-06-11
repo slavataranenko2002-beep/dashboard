@@ -11,8 +11,6 @@ from html import escape
 
 from anthropic import Anthropic
 
-from wb_report import fmt_int, fmt_money, fmt_pct, short_money
-
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_FUNNEL_MODEL", "claude-sonnet-4-5")
 
@@ -199,13 +197,6 @@ table.wh tr.total td{font-weight:700;background:var(--gray-light)}
 """
 
 
-def _mc(label: str, val: str, delta_html: str = "") -> str:
-    return (
-        f'<div class="mc"><div class="mc-label">{escape(label)}</div>'
-        f'<div class="mc-val">{escape(val)}</div>{delta_html}</div>'
-    )
-
-
 SLIDE_TYPE_LABELS = {
     "cover": "Обложка",
     "pain": "Боль",
@@ -235,23 +226,6 @@ def render_brief_html(funnel: dict, slides: list[dict], own_data: dict) -> str:
     parts.append(f'<p class="subtitle">{subtitle}</p>')
     parts.append("<hr>")
 
-    unit_data = own_data.get("unit_economics") or {}
-
-    if unit_data:
-        parts.append('<div class="section-label">Юнит-экономика</div>')
-        cards = []
-        if unit_data.get("cost_price") is not None:
-            cards.append(_mc("Себестоимость", fmt_money(unit_data.get("cost_price"))))
-        if unit_data.get("commission_pct") is not None:
-            cards.append(_mc("Комиссия WB", fmt_pct(unit_data.get("commission_pct"))))
-        if unit_data.get("redemption_pct") is not None:
-            cards.append(_mc("% выкупа (юнит-эконом.)", fmt_pct(unit_data.get("redemption_pct"))))
-        if unit_data.get("stock") is not None:
-            cards.append(_mc("Остаток (юнит-эконом.)", f"{fmt_int(unit_data.get('stock'))} шт"))
-        if cards:
-            parts.append(f'<div class="metrics-grid">{"".join(cards)}</div>')
-
-    parts.append("<hr>")
     parts.append('<div class="section-label">Контентная воронка · слайды карточки</div>')
     if slides:
         parts.append('<div class="tasks">')
@@ -323,18 +297,6 @@ def _brief_sections(funnel: dict, slides: list[dict], own_data: dict) -> dict:
         subtitle += f" · Артикул продавца: {seller_article}"
     subtitle += f" · Сформировано: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
 
-    unit_data = own_data.get("unit_economics") or {}
-
-    unit_rows = []
-    if unit_data.get("cost_price") is not None:
-        unit_rows.append(("Себестоимость", fmt_money(unit_data.get("cost_price"))))
-    if unit_data.get("commission_pct") is not None:
-        unit_rows.append(("Комиссия WB", fmt_pct(unit_data.get("commission_pct"))))
-    if unit_data.get("redemption_pct") is not None:
-        unit_rows.append(("% выкупа (юнит-эконом.)", fmt_pct(unit_data.get("redemption_pct"))))
-    if unit_data.get("stock") is not None:
-        unit_rows.append(("Остаток (юнит-эконом.)", f"{fmt_int(unit_data.get('stock'))} шт"))
-
     slide_items = []
     for s in slides:
         slide_type = s.get("slide_type", "")
@@ -351,7 +313,6 @@ def _brief_sections(funnel: dict, slides: list[dict], own_data: dict) -> dict:
         "title": title,
         "subtitle": subtitle,
         "photo_url": own_data.get("photo_url"),
-        "unit_rows": unit_rows,
         "slides": slide_items,
         "ab_context": (funnel.get("ab_context") or "").strip(),
     }
@@ -381,15 +342,13 @@ def render_brief_pdf(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
     from reportlab.lib.utils import ImageReader
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer
 
     if "Body" not in pdfmetrics.getRegisteredFontNames():
         pdfmetrics.registerFont(TTFont("Body", os.path.join(FONTS_DIR, "DejaVuSans.ttf")))
         pdfmetrics.registerFont(TTFont("Body-Bold", os.path.join(FONTS_DIR, "DejaVuSans-Bold.ttf")))
 
     GRAY = colors.HexColor("#5F5E5A")
-    BORDER = colors.HexColor("#D3D1C7")
-    BG = colors.HexColor("#F4F3F0")
 
     style_title = ParagraphStyle("title", fontName="Body-Bold", fontSize=16, leading=20)
     style_sub = ParagraphStyle("sub", fontName="Body", fontSize=9, leading=13, textColor=GRAY, spaceAfter=10)
@@ -412,24 +371,6 @@ def render_brief_pdf(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
         scale = min(max_w / iw, max_h / ih, 1)
         elements.append(Image(io.BytesIO(photo_bytes), width=iw * scale, height=ih * scale))
         elements.append(Spacer(1, 8))
-
-    def metric_table(rows, col_widths=(95 * mm, 75 * mm)):
-        data = [[Paragraph(escape(label), style_body), Paragraph(escape(value), style_bold)] for label, value in rows]
-        t = Table(data, colWidths=list(col_widths))
-        t.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
-            ("BACKGROUND", (0, 0), (0, -1), BG),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        return t
-
-    if sec["unit_rows"]:
-        elements.append(Paragraph("Юнит-экономика", style_h2))
-        elements.append(metric_table(sec["unit_rows"]))
 
     elements.append(Paragraph("Контентная воронка · слайды карточки", style_h2))
     if sec["slides"]:
@@ -481,18 +422,6 @@ def render_brief_docx(funnel: dict, slides: list[dict], own_data: dict) -> bytes
     if photo_bytes:
         doc.add_picture(io.BytesIO(photo_bytes), width=Inches(2))
 
-    def add_table(rows):
-        table = doc.add_table(rows=0, cols=2)
-        table.style = "Light Grid Accent 1"
-        for label, value in rows:
-            cells = table.add_row().cells
-            cells[0].text = label
-            cells[1].text = value
-        doc.add_paragraph()
-
-    if sec["unit_rows"]:
-        doc.add_heading("Юнит-экономика", level=2)
-        add_table(sec["unit_rows"])
 
     doc.add_heading("Контентная воронка · слайды карточки", level=2)
     if sec["slides"]:

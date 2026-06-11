@@ -3416,13 +3416,20 @@ def api_funnels_update(funnel_id):
     title  = d.get("title", funnel.get("title", ""))
     status = d.get("status", funnel.get("status", "draft"))
     slides = d.get("slides")
+    own_data = d.get("own_data")
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE content_funnels SET title=%s, status=%s, updated_at=NOW() WHERE id=%s",
-                    (title, status, funnel_id)
-                )
+                if own_data is not None:
+                    cur.execute(
+                        "UPDATE content_funnels SET title=%s, status=%s, own_data=%s, updated_at=NOW() WHERE id=%s",
+                        (title, status, json.dumps(own_data, ensure_ascii=False), funnel_id)
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE content_funnels SET title=%s, status=%s, updated_at=NOW() WHERE id=%s",
+                        (title, status, funnel_id)
+                    )
                 if slides is not None:
                     cur.execute("DELETE FROM funnel_slides WHERE funnel_id=%s", (funnel_id,))
                     for i, s in enumerate(slides):

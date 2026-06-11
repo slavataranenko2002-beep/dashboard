@@ -420,6 +420,13 @@ async function refreshOwnData(){
     if (!res.ok) { box.innerHTML = `<p class="muted">Ошибка: ${esc(data.error || '')}</p>`; return; }
     currentFunnel.own_data = data;
     box.innerHTML = renderOwnData(data);
+    await fetch('/api/funnels/' + currentFunnel.id, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title: currentFunnel.title, status: currentFunnel.status, own_data: data})
+    });
+    const item = funnels.find(x => x.id === currentFunnel.id);
+    if (item) { item.photo_url = data.photo_url; renderSidebar(); }
   } catch (e) {
     box.innerHTML = `<p class="muted">Ошибка: ${esc(String(e))}</p>`;
   }
