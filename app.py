@@ -262,6 +262,99 @@ def _ensure_design_tables():
 
 _ensure_design_tables()
 
+# ─── Создаём таблицы контентных воронок ──────────────────────────────────────
+def _ensure_funnel_tables():
+    """Идемпотентная миграция для раздела «Контент-воронки»."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                # Флаги доступа на users (как unit_access/unit_projects)
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS funnel_access BOOLEAN DEFAULT FALSE")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS funnel_projects TEXT[] DEFAULT '{}'::TEXT[]")
+
+                # Карточка воронки: одна на (project, wb_article, "версия")
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS content_funnels (
+                        id              SERIAL PRIMARY KEY,
+                        project         TEXT NOT NULL,
+                        wb_article      BIGINT NOT NULL,
+                        seller_article  TEXT DEFAULT '',
+                        title           TEXT DEFAULT '',
+                        status          TEXT NOT NULL DEFAULT 'draft',
+                            -- draft | generated | edited | sent_to_design | in_design | done
+                        own_data        JSONB,            -- снимок "своих данных" на момент генерации
+                        ab_context      TEXT DEFAULT '',  -- текстовая выжимка прошлых А/Б, ушедшая в промпт
+                        ai_model        TEXT DEFAULT '',
+                        ai_raw_response JSONB,            -- сырой ответ Claude (для отладки)
+                        design_task_id  INTEGER REFERENCES design_tasks(id) ON DELETE SET NULL,
+                        created_by      TEXT DEFAULT '',
+                        created_by_email TEXT DEFAULT '',
+                        created_at      TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at      TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_content_funnels_project_article ON content_funnels(project, wb_article)")
+
+                # Слайды — гибкая схема: {position, slide_type, pain_point, message, creative_notes}
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS funnel_slides (
+                        id              SERIAL PRIMARY KEY,
+                        funnel_id       INTEGER NOT NULL REFERENCES content_funnels(id) ON DELETE CASCADE,
+                        position        INTEGER NOT NULL DEFAULT 0,
+                        slide_type      TEXT NOT NULL DEFAULT '',
+                            -- черновая таксономия: cover | pain | solution | feature |
+                            -- social_proof | comparison | usage | cta (свободный текст пока)
+                        pain_point      TEXT DEFAULT '',
+                        message         TEXT DEFAULT '',
+                        creative_notes  TEXT DEFAULT '',
+                        created_at      TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at      TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_funnel_slides_funnel ON funnel_slides(funnel_id, position)")
+
+                # Загруженные отчёты по конкурентам (HTML/PDF/изображение/текст)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS funnel_competitor_files (
+                        id              SERIAL PRIMARY KEY,
+                        funnel_id       INTEGER NOT NULL REFERENCES content_funnels(id) ON DELETE CASCADE,
+                        name            TEXT NOT NULL,
+                        mime_type       TEXT DEFAULT '',
+                        file_data       BYTEA,
+                        extracted_text  TEXT DEFAULT '',   -- текст для промпта Claude
+                        created_by      TEXT DEFAULT '',
+                        created_at      TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_funnel_competitor_files_funnel ON funnel_competitor_files(funnel_id)")
+
+                # Результаты А/Б тестов — копятся со временем, привязаны к воронке (опционально)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS funnel_ab_results (
+                        id              SERIAL PRIMARY KEY,
+                        funnel_id       INTEGER REFERENCES content_funnels(id) ON DELETE SET NULL,
+                        project         TEXT NOT NULL,
+                        wb_article      BIGINT NOT NULL,
+                        variant_name    TEXT NOT NULL DEFAULT '',
+                        period_from     DATE,
+                        period_to       DATE,
+                        metrics_before  JSONB,   -- {ctr, cart_pct, orders, buyout_pct, ...}
+                        metrics_after   JSONB,
+                        winner          TEXT DEFAULT '',   -- 'before' | 'after' | 'tie' | свободный текст
+                        summary         TEXT DEFAULT '',   -- вывод, идёт в промпт следующих генераций
+                        created_by      TEXT DEFAULT '',
+                        created_by_email TEXT DEFAULT '',
+                        created_at      TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_funnel_ab_results_project_article ON funnel_ab_results(project, wb_article)")
+            conn.commit()
+        logging.info("Funnel tables ready.")
+    except Exception as e:
+        logging.error(f"_ensure_funnel_tables error: {e}")
+
+_ensure_funnel_tables()
+
 # ─── Google OAuth ─────────────────────────────────────────────────────────────
 oauth = OAuth(app)
 oauth.register(
@@ -303,6 +396,8 @@ def _make_session_dict(user: dict) -> dict:
         "design_access":      bool(user.get("design_access")),
         "unit_access":        bool(user.get("unit_access")),
         "unit_projects":      list(user.get("unit_projects") or []),
+        "funnel_access":      bool(user.get("funnel_access")),
+        "funnel_projects":    list(user.get("funnel_projects") or []),
     }
 
 def _design_projects(u) -> list | None:
@@ -336,6 +431,25 @@ def _unit_projects(u) -> list | None:
 def _check_unit_project(u, project: str) -> bool:
     """Проверяет, разрешён ли доступ пользователя к конкретному кабинету юнита."""
     allowed = _unit_projects(u)
+    if allowed is None:
+        return True  # admin/employee — все кабинеты
+    return project in allowed
+
+def _funnel_allowed(u) -> bool:
+    """Admin и employee всегда имеют доступ к воронкам; seller — только если funnel_access=True."""
+    if u["role"] in ("admin", "employee"):
+        return True
+    return bool(u.get("funnel_access"))
+
+def _funnel_projects(u) -> list | None:
+    """None = доступ ко всем кабинетам (admin/employee), list = только эти кабинеты."""
+    if u["role"] in ("admin", "employee"):
+        return None
+    return list(u.get("funnel_projects") or [])
+
+def _check_funnel_project(u, project: str) -> bool:
+    """Проверяет, разрешён ли доступ пользователя к конкретному кабинету воронок."""
+    allowed = _funnel_projects(u)
     if allowed is None:
         return True  # admin/employee — все кабинеты
     return project in allowed
@@ -489,6 +603,32 @@ def require_unit_api(f):
         return f(*args, **kwargs)
     return wrapper
 
+def require_funnel_page(f):
+    """Декоратор страницы /funnels: redirect если нет доступа."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        u = _session_user()
+        if not u:
+            return redirect("/auth/login")
+        if u["role"] == "pending":
+            return redirect("/")
+        if not _funnel_allowed(u):
+            return redirect("/")
+        return f(*args, **kwargs)
+    return wrapper
+
+def require_funnel_api(f):
+    """Декоратор API /api/funnels*: 403 если нет доступа."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        u = _session_user()
+        if not u:
+            return jsonify({"error": "unauthorized"}), 401
+        if not _funnel_allowed(u):
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
 def api_error(f):
     """Декоратор: ловит Exception → 500 JSON. Убирает try/except boilerplate."""
     @functools.wraps(f)
@@ -587,13 +727,15 @@ def api_admin_update_user(user_id):
     design_access = bool(d.get("design_access", False))
     unit_access    = bool(d.get("unit_access", False))
     unit_projects  = d.get("unit_projects", [])
+    funnel_access  = bool(d.get("funnel_access", False))
+    funnel_projects = d.get("funnel_projects", [])
     if role not in ("pending", "employee", "seller", "admin"):
         return jsonify({"error": "invalid role"}), 400
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE users SET role=%s, projects=%s, planfact_projects=%s, planfact_edit=%s, design_access=%s, unit_access=%s, unit_projects=%s WHERE id=%s RETURNING id",
-                (role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects, user_id),
+                "UPDATE users SET role=%s, projects=%s, planfact_projects=%s, planfact_edit=%s, design_access=%s, unit_access=%s, unit_projects=%s, funnel_access=%s, funnel_projects=%s WHERE id=%s RETURNING id",
+                (role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects, funnel_access, funnel_projects, user_id),
             )
             if not cur.fetchone():
                 return jsonify({"error": "not found"}), 404
@@ -2983,6 +3125,691 @@ def api_unit_auto_import():
         return jsonify({"inserted": len(to_insert), "rows": rows})
     except Exception as e:
         logging.error(f"unit-auto-import {project}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Контент-воронки ──────────────────────────────────────────────────────────
+@app.route("/funnels")
+@require_funnel_page
+def funnels_page():
+    u = _session_user()
+    allowed = _funnel_projects(u)
+    cabinets = WB_CABINETS if allowed is None else [c for c in WB_CABINETS if c in allowed]
+    return render_template("funnels.html", current_user=u, projects=cabinets, project_emoji=PROJECT_EMOJI)
+
+
+def serialize_funnel(f):
+    d = dict(f)
+    for key in ("created_at", "updated_at"):
+        if d.get(key):
+            d[key] = d[key].isoformat()
+    return d
+
+def serialize_slide(s):
+    d = dict(s)
+    for key in ("created_at", "updated_at"):
+        if d.get(key):
+            d[key] = d[key].isoformat()
+    return d
+
+def serialize_ab_result(r):
+    d = dict(r)
+    for key in ("created_at", "period_from", "period_to"):
+        if d.get(key):
+            d[key] = d[key].isoformat()
+    return d
+
+
+def _collect_own_data(project: str, wb_article: int) -> dict:
+    """Собирает «свои данные» по артикулу: юнит-экономика, воронка продаж, цена, остатки."""
+    from wb_api import WBClient, fmt_date, _funnel_metric, get_product_field
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT cost_price, wb_price, redemption_pct, commission_pct, stock,
+                       seller_article, brand
+                FROM unit_economics WHERE project=%s AND wb_article=%s LIMIT 1
+            """, (project, wb_article))
+            ue_row = cur.fetchone()
+    unit_economics = None
+    if ue_row:
+        unit_economics = {
+            k: (float(v) if hasattr(v, '__float__') and not isinstance(v, (int, bool)) else v)
+            for k, v in dict(ue_row).items()
+        }
+
+    today  = date.today()
+    d_from = fmt_date(today - timedelta(days=30))
+    d_to   = fmt_date(today)
+    p_from = fmt_date(today - timedelta(days=60))
+    p_to   = fmt_date(today - timedelta(days=31))
+
+    funnel_data: dict = {}
+    price_data: dict = {}
+    stocks_data: dict = {"total": 0, "by_warehouse": []}
+    try:
+        with WBClient(project) as wb:
+            funnel = wb.get_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to, nm_ids=[wb_article])
+            prices_raw = wb.get_goods_prices(nm_id=wb_article)
+            stocks_raw = wb.get_stocks(fmt_date(today - timedelta(days=180)))
+
+        products = (funnel.get("data") or {}).get("products") or []
+        product = next((p for p in products if get_product_field(p, "nmId") == wb_article), None)
+        if product:
+            views      = _funnel_metric(product, "openCount", "selected")
+            cart       = _funnel_metric(product, "cartCount", "selected")
+            orders     = _funnel_metric(product, "orderCount", "selected")
+            order_sum  = _funnel_metric(product, "orderSum", "selected")
+            buyouts    = _funnel_metric(product, "buyoutCount", "selected")
+            buyout_sum = _funnel_metric(product, "buyoutSum", "selected")
+            funnel_data = {
+                "title":              get_product_field(product, "title", ""),
+                "brand":              get_product_field(product, "brandName", ""),
+                "vendor_code":        get_product_field(product, "vendorCode", ""),
+                "views":              views,
+                "views_prev":         _funnel_metric(product, "openCount", "past"),
+                "cart":               cart,
+                "cart_prev":          _funnel_metric(product, "cartCount", "past"),
+                "orders":             orders,
+                "orders_prev":        _funnel_metric(product, "orderCount", "past"),
+                "order_sum":          order_sum,
+                "buyouts":            buyouts,
+                "buyouts_prev":       _funnel_metric(product, "buyoutCount", "past"),
+                "buyout_sum":         buyout_sum,
+                "ctr_pct":            round(cart / views * 100, 2) if views else 0,
+                "cart_to_order_pct":  round(orders / cart * 100, 2) if cart else 0,
+                "buyout_pct":         round(buyouts / orders * 100, 2) if orders else 0,
+            }
+
+        for g in prices_raw:
+            if g.get("nmID") == wb_article:
+                sizes = g.get("sizes") or []
+                if sizes:
+                    price_data = {
+                        "price":            sizes[0].get("price"),
+                        "discounted_price": sizes[0].get("discountedPrice"),
+                    }
+                break
+
+        by_wh: dict[str, int] = {}
+        for s in stocks_raw:
+            if s.get("nmId") != wb_article:
+                continue
+            wh = s.get("warehouseName") or "—"
+            qty = (s.get("quantity") or 0) + (s.get("inWayFromClient") or 0)
+            by_wh[wh] = by_wh.get(wh, 0) + qty
+        stocks_data = {
+            "total": sum(by_wh.values()),
+            "by_warehouse": [{"warehouse": k, "qty": v} for k, v in sorted(by_wh.items(), key=lambda x: -x[1])],
+        }
+    except Exception as e:
+        logging.error(f"_collect_own_data {project}/{wb_article}: {e}")
+
+    return {
+        "project":        project,
+        "wb_article":     wb_article,
+        "unit_economics": unit_economics,
+        "funnel":         funnel_data,
+        "price":          price_data,
+        "stocks":         stocks_data,
+        "collected_at":   datetime.utcnow().isoformat(),
+    }
+
+
+def _format_ab_context(ab_rows: list[dict]) -> str:
+    """Форматирует прошлые А/Б результаты в текст для промпта Claude."""
+    if not ab_rows:
+        return ""
+    lines = []
+    for r in ab_rows:
+        period = ""
+        if r.get("period_from") and r.get("period_to"):
+            period = f" ({r['period_from'].strftime('%d.%m')}–{r['period_to'].strftime('%d.%m')})"
+        winner  = r.get("winner") or "—"
+        summary = r.get("summary") or ""
+        lines.append(f"Вариант «{r.get('variant_name','')}»{period}: победитель — {winner}. {summary}".strip())
+    return "\n".join(lines)
+
+
+@app.route("/api/funnels")
+@require_funnel_api
+def api_funnels_list():
+    project = request.args.get("project", "")
+    if not project:
+        return jsonify({"error": "project required"}), 400
+    if not _check_funnel_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT cf.id, cf.project, cf.wb_article, cf.seller_article, cf.title,
+                           cf.status, cf.design_task_id, cf.created_by, cf.created_by_email,
+                           cf.created_at, cf.updated_at,
+                           COUNT(fs.id) AS slide_count
+                    FROM content_funnels cf
+                    LEFT JOIN funnel_slides fs ON fs.funnel_id = cf.id
+                    WHERE cf.project=%s
+                    GROUP BY cf.id
+                    ORDER BY cf.updated_at DESC
+                """, (project,))
+                return jsonify([serialize_funnel(dict(r)) for r in cur.fetchall()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels", methods=["POST"])
+@require_funnel_api
+def api_funnels_create():
+    u = _session_user()
+    d = request.json or {}
+    project = (d.get("project") or "").strip()
+    wb_article = d.get("wb_article")
+    if not project or not wb_article:
+        return jsonify({"error": "project and wb_article required"}), 400
+    if not _check_funnel_project(u, project):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO content_funnels (project, wb_article, seller_article, title, created_by, created_by_email)
+                    VALUES (%s,%s,%s,%s,%s,%s) RETURNING id
+                """, (project, wb_article, d.get("seller_article", ""), d.get("title", ""),
+                      _first_name(u.get("name", "")), u.get("email", "")))
+                new_id = cur.fetchone()["id"]
+            conn.commit()
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _load_funnel(funnel_id: int) -> dict | None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM content_funnels WHERE id=%s", (funnel_id,))
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
+@app.route("/api/funnels/own-data")
+@require_funnel_api
+def api_funnels_own_data():
+    project = request.args.get("project", "")
+    wb_article = request.args.get("wb_article", "")
+    if not project or not wb_article:
+        return jsonify({"error": "project and wb_article required"}), 400
+    if not _check_funnel_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        wb_article_int = int(wb_article)
+    except ValueError:
+        return jsonify({"error": "invalid wb_article"}), 400
+    try:
+        return jsonify(_collect_own_data(project, wb_article_int))
+    except Exception as e:
+        logging.error(f"funnels own-data {project}/{wb_article}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels/<int:funnel_id>")
+@require_funnel_api
+def api_funnels_detail(funnel_id):
+    u = _session_user()
+    funnel = _load_funnel(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM funnel_slides WHERE funnel_id=%s ORDER BY position ASC, id ASC",
+                    (funnel_id,)
+                )
+                slides = [serialize_slide(dict(r)) for r in cur.fetchall()]
+
+                cur.execute(
+                    "SELECT id, name, mime_type, extracted_text, created_by, created_at "
+                    "FROM funnel_competitor_files WHERE funnel_id=%s ORDER BY created_at ASC",
+                    (funnel_id,)
+                )
+                files = []
+                for r in cur.fetchall():
+                    rd = dict(r)
+                    if rd.get("created_at"):
+                        rd["created_at"] = rd["created_at"].isoformat()
+                    rd["has_text"] = bool(rd.pop("extracted_text", ""))
+                    files.append(rd)
+
+                cur.execute("""
+                    SELECT * FROM funnel_ab_results
+                    WHERE project=%s AND wb_article=%s
+                    ORDER BY created_at DESC
+                """, (funnel["project"], funnel["wb_article"]))
+                ab_results = [serialize_ab_result(dict(r)) for r in cur.fetchall()]
+
+        result = serialize_funnel(funnel)
+        result["slides"] = slides
+        result["competitor_files"] = files
+        result["ab_results"] = ab_results
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels/<int:funnel_id>", methods=["PUT"])
+@require_funnel_api
+def api_funnels_update(funnel_id):
+    u = _session_user()
+    funnel = _load_funnel(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    d = request.json or {}
+    title  = d.get("title", funnel.get("title", ""))
+    status = d.get("status", funnel.get("status", "draft"))
+    slides = d.get("slides")
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE content_funnels SET title=%s, status=%s, updated_at=NOW() WHERE id=%s",
+                    (title, status, funnel_id)
+                )
+                if slides is not None:
+                    cur.execute("DELETE FROM funnel_slides WHERE funnel_id=%s", (funnel_id,))
+                    for i, s in enumerate(slides):
+                        cur.execute("""
+                            INSERT INTO funnel_slides (funnel_id, position, slide_type, pain_point, message, creative_notes)
+                            VALUES (%s,%s,%s,%s,%s,%s)
+                        """, (funnel_id, s.get("position", i + 1), s.get("slide_type", ""),
+                              s.get("pain_point", ""), s.get("message", ""), s.get("creative_notes", "")))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels/<int:funnel_id>", methods=["DELETE"])
+@require_funnel_api
+def api_funnels_delete(funnel_id):
+    u = _session_user()
+    funnel = _load_funnel(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM content_funnels WHERE id=%s", (funnel_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Файлы конкурентов ──────────────────────────────────────────────────────
+@app.route("/api/funnels/<int:funnel_id>/competitor-files")
+@require_funnel_api
+def api_funnel_competitor_files_list(funnel_id):
+    u = _session_user()
+    funnel = _load_funnel(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, name, mime_type, extracted_text, created_by, created_at "
+                    "FROM funnel_competitor_files WHERE funnel_id=%s ORDER BY created_at ASC",
+                    (funnel_id,)
+                )
+                rows = []
+                for r in cur.fetchall():
+                    rd = dict(r)
+                    if rd.get("created_at"):
+                        rd["created_at"] = rd["created_at"].isoformat()
+                    rd["has_text"] = bool(rd.pop("extracted_text", ""))
+                    rows.append(rd)
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels/<int:funnel_id>/competitor-files", methods=["POST"])
+@require_funnel_api
+def api_funnel_competitor_files_add(funnel_id):
+    u = _session_user()
+    funnel = _load_funnel(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "no file"}), 400
+    name = f.filename
+    mime_type = f.content_type or "application/octet-stream"
+    file_data = f.read()
+    if len(file_data) > 20 * 1024 * 1024:
+        return jsonify({"error": "file too large (max 20MB)"}), 400
+    try:
+        from funnel_ai import extract_text_from_upload
+        extracted_text = extract_text_from_upload(name, mime_type, file_data)
+    except Exception as e:
+        logging.error(f"extract_text_from_upload {name}: {e}")
+        extracted_text = ""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO funnel_competitor_files (funnel_id, name, mime_type, file_data, extracted_text, created_by)
+                    VALUES (%s,%s,%s,%s,%s,%s) RETURNING id
+                """, (funnel_id, name, mime_type, file_data, extracted_text, u.get("name", "")))
+                new_id = cur.fetchone()["id"]
+            conn.commit()
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels/competitor-files/<int:file_id>/download")
+@require_funnel_api
+def api_funnel_competitor_file_download(file_id):
+    u = _session_user()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT cf.name, cf.mime_type, cf.file_data, fn.project
+                    FROM funnel_competitor_files cf
+                    JOIN content_funnels fn ON fn.id = cf.funnel_id
+                    WHERE cf.id=%s
+                """, (file_id,))
+                row = cur.fetchone()
+        if not row or not row["file_data"]:
+            return Response("Файл не найден", status=404)
+        if not _check_funnel_project(u, row["project"]):
+            return Response("Доступ запрещён", status=403)
+        raw = bytes(row["file_data"])
+        from urllib.parse import quote
+        encoded_name = quote(row["name"])
+        return Response(
+            raw,
+            mimetype=row["mime_type"] or "application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}",
+                "Content-Length": str(len(raw)),
+            }
+        )
+    except Exception as e:
+        return Response(f"Ошибка: {e}", status=500)
+
+
+@app.route("/api/funnels/competitor-files/<int:file_id>", methods=["DELETE"])
+@require_funnel_api
+def api_funnel_competitor_file_delete(file_id):
+    u = _session_user()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT fn.project FROM funnel_competitor_files cf
+                    JOIN content_funnels fn ON fn.id = cf.funnel_id
+                    WHERE cf.id=%s
+                """, (file_id,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "not found"}), 404
+                if not _check_funnel_project(u, row["project"]):
+                    return jsonify({"error": "forbidden"}), 403
+                cur.execute("DELETE FROM funnel_competitor_files WHERE id=%s", (file_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Генерация и отправка дизайнеру ─────────────────────────────────────────
+@app.route("/api/funnels/<int:funnel_id>/generate", methods=["POST"])
+@require_funnel_api
+def api_funnel_generate(funnel_id):
+    u = _session_user()
+    funnel = _load_funnel(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    d = request.json or {}
+    notes = (d.get("notes") or "").strip()
+    try:
+        own_data = _collect_own_data(funnel["project"], funnel["wb_article"])
+
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT extracted_text FROM funnel_competitor_files "
+                    "WHERE funnel_id=%s AND extracted_text != ''",
+                    (funnel_id,)
+                )
+                competitor_text = "\n\n---\n\n".join(r["extracted_text"] for r in cur.fetchall())
+
+                cur.execute("""
+                    SELECT variant_name, period_from, period_to, winner, summary
+                    FROM funnel_ab_results
+                    WHERE project=%s AND wb_article=%s
+                    ORDER BY created_at DESC LIMIT 10
+                """, (funnel["project"], funnel["wb_article"]))
+                ab_rows = [dict(r) for r in cur.fetchall()]
+
+        ab_context = _format_ab_context(ab_rows)
+
+        from funnel_ai import generate_funnel
+        slides, raw = generate_funnel(own_data, competitor_text, ab_context, notes)
+
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE content_funnels
+                    SET own_data=%s, ab_context=%s, ai_model=%s, ai_raw_response=%s,
+                        status='generated', updated_at=NOW()
+                    WHERE id=%s
+                """, (json.dumps(own_data, ensure_ascii=False), ab_context, raw.get("model", ""),
+                      json.dumps(raw, ensure_ascii=False), funnel_id))
+                cur.execute("DELETE FROM funnel_slides WHERE funnel_id=%s", (funnel_id,))
+                for s in slides:
+                    cur.execute("""
+                        INSERT INTO funnel_slides (funnel_id, position, slide_type, pain_point, message, creative_notes)
+                        VALUES (%s,%s,%s,%s,%s,%s)
+                    """, (funnel_id, s["position"], s["slide_type"], s["pain_point"],
+                          s["message"], s["creative_notes"]))
+            conn.commit()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        logging.error(f"funnel generate {funnel_id}: {e}")
+        return jsonify({"error": str(e)}), 502
+    return api_funnels_detail(funnel_id)
+
+
+@app.route("/api/funnels/<int:funnel_id>/send-to-design", methods=["POST"])
+@require_funnel_api
+def api_funnel_send_to_design(funnel_id):
+    u = _session_user()
+    funnel = _load_funnel(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    d = request.json or {}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM funnel_slides WHERE funnel_id=%s ORDER BY position ASC, id ASC",
+                    (funnel_id,)
+                )
+                slides = [dict(r) for r in cur.fetchall()]
+        if not slides:
+            return jsonify({"error": "у воронки нет слайдов — сначала сгенерируйте или заполните вручную"}), 400
+
+        own_data = funnel.get("own_data") or {}
+        from funnel_ai import render_brief_html
+        brief_html = render_brief_html(funnel, slides, own_data)
+
+        title = f"Контент-воронка: {funnel.get('seller_article') or funnel['wb_article']} ({funnel['project']})"
+        assignee_email = (d.get("assignee_email") or "").strip()
+        creator_email  = u.get("email", "")
+
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO design_tasks "
+                    "(title, description, priority, assignee_email, due, project, created_by, created_by_email) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                    (title,
+                     d.get("description") or f"Контентная воронка для артикула {funnel['wb_article']} — см. вложение.",
+                     d.get("priority", "med"), assignee_email, d.get("due") or None,
+                     funnel["project"], _first_name(u.get("name", "")), creator_email)
+                )
+                task_id = cur.fetchone()["id"]
+                cur.execute(
+                    "INSERT INTO design_attachments "
+                    "(task_id, attach_role, attach_type, name, mime_type, file_data, created_by) "
+                    "VALUES (%s,'brief','file',%s,%s,%s,%s)",
+                    (task_id, f"funnel_{funnel['wb_article']}_brief.html", "text/html",
+                     brief_html.encode("utf-8"), u.get("name", ""))
+                )
+                if assignee_email and assignee_email != creator_email:
+                    _push_notification(
+                        cur, assignee_email, "task_assigned",
+                        f"Новая задача дизайнеру: {title}",
+                        f"Назначена вам в проекте {funnel['project']}",
+                        task_id,
+                    )
+                cur.execute(
+                    "UPDATE content_funnels SET design_task_id=%s, status='sent_to_design', updated_at=NOW() WHERE id=%s",
+                    (task_id, funnel_id)
+                )
+            conn.commit()
+        return jsonify({"ok": True, "design_task_id": task_id})
+    except Exception as e:
+        logging.error(f"funnel send-to-design {funnel_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── А/Б тесты ───────────────────────────────────────────────────────────────
+@app.route("/api/funnels/ab-results")
+@require_funnel_api
+def api_funnel_ab_results_list():
+    project = request.args.get("project", "")
+    wb_article = request.args.get("wb_article", "")
+    if not project or not wb_article:
+        return jsonify({"error": "project and wb_article required"}), 400
+    if not _check_funnel_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        wb_article_int = int(wb_article)
+    except ValueError:
+        return jsonify({"error": "invalid wb_article"}), 400
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM funnel_ab_results
+                    WHERE project=%s AND wb_article=%s
+                    ORDER BY created_at DESC
+                """, (project, wb_article_int))
+                return jsonify([serialize_ab_result(dict(r)) for r in cur.fetchall()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels/ab-results", methods=["POST"])
+@require_funnel_api
+def api_funnel_ab_results_create():
+    u = _session_user()
+    d = request.json or {}
+    project = (d.get("project") or "").strip()
+    wb_article = d.get("wb_article")
+    if not project or not wb_article:
+        return jsonify({"error": "project and wb_article required"}), 400
+    if not _check_funnel_project(u, project):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO funnel_ab_results
+                        (funnel_id, project, wb_article, variant_name, period_from, period_to,
+                         metrics_before, metrics_after, winner, summary, created_by, created_by_email)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                """, (d.get("funnel_id") or None, project, wb_article, d.get("variant_name", ""),
+                      d.get("period_from") or None, d.get("period_to") or None,
+                      json.dumps(d.get("metrics_before") or {}, ensure_ascii=False),
+                      json.dumps(d.get("metrics_after") or {}, ensure_ascii=False),
+                      d.get("winner", ""), d.get("summary", ""),
+                      _first_name(u.get("name", "")), u.get("email", "")))
+                new_id = cur.fetchone()["id"]
+            conn.commit()
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels/ab-results/<int:result_id>", methods=["PUT"])
+@require_funnel_api
+def api_funnel_ab_results_update(result_id):
+    u = _session_user()
+    d = request.json or {}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT project FROM funnel_ab_results WHERE id=%s", (result_id,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "not found"}), 404
+                if not _check_funnel_project(u, row["project"]):
+                    return jsonify({"error": "forbidden"}), 403
+                cur.execute("""
+                    UPDATE funnel_ab_results SET
+                        variant_name=%s, period_from=%s, period_to=%s,
+                        metrics_before=%s, metrics_after=%s, winner=%s, summary=%s
+                    WHERE id=%s
+                """, (d.get("variant_name", ""), d.get("period_from") or None, d.get("period_to") or None,
+                      json.dumps(d.get("metrics_before") or {}, ensure_ascii=False),
+                      json.dumps(d.get("metrics_after") or {}, ensure_ascii=False),
+                      d.get("winner", ""), d.get("summary", ""), result_id))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funnels/ab-results/<int:result_id>", methods=["DELETE"])
+@require_funnel_api
+def api_funnel_ab_results_delete(result_id):
+    u = _session_user()
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT project FROM funnel_ab_results WHERE id=%s", (result_id,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "not found"}), 404
+                if not _check_funnel_project(u, row["project"]):
+                    return jsonify({"error": "forbidden"}), 403
+                cur.execute("DELETE FROM funnel_ab_results WHERE id=%s", (result_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 

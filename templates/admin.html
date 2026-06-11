@@ -154,6 +154,20 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
         {% endfor %}
       </div>
     </div>
+
+    <div class="ctrl-group" id="funnel-group-{{ u.id }}">
+      <label>🧩 Контент-воронки кабинеты</label>
+      <div class="proj-checks" id="funnel-checks-{{ u.id }}">
+        {% for c in wb_cabinets %}
+        <label class="proj-check {% if c in (u.funnel_projects or []) %}checked{% endif %}" style="border-color:{% if c in (u.funnel_projects or []) %}var(--blue){% else %}var(--border){% endif %}">
+          <input type="checkbox" value="{{ c }}"
+                 {% if c in (u.funnel_projects or []) %}checked{% endif %}
+                 onchange="toggleFunnelCheck(this)">
+          {{ c }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
   </div>
 
   {% if u.role not in ('pending', 'admin') %}
@@ -175,6 +189,12 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
              {% if u.unit_access %}checked{% endif %}
              style="accent-color:var(--blue);width:16px;height:16px">
       <span>💰 Доступ к разделу «Юнит-экономика»</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+      <input type="checkbox" id="funnel-access-{{ u.id }}"
+             {% if u.funnel_access %}checked{% endif %}
+             style="accent-color:var(--blue);width:16px;height:16px">
+      <span>🧩 Доступ к разделу «Контент-воронки»</span>
     </label>
   </div>
   {% endif %}
@@ -262,6 +282,11 @@ function toggleUnitCheck(el) {
   lbl.classList.toggle('checked', el.checked);
   lbl.style.borderColor = el.checked ? 'var(--blue)' : '';
 }
+function toggleFunnelCheck(el) {
+  const lbl = el.closest('.proj-check');
+  lbl.classList.toggle('checked', el.checked);
+  lbl.style.borderColor = el.checked ? 'var(--blue)' : '';
+}
 
 async function saveUser(userId) {
   const role = document.getElementById('role-' + userId).value;
@@ -277,6 +302,10 @@ async function saveUser(userId) {
   const unit_access = unitAccessEl ? unitAccessEl.checked : false;
   const unitChecks = document.querySelectorAll('#unit-checks-' + userId + ' input[type=checkbox]');
   const unit_projects = Array.from(unitChecks).filter(c => c.checked).map(c => c.value);
+  const funnelAccessEl = document.getElementById('funnel-access-' + userId);
+  const funnel_access = funnelAccessEl ? funnelAccessEl.checked : false;
+  const funnelChecks = document.querySelectorAll('#funnel-checks-' + userId + ' input[type=checkbox]');
+  const funnel_projects = Array.from(funnelChecks).filter(c => c.checked).map(c => c.value);
   const btn = document.querySelector('#card-' + userId + ' .btn-save');
   const msg = document.getElementById('msg-' + userId);
   btn.disabled = true;
@@ -284,7 +313,7 @@ async function saveUser(userId) {
     const r = await fetch('/api/admin/users/' + userId, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects}),
+      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects, funnel_access, funnel_projects}),
     });
     const data = await r.json();
     if (data.ok) {

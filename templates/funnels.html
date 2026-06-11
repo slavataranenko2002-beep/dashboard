@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Контент-воронки</title>
+<style>
+:root{
+  --bg:#0f1117;--bg2:#161b22;--bg3:#1c2333;--bg4:#21262d;
+  --border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;
+}
+[data-theme="light"]{
+  --bg:#f6f8fa;--bg2:#fff;--bg3:#f0f2f5;--bg4:#e8ebf0;
+  --border:#d0d7de;--text:#24292f;--text2:#656d76;--text3:#8c959f;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;height:100vh;display:flex;flex-direction:column}
+
+/* ── Header ── */
+.hdr{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;z-index:20}
+.hdr-logo{font-weight:700;font-size:15px}
+.hdr-sep{flex:1}
+.hbtn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;white-space:nowrap;text-decoration:none}
+.hbtn:hover{background:var(--bg4);color:var(--text)}
+.hbtn.act{background:var(--blue);color:#fff;border-color:var(--blue)}
+.theme-btn{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
+
+/* ── Toolbar ── */
+.toolbar{display:flex;align-items:center;gap:10px;padding:12px 20px;
+  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.toolbar-title{font-weight:600;font-size:14px;margin-right:4px}
+.proj-select{padding:6px 12px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;min-width:160px}
+.proj-select:focus{outline:none;border-color:var(--blue)}
+.btn-add{padding:6px 14px;border-radius:7px;border:none;background:var(--blue);
+  color:#fff;font-size:13px;font-weight:600;cursor:pointer}
+.btn-add:hover{opacity:.85}
+.btn-add:disabled{opacity:.4;cursor:default}
+.tsep{width:1px;height:22px;background:var(--border)}
+
+/* ── Layout ── */
+.layout{display:flex;flex:1;min-height:0}
+.sidebar{width:280px;border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column}
+.funnel-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;border-left:3px solid transparent}
+.funnel-item:hover{background:var(--bg3)}
+.funnel-item.active{background:rgba(88,166,255,.08);border-left-color:var(--blue)}
+.fi-title{font-size:13px;font-weight:600;margin-bottom:2px}
+.fi-meta{font-size:11px;color:var(--text2);margin-top:3px;display:flex;align-items:center;gap:6px}
+
+.detail{flex:1;overflow-y:auto;padding:20px}
+.placeholder{display:flex;align-items:center;justify-content:center;
+  padding:60px 24px;color:var(--text3);font-size:13px;text-align:center}
+
+/* ── Sections ── */
+.section{margin-bottom:24px}
+.section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.muted{color:var(--text2);font-size:12px}
+
+/* ── Form controls ── */
+input[type=text],input[type=number],input[type=email],input[type=date],select,textarea{
+  padding:6px 10px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px;font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
+textarea{width:100%;min-height:54px;resize:vertical;margin-bottom:8px;display:block}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text2)}
+
+/* ── Metrics grid ── */
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.mc{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.mc-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.mc-val{font-size:18px;font-weight:700}
+.mc-delta{font-size:11px;margin-top:3px}
+.mc-delta.up{color:var(--green)}.mc-delta.down{color:var(--red)}.mc-delta.flat{color:var(--text3)}
+
+/* ── Tables ── */
+.ab-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px}
+.ab-table th{font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;
+  letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;background:var(--bg3)}
+.ab-table td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle}
+.ab-table tr:last-child td{border-bottom:none}
+
+/* ── Pills / badges ── */
+.pill{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.pill-win{background:rgba(63,185,80,.15);color:var(--green)}
+.pill-lose{background:rgba(248,81,73,.15);color:var(--red)}
+.pill-tie{background:rgba(88,166,255,.15);color:var(--blue)}
+
+.status-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.st-draft{background:var(--bg4);color:var(--text2)}
+.st-generated{background:rgba(88,166,255,.15);color:var(--blue)}
+.st-edited{background:rgba(210,153,34,.15);color:var(--yellow)}
+.st-sent_to_design,.st-in_design{background:rgba(63,185,80,.15);color:var(--green)}
+.st-done{background:rgba(63,185,80,.25);color:var(--green)}
+
+/* ── File list ── */
+.file-item{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
+.file-item:last-child{border-bottom:none}
+.file-item span:first-child{flex:1}
+
+/* ── Slide cards ── */
+.slide-card{border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;background:var(--bg2)}
+.slide-card-hdr{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.slide-card-hdr input[type=number]{width:56px}
+.slide-card label{margin-bottom:3px}
+
+/* ── Modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;
+  align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  width:420px;max-width:96vw;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.5)}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-title{font-weight:600;font-size:15px}
+.modal-close{width:28px;height:28px;border-radius:5px;border:none;
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:16px}
+.modal-close:hover{color:var(--text)}
+.modal-body{padding:16px 20px;display:flex;flex-direction:column;gap:10px}
+.modal-ftr{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="hdr">
+  <span class="hdr-logo">📊 Дашборд</span>
+  <div class="hdr-sep"></div>
+  <a href="/" class="hbtn">📋 Задачи</a>
+  <a href="/plan-fact" class="hbtn">📊 План-Факт</a>
+  {% if current_user.unit_access or current_user.role in ('admin','employee') %}
+  <a href="/unit" class="hbtn">💰 Юнит</a>
+  {% endif %}
+  <a href="/funnels" class="hbtn act">🧩 Контент-воронки</a>
+  {% if current_user.role == 'admin' %}
+  <a href="/admin" class="hbtn">⚙️ Пользователи</a>
+  {% endif %}
+  <button class="hbtn theme-btn" onclick="toggleTheme()">🌙</button>
+  <a href="/auth/logout" class="hbtn" style="color:var(--red)">Выйти</a>
+</div>
+
+<div class="toolbar">
+  <span class="toolbar-title">🧩 Контент-воронки</span>
+  <div class="tsep"></div>
+  <select class="proj-select" id="projSelect" onchange="onProjectChange()">
+    <option value="">— выберите кабинет —</option>
+    {% for p in projects %}
+    <option value="{{ p }}">{{ project_emoji[p] }} {{ p }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn-add" id="btnNew" disabled onclick="openNewFunnel()">+ Новая воронка</button>
+</div>
+
+<div class="layout">
+  <div class="sidebar" id="sidebar">
+    <div class="placeholder">Выберите кабинет</div>
+  </div>
+  <div class="detail" id="detail">
+    <div class="placeholder">Выберите воронку слева или создайте новую</div>
+  </div>
+</div>
+
+<!-- New funnel modal -->
+<div class="modal-overlay" id="newFunnelOverlay" onclick="closeNewFunnel(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-hdr">
+      <span class="modal-title">Новая воронка</span>
+      <button class="modal-close" onclick="closeNewFunnel()">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>Артикул WB
+        <input id="newArticle" type="number" placeholder="например, 436521655">
+      </label>
+      <label>Артикул продавца (необязательно)
+        <input id="newSellerArticle" type="text">
+      </label>
+      <label>Название воронки (для себя, необязательно)
+        <input id="newTitle" type="text">
+      </label>
+    </div>
+    <div class="modal-ftr">
+      <button class="hbtn" onclick="closeNewFunnel()">Отмена</button>
+      <button class="btn-add" onclick="submitNewFunnel()">Создать</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentProject = '';
+let funnels = [];
+let currentFunnel = null;
+
+const STATUS_LABELS = {
+  draft: 'Черновик', generated: 'Сгенерировано', edited: 'Отредактировано',
+  sent_to_design: 'У дизайнера', in_design: 'В работе', done: 'Готово',
+};
+const STATUS_OPTIONS = [
+  ['draft', 'Черновик'], ['generated', 'Сгенерировано'], ['edited', 'Отредактировано'],
+  ['sent_to_design', 'Отправлено дизайнеру'], ['in_design', 'В работе у дизайнера'], ['done', 'Готово'],
+];
+const SLIDE_TYPES = [
+  ['cover', 'Обложка'], ['pain', 'Боль'], ['solution', 'Решение'], ['feature', 'УТП / Особенность'],
+  ['social_proof', 'Соц. доказательство'], ['comparison', 'Сравнение'], ['usage', 'Применение'],
+  ['cta', 'Призыв к действию'], ['', 'Другое'],
+];
+
+// ─── Утилиты ───────────────────────────────────────────────────────────────
+function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s){ return esc(s).replace(/"/g,'&quot;'); }
+function fmtInt(v){ return v == null ? '—' : Math.round(v).toLocaleString('ru-RU'); }
+function fmtMoney(v){ return v == null ? '—' : Math.round(v).toLocaleString('ru-RU') + ' ₽'; }
+function fmtPct(v, d=1){ return v == null ? '—' : Number(v).toFixed(d) + '%'; }
+function statusLabel(s){ return STATUS_LABELS[s] || s; }
+
+function toggleTheme(){
+  const t = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.body.dataset.theme = t;
+  localStorage.setItem('theme', t);
+}
+
+// ─── Кабинет / список воронок ────────────────────────────────────────────────
+function onProjectChange(){
+  currentProject = document.getElementById('projSelect').value;
+  document.getElementById('btnNew').disabled = !currentProject;
+  currentFunnel = null;
+  document.getElementById('detail').innerHTML = '<div class="placeholder">Выберите воронку слева или создайте новую</div>';
+  if (currentProject) {
+    loadFunnels();
+  } else {
+    document.getElementById('sidebar').innerHTML = '<div class="placeholder">Выберите кабинет</div>';
+  }
+}
+
+async function loadFunnels(){
+  const sb = document.getElementById('sidebar');
+  sb.innerHTML = '<div class="placeholder">Загрузка…</div>';
+  const res = await fetch('/api/funnels?project=' + encodeURIComponent(currentProject));
+  funnels = await res.json();
+  renderSidebar();
+}
+
+function renderSidebar(){
+  const sb = document.getElementById('sidebar');
+  if (!Array.isArray(funnels) || !funnels.length) {
+    sb.innerHTML = '<div class="placeholder">Пока нет воронок для этого кабинета</div>';
+    return;
+  }
+  sb.innerHTML = funnels.map(f => `
+    <div class="funnel-item ${currentFunnel && currentFunnel.id === f.id ? 'active' : ''}" onclick="selectFunnel(${f.id})">
+      <div class="fi-title">${esc(f.title || ('Артикул ' + f.wb_article))}</div>
+      <div class="fi-meta">${esc(String(f.wb_article))}${f.seller_article ? ' · ' + esc(f.seller_article) : ''}</div>
+      <div class="fi-meta"><span class="status-badge st-${f.status}">${statusLabel(f.status)}</span> · слайдов: ${f.slide_count}</div>
+    </div>
+  `).join('');
+}
+
+// ─── Новая воронка ────────────────────────────────────────────────────────────
+function openNewFunnel(){
+  document.getElementById('newArticle').value = '';
+  document.getElementById('newSellerArticle').value = '';
+  document.getElementById('newTitle').value = '';
+  document.getElementById('newFunnelOverlay').classList.add('open');
+}
+function closeNewFunnel(e){
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('newFunnelOverlay').classList.remove('open');
+}
+async function submitNewFunnel(){
+  const wb_article = parseInt(document.getElementById('newArticle').value, 10);
+  if (!wb_article) { alert('Укажите артикул WB'); return; }
+  const seller_article = document.getElementById('newSellerArticle').value.trim();
+  const title = document.getElementById('newTitle').value.trim();
+  const res = await fetch('/api/funnels', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project: currentProject, wb_article, seller_article, title}),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert('Ошибка: ' + (data.error || '')); return; }
+  closeNewFunnel();
+  await loadFunnels();
+  await selectFunnel(data.id);
+}
+
+// ─── Деталь воронки ───────────────────────────────────────────────────────────
+async function selectFunnel(id){
+  const res = await fetch('/api/funnels/' + id);
+  currentFunnel = await res.json();
+  renderSidebar();
+  renderDetail();
+}
+
+async function deleteFunnel(){
+  if (!confirm('Удалить воронку безвозвратно? Слайды и файлы конкурентов также будут удалены.')) return;
+  await fetch('/api/funnels/' + currentFunnel.id, {method: 'DELETE'});
+  currentFunnel = null;
+  document.getElementById('detail').innerHTML = '<div class="placeholder">Выберите воронку слева или создайте новую</div>';
+  await loadFunnels();
+}
+
+function renderDetail(){
+  const d = document.getElementById('detail');
+  d.innerHTML = `
+    ${renderHeader()}
+    <div class="section">
+      <div class="section-title">📊 Свои данные
+        <button class="hbtn" style="margin-left:auto" onclick="refreshOwnData()">🔄 Обновить из WB</button>
+      </div>
+      <div id="ownDataBox">${renderOwnData(currentFunnel.own_data)}</div>
+    </div>
+    <div class="section">
+      <div class="section-title">🏪 Конкуренты</div>
+      <div id="competitorBox">${renderCompetitorFiles()}</div>
+    </div>
+    <div class="section">
+      <div class="section-title">✨ Генерация воронки</div>
+      ${renderGeneration()}
+    </div>
+    <div class="section">
+      <div class="section-title">🧩 Слайды</div>
+      ${renderSlides()}
+    </div>
+    <div class="section">
+      <div class="section-title">📤 Отправить дизайнеру</div>
+      ${renderSendToDesign()}
+    </div>
+    <div class="section">
+      <div class="section-title">🧪 А/Б тесты</div>
+      ${renderAbResults()}
+    </div>
+  `;
+}
+
+function renderHeader(){
+  return `
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:20px">
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <input id="funnelTitle" type="text" value="${escAttr(currentFunnel.title || '')}"
+        placeholder="Название воронки" style="font-size:15px;font-weight:700;width:100%">
+      <div class="muted">Артикул WB: ${esc(String(currentFunnel.wb_article))}${currentFunnel.seller_article ? ' · Артикул продавца: ' + esc(currentFunnel.seller_article) : ''}</div>
+    </div>
+    <select id="funnelStatus">
+      ${STATUS_OPTIONS.map(([v,l]) => `<option value="${v}" ${currentFunnel.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+    </select>
+    <button class="hbtn" style="color:var(--red)" onclick="deleteFunnel()">🗑 Удалить</button>
+  </div>`;
+}
+
+// ─── Свои данные ──────────────────────────────────────────────────────────────
+function mc(label, val, deltaHtml){
+  return `<div class="mc"><div class="mc-label">${esc(label)}</div><div class="mc-val">${esc(val)}</div>${deltaHtml || ''}</div>`;
+}
+function deltaHtml(cur, prev){
+  if (cur == null || prev == null || prev === 0) return '<div class="mc-delta flat">нет данных за пред. период</div>';
+  const pct = (cur - prev) / prev * 100;
+  const cls = pct > 0 ? 'up' : (pct < 0 ? 'down' : 'flat');
+  const arrow = pct > 0 ? '▲' : (pct < 0 ? '▼' : '■');
+  return `<div class="mc-delta ${cls}">${arrow} ${Math.abs(pct).toFixed(0)}% к пред. периоду</div>`;
+}
+
+function renderOwnData(own){
+  if (!own || (!own.funnel && !own.price && !own.unit_economics)) {
+    return '<p class="muted">Нет данных. Нажмите «Обновить из WB».</p>';
+  }
+  const f = own.funnel || {};
+  const price = own.price || {};
+  const stocks = own.stocks || {};
+  const ue = own.unit_economics || {};
+  const cards = [];
+  if (own.funnel) {
+    cards.push(mc('Показы', fmtInt(f.views), deltaHtml(f.views, f.views_prev)));
+    cards.push(mc('CTR', fmtPct(f.ctr_pct)));
+    cards.push(mc('Корзина', fmtInt(f.cart), deltaHtml(f.cart, f.cart_prev)));
+    cards.push(mc('Конв. в заказ', fmtPct(f.cart_to_order_pct)));
+    cards.push(mc('Заказы', fmtInt(f.orders), deltaHtml(f.orders, f.orders_prev)));
+    cards.push(mc('% выкупа', fmtPct(f.buyout_pct)));
+    cards.push(mc('Выкупы', fmtInt(f.buyouts), deltaHtml(f.buyouts, f.buyouts_prev)));
+    cards.push(mc('Оборот заказов', fmtMoney(f.order_sum)));
+  }
+  if (price.discounted_price != null) cards.push(mc('Цена со скидкой', fmtMoney(price.discounted_price)));
+  if (stocks.total != null) cards.push(mc('Остатки', fmtInt(stocks.total) + ' шт'));
+  if (ue.cost_price != null) cards.push(mc('Себестоимость', fmtMoney(ue.cost_price)));
+  if (ue.commission_pct != null) cards.push(mc('Комиссия WB', fmtPct(ue.commission_pct)));
+
+  let html = `<div class="metrics-grid">${cards.join('')}</div>`;
+  if (own.collected_at) {
+    html += `<p class="muted" style="margin-top:8px">Обновлено: ${new Date(own.collected_at).toLocaleString('ru-RU')}</p>`;
+  }
+  if (stocks.by_warehouse && stocks.by_warehouse.length) {
+    html += '<div class="section-title" style="margin-top:14px">Остатки по складам</div>';
+    html += '<table class="ab-table"><thead><tr><th>Склад</th><th style="text-align:right">Остаток, шт</th></tr></thead><tbody>';
+    stocks.by_warehouse.forEach(w => {
+      html += `<tr><td>${esc(w.warehouse)}</td><td style="text-align:right">${fmtInt(w.qty)}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  }
+  return html;
+}
+
+async function refreshOwnData(){
+  const box = document.getElementById('ownDataBox');
+  box.innerHTML = '<p class="muted">Загрузка из WB…</p>';
+  try {
+    const res = await fetch(`/api/funnels/own-data?project=${encodeURIComponent(currentFunnel.project)}&wb_article=${currentFunnel.wb_article}`);
+    const data = await res.json();
+    if (!res.ok) { box.innerHTML = `<p class="muted">Ошибка: ${esc(data.error || '')}</p>`; return; }
+    currentFunnel.own_data = data;
+    box.innerHTML = renderOwnData(data);
+  } catch (e) {
+    box.innerHTML = `<p class="muted">Ошибка: ${esc(String(e))}</p>`;
+  }
+}
+
+// ─── Конкуренты ───────────────────────────────────────────────────────────────
+function renderCompetitorFiles(){
+  const files = currentFunnel.competitor_files || [];
+  let html = '';
+  if (!files.length) {
+    html += '<p class="muted">Файлы не загружены</p>';
+  } else {
+    files.forEach(f => {
+      html += `<div class="file-item">
+        <span>${f.has_text ? '📄' : '📎'} ${esc(f.name)}</span>
+        <span class="muted">${new Date(f.created_at).toLocaleDateString('ru-RU')}</span>
+        <a href="/api/funnels/competitor-files/${f.id}/download" class="hbtn" style="padding:2px 8px">⬇</a>
+        <button class="hbtn" style="padding:2px 8px;color:var(--red)" onclick="deleteCompetitorFile(${f.id})">✕</button>
+      </div>`;
+    });
+  }
+  html += `<div style="margin-top:10px">
+    <input type="file" id="competitorFileInput" multiple onchange="uploadCompetitorFiles()">
+  </div>
+  <p class="muted" style="margin-top:6px">HTML/PDF/TXT — текст автоматически извлекается и используется при генерации.</p>`;
+  return html;
+}
+
+async function uploadCompetitorFiles(){
+  const input = document.getElementById('competitorFileInput');
+  const files = Array.from(input.files || []);
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('file', file);
+    await fetch(`/api/funnels/${currentFunnel.id}/competitor-files`, {method: 'POST', body: fd});
+  }
+  await selectFunnel(currentFunnel.id);
+}
+async function deleteCompetitorFile(fileId){
+  if (!confirm('Удалить файл?')) return;
+  await fetch(`/api/funnels/competitor-files/${fileId}`, {method: 'DELETE'});
+  await selectFunnel(currentFunnel.id);
+}
+
+// ─── Генерация ────────────────────────────────────────────────────────────────
+function renderGeneration(){
+  let html = `<textarea id="genNotes" placeholder="Дополнительные пожелания для генерации (необязательно)"></textarea>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn-add" onclick="generateFunnel()">✨ Сгенерировать воронку</button>
+      <span id="genStatus" class="muted"></span>
+    </div>`;
+  if (currentFunnel.ai_model) {
+    html += `<p class="muted" style="margin-top:6px">Модель: ${esc(currentFunnel.ai_model)} · обновлено: ${currentFunnel.updated_at ? new Date(currentFunnel.updated_at).toLocaleString('ru-RU') : ''}</p>`;
+  }
+  return html;
+}
+
+async function generateFunnel(){
+  const notes = document.getElementById('genNotes').value;
+  const statusEl = document.getElementById('genStatus');
+  statusEl.textContent = 'Генерация… это может занять до 30 секунд';
+  try {
+    const res = await fetch(`/api/funnels/${currentFunnel.id}/generate`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({notes}),
+    });
+    const data = await res.json();
+    if (!res.ok) { statusEl.textContent = 'Ошибка: ' + (data.error || 'неизвестная ошибка'); return; }
+    currentFunnel = data;
+    await loadFunnels();
+    renderSidebar();
+    renderDetail();
+  } catch (e) {
+    statusEl.textContent = 'Ошибка: ' + e;
+  }
+}
+
+// ─── Слайды ───────────────────────────────────────────────────────────────────
+function slideCardHtml(s, i){
+  const typeOptions = SLIDE_TYPES.map(([v,l]) => `<option value="${v}" ${s.slide_type === v ? 'selected' : ''}>${l}</option>`).join('');
+  return `<div class="slide-card">
+    <div class="slide-card-hdr">
+      <span class="muted">№</span>
+      <input type="number" value="${s.position || i + 1}" oninput="updateSlide(${i},'position',this.value)">
+      <select onchange="updateSlide(${i},'slide_type',this.value)">${typeOptions}</select>
+      <button class="hbtn" style="margin-left:auto;color:var(--red)" onclick="removeSlide(${i})">✕ Удалить</button>
+    </div>
+    <label>Боль / возражение покупателя</label>
+    <textarea oninput="updateSlide(${i},'pain_point',this.value)">${esc(s.pain_point || '')}</textarea>
+    <label>Сообщение слайда</label>
+    <textarea oninput="updateSlide(${i},'message',this.value)">${esc(s.message || '')}</textarea>
+    <label>Креативные указания дизайнеру</label>
+    <textarea oninput="updateSlide(${i},'creative_notes',this.value)">${esc(s.creative_notes || '')}</textarea>
+  </div>`;
+}
+
+function renderSlides(){
+  const slides = currentFunnel.slides || [];
+  let html = `<div id="slidesList">${slides.map((s,i) => slideCardHtml(s,i)).join('')}</div>`;
+  html += `<div style="display:flex;gap:8px">
+    <button class="hbtn" onclick="addSlide()">+ Слайд</button>
+    <button class="btn-add" onclick="saveFunnel()">💾 Сохранить</button>
+  </div>`;
+  return html;
+}
+
+function redrawSlidesList(){
+  document.getElementById('slidesList').innerHTML = currentFunnel.slides.map((s,i) => slideCardHtml(s,i)).join('');
+}
+function updateSlide(i, field, val){
+  currentFunnel.slides[i][field] = (field === 'position') ? (parseInt(val, 10) || 0) : val;
+}
+function addSlide(){
+  currentFunnel.slides = currentFunnel.slides || [];
+  currentFunnel.slides.push({position: currentFunnel.slides.length + 1, slide_type: '', pain_point: '', message: '', creative_notes: ''});
+  redrawSlidesList();
+}
+function removeSlide(i){
+  currentFunnel.slides.splice(i, 1);
+  redrawSlidesList();
+}
+
+async function saveFunnel(){
+  const title = document.getElementById('funnelTitle').value;
+  const status = document.getElementById('funnelStatus').value;
+  const res = await fetch(`/api/funnels/${currentFunnel.id}`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({title, status, slides: currentFunnel.slides || []}),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    alert('Ошибка: ' + (data.error || ''));
+    return;
+  }
+  await loadFunnels();
+  await selectFunnel(currentFunnel.id);
+}
+
+// ─── Отправить дизайнеру ──────────────────────────────────────────────────────
+function renderSendToDesign(){
+  let html = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input id="assigneeEmail" type="email" placeholder="Email дизайнера" style="min-width:220px">
+    <input id="dueDate" type="date">
+    <select id="priority">
+      <option value="low">Низкий приоритет</option>
+      <option value="med" selected>Средний приоритет</option>
+      <option value="high">Высокий приоритет</option>
+    </select>
+    <button class="btn-add" onclick="sendToDesign()">📤 Отправить дизайнеру</button>
+  </div>`;
+  if (currentFunnel.design_task_id) {
+    html += `<p class="muted" style="margin-top:8px">Уже отправлено — задача №${currentFunnel.design_task_id} в разделе «🎨 Дизайнеру»</p>`;
+  }
+  if (!currentFunnel.slides || !currentFunnel.slides.length) {
+    html += '<p class="muted" style="margin-top:8px">Сначала сгенерируйте воронку или заполните слайды вручную.</p>';
+  }
+  return html;
+}
+
+async function sendToDesign(){
+  const assignee_email = document.getElementById('assigneeEmail').value.trim();
+  const due = document.getElementById('dueDate').value;
+  const priority = document.getElementById('priority').value;
+  const res = await fetch(`/api/funnels/${currentFunnel.id}/send-to-design`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({assignee_email, due: due || null, priority}),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert('Ошибка: ' + (data.error || '')); return; }
+  await loadFunnels();
+  await selectFunnel(currentFunnel.id);
+}
+
+// ─── А/Б тесты ────────────────────────────────────────────────────────────────
+function renderAbResults(){
+  const results = currentFunnel.ab_results || [];
+  let html = '<table class="ab-table"><thead><tr><th>Вариант</th><th>Период</th><th>Победитель</th><th>Вывод</th><th></th></tr></thead><tbody>';
+  if (!results.length) {
+    html += '<tr><td colspan="5" class="muted">Пока нет результатов</td></tr>';
+  } else {
+    results.forEach(r => {
+      const pillCls = r.winner === 'after' ? 'pill-win' : (r.winner === 'before' ? 'pill-lose' : 'pill-tie');
+      const period = [r.period_from, r.period_to].filter(Boolean).join(' – ');
+      html += `<tr>
+        <td>${esc(r.variant_name)}</td>
+        <td>${esc(period)}</td>
+        <td><span class="pill ${pillCls}">${esc(r.winner || '—')}</span></td>
+        <td>${esc(r.summary || '')}</td>
+        <td><button class="hbtn" style="color:var(--red)" onclick="deleteAbResult(${r.id})">✕</button></td>
+      </tr>`;
+    });
+  }
+  html += '</tbody></table>';
+  html += `<div style="display:flex;flex-direction:column;gap:8px;max-width:480px;margin-top:10px">
+    <input id="abVariant" type="text" placeholder="Название варианта (например, «Новая обложка»)">
+    <div style="display:flex;gap:8px">
+      <input id="abFrom" type="date" style="flex:1">
+      <input id="abTo" type="date" style="flex:1">
+    </div>
+    <select id="abWinner">
+      <option value="">— победитель —</option>
+      <option value="before">До (старый контент)</option>
+      <option value="after">После (новый контент)</option>
+      <option value="tie">Ничья</option>
+    </select>
+    <textarea id="abSummary" placeholder="Вывод / что изменилось — пойдёт в контекст следующих генераций"></textarea>
+    <button class="btn-add" onclick="addAbResult()">+ Добавить результат</button>
+  </div>`;
+  return html;
+}
+
+async function addAbResult(){
+  const body = {
+    funnel_id: currentFunnel.id,
+    project: currentFunnel.project,
+    wb_article: currentFunnel.wb_article,
+    variant_name: document.getElementById('abVariant').value,
+    period_from: document.getElementById('abFrom').value || null,
+    period_to: document.getElementById('abTo').value || null,
+    winner: document.getElementById('abWinner').value,
+    summary: document.getElementById('abSummary').value,
+  };
+  if (!body.variant_name.trim()) { alert('Укажите название варианта'); return; }
+  const res = await fetch('/api/funnels/ab-results', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+  });
+  if (!res.ok) { const data = await res.json(); alert('Ошибка: ' + (data.error || '')); return; }
+  await selectFunnel(currentFunnel.id);
+}
+async function deleteAbResult(id){
+  if (!confirm('Удалить запись?')) return;
+  await fetch(`/api/funnels/ab-results/${id}`, {method: 'DELETE'});
+  await selectFunnel(currentFunnel.id);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.body.dataset.theme = localStorage.getItem('theme') || 'dark';
+</script>
+</body>
+</html>
