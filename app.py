@@ -3639,6 +3639,74 @@ def api_funnel_generate(funnel_id):
     return api_funnels_detail(funnel_id)
 
 
+def _funnel_brief_inputs(funnel_id):
+    funnel = _load_funnel(funnel_id)
+    if not funnel:
+        return None, None, None
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM funnel_slides WHERE funnel_id=%s ORDER BY position ASC, id ASC",
+                (funnel_id,)
+            )
+            slides = [dict(r) for r in cur.fetchall()]
+    return funnel, slides, (funnel.get("own_data") or {})
+
+
+@app.route("/api/funnels/<int:funnel_id>/brief.pdf")
+@require_funnel_api
+def api_funnel_brief_pdf(funnel_id):
+    u = _session_user()
+    funnel, slides, own_data = _funnel_brief_inputs(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        from funnel_ai import render_brief_pdf
+        pdf_bytes = render_brief_pdf(funnel, slides, own_data)
+    except Exception as e:
+        logging.error(f"funnel brief.pdf {funnel_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+    from urllib.parse import quote
+    name = quote(f"funnel_{funnel['wb_article']}_brief.pdf")
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{name}",
+            "Content-Length": str(len(pdf_bytes)),
+        }
+    )
+
+
+@app.route("/api/funnels/<int:funnel_id>/brief.docx")
+@require_funnel_api
+def api_funnel_brief_docx(funnel_id):
+    u = _session_user()
+    funnel, slides, own_data = _funnel_brief_inputs(funnel_id)
+    if not funnel:
+        return jsonify({"error": "not found"}), 404
+    if not _check_funnel_project(u, funnel["project"]):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        from funnel_ai import render_brief_docx
+        docx_bytes = render_brief_docx(funnel, slides, own_data)
+    except Exception as e:
+        logging.error(f"funnel brief.docx {funnel_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+    from urllib.parse import quote
+    name = quote(f"funnel_{funnel['wb_article']}_brief.docx")
+    return Response(
+        docx_bytes,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{name}",
+            "Content-Length": str(len(docx_bytes)),
+        }
+    )
+
+
 @app.route("/api/funnels/<int:funnel_id>/send-to-design", methods=["POST"])
 @require_funnel_api
 def api_funnel_send_to_design(funnel_id):

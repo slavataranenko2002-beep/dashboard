@@ -208,6 +208,14 @@ def _mc_delta(cur, prev) -> str:
     return f'<div class="mc-delta {cls}">{arrow} {abs(pct):.0f}% к пред. периоду</div>'
 
 
+def _delta_text(cur, prev) -> str:
+    if not prev:
+        return "нет данных за пред. период"
+    pct = (cur - prev) / prev * 100
+    arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "■")
+    return f"{arrow} {abs(pct):.0f}% к пред. периоду"
+
+
 def _mc(label: str, val: str, delta_html: str = "") -> str:
     return (
         f'<div class="mc"><div class="mc-label">{escape(label)}</div>'
@@ -353,3 +361,260 @@ def render_brief_html(funnel: dict, slides: list[dict], own_data: dict) -> str:
 </div>
 </body>
 </html>"""
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Экспорт брифа в PDF / Word
+# ──────────────────────────────────────────────────────────────────────────────
+
+FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+
+
+def _brief_sections(funnel: dict, slides: list[dict], own_data: dict) -> dict:
+    """Общие данные для PDF/Word-брифа: заголовок, метрики, слайды."""
+    project = funnel.get("project", "")
+    wb_article = funnel.get("wb_article", "")
+    seller_article = funnel.get("seller_article") or ""
+    title = funnel.get("title") or f"Артикул {wb_article}"
+
+    subtitle = f"Кабинет: {project} · Артикул WB: {wb_article}"
+    if seller_article:
+        subtitle += f" · Артикул продавца: {seller_article}"
+    subtitle += f" · Сформировано: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+
+    funnel_data = own_data.get("funnel") or {}
+    price_data = own_data.get("price") or {}
+    stocks_data = own_data.get("stocks") or {}
+    unit_data = own_data.get("unit_economics") or {}
+
+    funnel_rows = []
+    if funnel_data:
+        funnel_rows.append(("Показы", f"{fmt_int(funnel_data.get('views'))}  ({_delta_text(funnel_data.get('views'), funnel_data.get('views_prev'))})"))
+        funnel_rows.append(("CTR (корзина/показы)", fmt_pct(funnel_data.get("ctr_pct"))))
+        funnel_rows.append(("Корзина", f"{fmt_int(funnel_data.get('cart'))}  ({_delta_text(funnel_data.get('cart'), funnel_data.get('cart_prev'))})"))
+        funnel_rows.append(("Конв. в заказ из корзины", fmt_pct(funnel_data.get("cart_to_order_pct"))))
+        funnel_rows.append(("Заказы", f"{fmt_int(funnel_data.get('orders'))}  ({_delta_text(funnel_data.get('orders'), funnel_data.get('orders_prev'))})"))
+        funnel_rows.append(("Оборот заказов", fmt_money(funnel_data.get("order_sum"))))
+        funnel_rows.append(("Выкупы", f"{fmt_int(funnel_data.get('buyouts'))}  ({_delta_text(funnel_data.get('buyouts'), funnel_data.get('buyouts_prev'))})"))
+        funnel_rows.append(("% выкупа", fmt_pct(funnel_data.get("buyout_pct"))))
+    if price_data.get("discounted_price") is not None:
+        funnel_rows.append(("Цена со скидкой", fmt_money(price_data.get("discounted_price"))))
+    if stocks_data.get("total") is not None:
+        funnel_rows.append(("Остатки на складах", f"{fmt_int(stocks_data.get('total'))} шт"))
+
+    unit_rows = []
+    if unit_data.get("cost_price") is not None:
+        unit_rows.append(("Себестоимость", fmt_money(unit_data.get("cost_price"))))
+    if unit_data.get("commission_pct") is not None:
+        unit_rows.append(("Комиссия WB", fmt_pct(unit_data.get("commission_pct"))))
+    if unit_data.get("redemption_pct") is not None:
+        unit_rows.append(("% выкупа (юнит-эконом.)", fmt_pct(unit_data.get("redemption_pct"))))
+    if unit_data.get("stock") is not None:
+        unit_rows.append(("Остаток (юнит-эконом.)", f"{fmt_int(unit_data.get('stock'))} шт"))
+
+    by_warehouse = stocks_data.get("by_warehouse") or []
+    warehouse_rows = [(str(w.get("warehouse", "")), fmt_int(w.get("qty"))) for w in by_warehouse]
+    warehouse_total = fmt_int(stocks_data.get("total")) if by_warehouse else None
+
+    slide_items = []
+    for s in slides:
+        slide_type = s.get("slide_type", "")
+        slide_items.append({
+            "position": s.get("position", ""),
+            "badge": SLIDE_TYPE_LABELS.get(slide_type, slide_type or "Слайд"),
+            "title": s.get("message") or s.get("pain_point") or "",
+            "pain_point": s.get("pain_point") or "",
+            "message": s.get("message") or "",
+            "creative_notes": s.get("creative_notes") or "",
+        })
+
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "funnel_rows": funnel_rows,
+        "unit_rows": unit_rows,
+        "warehouse_rows": warehouse_rows,
+        "warehouse_total": warehouse_total,
+        "slides": slide_items,
+        "ab_context": (funnel.get("ab_context") or "").strip(),
+    }
+
+
+def render_brief_pdf(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
+    """Бриф для дизайнера в виде PDF (reportlab + шрифт DejaVu Sans для кириллицы)."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    if "Body" not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont("Body", os.path.join(FONTS_DIR, "DejaVuSans.ttf")))
+        pdfmetrics.registerFont(TTFont("Body-Bold", os.path.join(FONTS_DIR, "DejaVuSans-Bold.ttf")))
+
+    GRAY = colors.HexColor("#5F5E5A")
+    BORDER = colors.HexColor("#D3D1C7")
+    BG = colors.HexColor("#F4F3F0")
+
+    style_title = ParagraphStyle("title", fontName="Body-Bold", fontSize=16, leading=20)
+    style_sub = ParagraphStyle("sub", fontName="Body", fontSize=9, leading=13, textColor=GRAY, spaceAfter=10)
+    style_h2 = ParagraphStyle("h2", fontName="Body-Bold", fontSize=10, leading=14, textColor=GRAY,
+                               spaceBefore=14, spaceAfter=6)
+    style_body = ParagraphStyle("body", fontName="Body", fontSize=9, leading=13)
+    style_bold = ParagraphStyle("bold", fontName="Body-Bold", fontSize=9, leading=13)
+    style_note = ParagraphStyle("note", fontName="Body", fontSize=8.5, leading=12.5, textColor=GRAY)
+
+    sec = _brief_sections(funnel, slides, own_data)
+    elements = [
+        Paragraph(escape(f"Бриф на контентную воронку · {sec['title']}"), style_title),
+        Paragraph(escape(sec["subtitle"]), style_sub),
+    ]
+
+    def metric_table(rows, col_widths=(95 * mm, 75 * mm)):
+        data = [[Paragraph(escape(label), style_body), Paragraph(escape(value), style_bold)] for label, value in rows]
+        t = Table(data, colWidths=list(col_widths))
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("BACKGROUND", (0, 0), (0, -1), BG),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        return t
+
+    if sec["funnel_rows"]:
+        elements.append(Paragraph("Свои данные · воронка продаж (30 дней)", style_h2))
+        elements.append(metric_table(sec["funnel_rows"]))
+
+    if sec["unit_rows"]:
+        elements.append(Paragraph("Юнит-экономика", style_h2))
+        elements.append(metric_table(sec["unit_rows"]))
+
+    if sec["warehouse_rows"]:
+        elements.append(Paragraph("Остатки по складам", style_h2))
+        data = [[Paragraph("Склад", style_bold), Paragraph("Остаток, шт", style_bold)]]
+        for wh, qty in sec["warehouse_rows"]:
+            data.append([Paragraph(escape(wh), style_body), Paragraph(escape(qty), style_body)])
+        data.append([Paragraph("Итого", style_bold), Paragraph(escape(sec["warehouse_total"] or ""), style_bold)])
+        t = Table(data, colWidths=[110 * mm, 60 * mm])
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("BACKGROUND", (0, 0), (-1, 0), BG),
+            ("BACKGROUND", (0, -1), (-1, -1), BG),
+            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(t)
+
+    elements.append(Paragraph("Контентная воронка · слайды карточки", style_h2))
+    if sec["slides"]:
+        for s in sec["slides"]:
+            elements.append(Paragraph(escape(f"Слайд {s['position']} · {s['badge']}"), style_bold))
+            if s["title"]:
+                elements.append(Paragraph(escape(s["title"]), style_body))
+            if s["pain_point"] and s["message"]:
+                elements.append(Paragraph(f"Боль/смысл: {escape(s['pain_point'])}", style_note))
+            if s["creative_notes"]:
+                note = escape(s["creative_notes"]).replace("\n", "<br/>")
+                elements.append(Paragraph(f"Креатив: {note}", style_note))
+            elements.append(Spacer(1, 8))
+    else:
+        elements.append(Paragraph("Слайды ещё не заполнены.", style_note))
+
+    if sec["ab_context"]:
+        elements.append(Paragraph("Учтены прошлые А/Б тесты", style_h2))
+        elements.append(Paragraph(escape(sec["ab_context"]).replace("\n", "<br/>"), style_note))
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
+        title=f"Бриф · {sec['title']}",
+    )
+    doc.build(elements)
+    return buf.getvalue()
+
+
+def render_brief_docx(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
+    """Бриф для дизайнера в виде Word-документа (.docx)."""
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+
+    GRAY = RGBColor(0x5F, 0x5E, 0x5A)
+    sec = _brief_sections(funnel, slides, own_data)
+
+    doc = Document()
+    doc.styles["Normal"].font.name = "Calibri"
+    doc.styles["Normal"].font.size = Pt(10)
+
+    doc.add_heading(f"Бриф на контентную воронку · {sec['title']}", level=1)
+    p = doc.add_paragraph(sec["subtitle"])
+    p.runs[0].font.size = Pt(9)
+    p.runs[0].font.color.rgb = GRAY
+
+    def add_table(rows):
+        table = doc.add_table(rows=0, cols=2)
+        table.style = "Light Grid Accent 1"
+        for label, value in rows:
+            cells = table.add_row().cells
+            cells[0].text = label
+            cells[1].text = value
+        doc.add_paragraph()
+
+    if sec["funnel_rows"]:
+        doc.add_heading("Свои данные · воронка продаж (30 дней)", level=2)
+        add_table(sec["funnel_rows"])
+
+    if sec["unit_rows"]:
+        doc.add_heading("Юнит-экономика", level=2)
+        add_table(sec["unit_rows"])
+
+    if sec["warehouse_rows"]:
+        doc.add_heading("Остатки по складам", level=2)
+        table = doc.add_table(rows=1, cols=2)
+        table.style = "Light Grid Accent 1"
+        hdr = table.rows[0].cells
+        hdr[0].text = "Склад"
+        hdr[1].text = "Остаток, шт"
+        for wh, qty in sec["warehouse_rows"]:
+            cells = table.add_row().cells
+            cells[0].text = wh
+            cells[1].text = qty
+        cells = table.add_row().cells
+        cells[0].text = "Итого"
+        cells[1].text = sec["warehouse_total"] or ""
+        doc.add_paragraph()
+
+    doc.add_heading("Контентная воронка · слайды карточки", level=2)
+    if sec["slides"]:
+        for s in sec["slides"]:
+            p = doc.add_paragraph()
+            p.add_run(f"Слайд {s['position']} · {s['badge']}").bold = True
+            if s["title"]:
+                doc.add_paragraph(s["title"])
+            if s["pain_point"] and s["message"]:
+                p = doc.add_paragraph(f"Боль/смысл: {s['pain_point']}")
+                p.runs[0].font.size = Pt(9)
+                p.runs[0].font.color.rgb = GRAY
+            if s["creative_notes"]:
+                p = doc.add_paragraph(f"Креатив: {s['creative_notes']}")
+                p.runs[0].font.size = Pt(9)
+                p.runs[0].font.color.rgb = GRAY
+    else:
+        doc.add_paragraph("Слайды ещё не заполнены.")
+
+    if sec["ab_context"]:
+        doc.add_heading("Учтены прошлые А/Б тесты", level=2)
+        doc.add_paragraph(sec["ab_context"])
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()

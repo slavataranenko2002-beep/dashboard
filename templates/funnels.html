@@ -324,6 +324,10 @@ function renderDetail(){
     <div class="section">
       <div class="section-title">📤 Отправить дизайнеру</div>
       ${renderSendToDesign()}
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <a class="hbtn" href="/api/funnels/${currentFunnel.id}/brief.pdf">📄 Скачать ТЗ (PDF)</a>
+        <a class="hbtn" href="/api/funnels/${currentFunnel.id}/brief.docx">📝 Скачать ТЗ (Word)</a>
+      </div>
     </div>
     <div class="section">
       <div class="section-title">🧪 А/Б тесты</div>
