@@ -350,10 +350,26 @@ def _brief_sections(funnel: dict, slides: list[dict], own_data: dict) -> dict:
     return {
         "title": title,
         "subtitle": subtitle,
+        "photo_url": own_data.get("photo_url"),
         "unit_rows": unit_rows,
         "slides": slide_items,
         "ab_context": (funnel.get("ab_context") or "").strip(),
     }
+
+
+def _fetch_image_bytes(url):
+    """Скачивает изображение товара для вставки в бриф. При ошибке — None (бриф без фото)."""
+    if not url:
+        return None
+    try:
+        import httpx
+        r = httpx.get(url, timeout=10.0, follow_redirects=True)
+        if r.is_success:
+            return r.content
+        logging.warning(f"funnel brief: photo {url} -> {r.status_code}")
+    except Exception as e:
+        logging.warning(f"funnel brief: photo fetch failed ({url}): {e}")
+    return None
 
 
 def render_brief_pdf(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
@@ -362,9 +378,10 @@ def render_brief_pdf(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
+    from reportlab.lib.utils import ImageReader
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     if "Body" not in pdfmetrics.getRegisteredFontNames():
         pdfmetrics.registerFont(TTFont("Body", os.path.join(FONTS_DIR, "DejaVuSans.ttf")))
@@ -387,6 +404,14 @@ def render_brief_pdf(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
         Paragraph(escape(f"Бриф на контентную воронку · {sec['title']}"), style_title),
         Paragraph(escape(sec["subtitle"]), style_sub),
     ]
+
+    photo_bytes = _fetch_image_bytes(sec.get("photo_url"))
+    if photo_bytes:
+        iw, ih = ImageReader(io.BytesIO(photo_bytes)).getSize()
+        max_w, max_h = 50 * mm, 50 * mm
+        scale = min(max_w / iw, max_h / ih, 1)
+        elements.append(Image(io.BytesIO(photo_bytes), width=iw * scale, height=ih * scale))
+        elements.append(Spacer(1, 8))
 
     def metric_table(rows, col_widths=(95 * mm, 75 * mm)):
         data = [[Paragraph(escape(label), style_body), Paragraph(escape(value), style_bold)] for label, value in rows]
@@ -438,7 +463,7 @@ def render_brief_pdf(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
 def render_brief_docx(funnel: dict, slides: list[dict], own_data: dict) -> bytes:
     """Бриф для дизайнера в виде Word-документа (.docx)."""
     from docx import Document
-    from docx.shared import Pt, RGBColor
+    from docx.shared import Inches, Pt, RGBColor
 
     GRAY = RGBColor(0x5F, 0x5E, 0x5A)
     sec = _brief_sections(funnel, slides, own_data)
@@ -451,6 +476,10 @@ def render_brief_docx(funnel: dict, slides: list[dict], own_data: dict) -> bytes
     p = doc.add_paragraph(sec["subtitle"])
     p.runs[0].font.size = Pt(9)
     p.runs[0].font.color.rgb = GRAY
+
+    photo_bytes = _fetch_image_bytes(sec.get("photo_url"))
+    if photo_bytes:
+        doc.add_picture(io.BytesIO(photo_bytes), width=Inches(2))
 
     def add_table(rows):
         table = doc.add_table(rows=0, cols=2)

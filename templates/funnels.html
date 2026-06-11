@@ -44,9 +44,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 /* ── Layout ── */
 .layout{display:flex;flex:1;min-height:0}
 .sidebar{width:280px;border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column}
-.funnel-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;border-left:3px solid transparent}
+.funnel-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;border-left:3px solid transparent;display:flex;gap:10px;align-items:center}
 .funnel-item:hover{background:var(--bg3)}
 .funnel-item.active{background:rgba(88,166,255,.08);border-left-color:var(--blue)}
+.fi-thumb{width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0}
+.fi-body{flex:1;min-width:0}
 .fi-title{font-size:13px;font-weight:600;margin-bottom:2px}
 .fi-meta{font-size:11px;color:var(--text2);margin-top:3px;display:flex;align-items:center;gap:6px}
 
@@ -249,9 +251,12 @@ function renderSidebar(){
   }
   sb.innerHTML = funnels.map(f => `
     <div class="funnel-item ${currentFunnel && currentFunnel.id === f.id ? 'active' : ''}" onclick="selectFunnel(${f.id})">
-      <div class="fi-title">${esc(f.title || ('Артикул ' + f.wb_article))}</div>
-      <div class="fi-meta">${esc(String(f.wb_article))}${f.seller_article ? ' · ' + esc(f.seller_article) : ''}</div>
-      <div class="fi-meta"><span class="status-badge st-${f.status}">${statusLabel(f.status)}</span> · слайдов: ${f.slide_count}</div>
+      ${f.photo_url ? `<img class="fi-thumb" src="${escAttr(f.photo_url)}" alt="">` : ''}
+      <div class="fi-body">
+        <div class="fi-title">${esc(f.title || ('Артикул ' + f.wb_article))}</div>
+        <div class="fi-meta">${esc(String(f.wb_article))}${f.seller_article ? ' · ' + esc(f.seller_article) : ''}</div>
+        <div class="fi-meta"><span class="status-badge st-${f.status}">${statusLabel(f.status)}</span> · слайдов: ${f.slide_count}</div>
+      </div>
     </div>
   `).join('');
 }

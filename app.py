@@ -3289,7 +3289,7 @@ def api_funnels_list():
                 cur.execute("""
                     SELECT cf.id, cf.project, cf.wb_article, cf.seller_article, cf.title,
                            cf.status, cf.design_task_id, cf.created_by, cf.created_by_email,
-                           cf.created_at, cf.updated_at,
+                           cf.created_at, cf.updated_at, cf.own_data->>'photo_url' AS photo_url,
                            COUNT(fs.id) AS slide_count
                     FROM content_funnels cf
                     LEFT JOIN funnel_slides fs ON fs.funnel_id = cf.id
