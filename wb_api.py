@@ -552,6 +552,41 @@ class WBClient:
 
         return result
 
+    def get_card_photo(self, nm_id: int) -> str | None:
+        """
+        Возвращает URL основного фото карточки товара (content-api), либо None.
+        Источник: POST /content/v2/get/cards/list, поиск по артикулу WB.
+        """
+        payload = {
+            "settings": {
+                "cursor": {"limit": 10},
+                "filter": {"withPhoto": -1, "textSearch": str(nm_id)},
+            }
+        }
+        r = self._request(
+            "POST",
+            f"{CONTENT_BASE}/content/v2/get/cards/list",
+            json=payload,
+        )
+        if not r.is_success:
+            logger.error(
+                f"[WB:{self.cabinet}] cards/list (photo) {r.status_code}: {r.text[:200]}"
+            )
+            return None
+        try:
+            data = r.json()
+        except Exception:
+            logger.error(f"[WB:{self.cabinet}] cards/list (photo): bad JSON")
+            return None
+
+        for card in data.get("cards") or []:
+            if card.get("nmID") == nm_id:
+                photos = card.get("photos") or []
+                if photos:
+                    photo = photos[0]
+                    return photo.get("big") or photo.get("c246x328") or photo.get("square") or photo.get("tm")
+        return None
+
     def raw_sales(self, date_from: str) -> dict:
         """Возвращает сырой ответ Statistics API (для отладки):
         {url, status, length, first_3, sample_keys, breakdown}."""

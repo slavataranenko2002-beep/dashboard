@@ -3188,11 +3188,13 @@ def _collect_own_data(project: str, wb_article: int) -> dict:
     funnel_data: dict = {}
     price_data: dict = {}
     stocks_data: dict = {"total": 0, "by_warehouse": []}
+    photo_url: str | None = None
     try:
         with WBClient(project) as wb:
             funnel = wb.get_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to, nm_ids=[wb_article])
             prices_raw = wb.get_goods_prices(nm_id=wb_article)
             stocks_raw = wb.get_stocks(fmt_date(today - timedelta(days=180)))
+            photo_url = wb.get_card_photo(wb_article)
 
         products = (funnel.get("data") or {}).get("products") or []
         product = next((p for p in products if get_product_field(p, "nmId") == wb_article), None)
@@ -3253,6 +3255,7 @@ def _collect_own_data(project: str, wb_article: int) -> dict:
         "funnel":         funnel_data,
         "price":          price_data,
         "stocks":         stocks_data,
+        "photo_url":      photo_url,
         "collected_at":   datetime.utcnow().isoformat(),
     }
 

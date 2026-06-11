@@ -364,7 +364,7 @@ function deltaHtml(cur, prev){
 }
 
 function renderOwnData(own){
-  if (!own || (!own.funnel && !own.price && !own.unit_economics)) {
+  if (!own || (!own.funnel && !own.price && !own.unit_economics && !own.photo_url)) {
     return '<p class="muted">Нет данных. Нажмите «Обновить из WB».</p>';
   }
   const f = own.funnel || {};
@@ -387,7 +387,11 @@ function renderOwnData(own){
   if (ue.cost_price != null) cards.push(mc('Себестоимость', fmtMoney(ue.cost_price)));
   if (ue.commission_pct != null) cards.push(mc('Комиссия WB', fmtPct(ue.commission_pct)));
 
-  let html = `<div class="metrics-grid">${cards.join('')}</div>`;
+  let html = '';
+  if (own.photo_url) {
+    html += `<div style="margin-bottom:12px"><img src="${escAttr(own.photo_url)}" alt="Фото товара" style="max-width:160px;max-height:160px;border-radius:8px;border:1px solid var(--border);object-fit:cover"></div>`;
+  }
+  html += `<div class="metrics-grid">${cards.join('')}</div>`;
   if (own.collected_at) {
     html += `<p class="muted" style="margin-top:8px">Обновлено: ${new Date(own.collected_at).toLocaleString('ru-RU')}</p>`;
   }
