@@ -72,18 +72,19 @@ thead tr.col-row th.comp{background:var(--comp-bg);color:var(--text3)}
 .sc1{position:sticky;left:36px; width:36px; min-width:36px; z-index:4;background:var(--bg2)}
 .sc2{position:sticky;left:72px; width:150px;min-width:150px;z-index:4;background:var(--bg2)}
 .sc3{position:sticky;left:222px;width:100px;min-width:100px;z-index:4;background:var(--bg2)}
-thead .sc0,thead .sc1,thead .sc2,thead .sc3{z-index:14;background:inherit}
+.sc4{position:sticky;left:322px;width:120px;min-width:120px;z-index:4;background:var(--bg2)}
+thead .sc0,thead .sc1,thead .sc2,thead .sc3,thead .sc4{z-index:14;background:inherit}
 /* Ячейки sc в строке col-row должны быть выше обычных (горизонтальный + вертикальный sticky) */
 thead tr.col-row th.sc0,thead tr.col-row th.sc1,
-thead tr.col-row th.sc2,thead tr.col-row th.sc3{z-index:15!important}
-tbody tr:hover .sc0,tbody tr:hover .sc1,tbody tr:hover .sc2,tbody tr:hover .sc3{background:rgba(15,30,48,1)}
+thead tr.col-row th.sc2,thead tr.col-row th.sc3,thead tr.col-row th.sc4{z-index:15!important}
+tbody tr:hover .sc0,tbody tr:hover .sc1,tbody tr:hover .sc2,tbody tr:hover .sc3,tbody tr:hover .sc4{background:rgba(15,30,48,1)}
 
-tfoot .sc0,tfoot .sc1,tfoot .sc2,tfoot .sc3{background:var(--bg4);z-index:4}
-[data-theme="light"] .sc0,[data-theme="light"] .sc1,[data-theme="light"] .sc2,[data-theme="light"] .sc3{background:var(--bg2)}
+tfoot .sc0,tfoot .sc1,tfoot .sc2,tfoot .sc3,tfoot .sc4{background:var(--bg4);z-index:4}
+[data-theme="light"] .sc0,[data-theme="light"] .sc1,[data-theme="light"] .sc2,[data-theme="light"] .sc3,[data-theme="light"] .sc4{background:var(--bg2)}
 [data-theme="light"] tbody tr:hover .sc0,[data-theme="light"] tbody tr:hover .sc1,
-[data-theme="light"] tbody tr:hover .sc2,[data-theme="light"] tbody tr:hover .sc3{background:#edf2fb}
+[data-theme="light"] tbody tr:hover .sc2,[data-theme="light"] tbody tr:hover .sc3,[data-theme="light"] tbody tr:hover .sc4{background:#edf2fb}
 /* Shadow to show scroll */
-.sc3::after{content:'';position:absolute;top:0;right:-8px;bottom:0;width:8px;
+.sc4::after{content:'';position:absolute;top:0;right:-8px;bottom:0;width:8px;
   background:linear-gradient(to right,rgba(0,0,0,.15),transparent);pointer-events:none}
 
 /* ── Body rows ── */
@@ -95,6 +96,8 @@ tbody tr:last-child{border-bottom:none}
 td.art-cell{padding:5px 8px;font-size:12px;vertical-align:middle;cursor:text;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 td.art-cell:hover{background:rgba(88,166,255,.05)}
+td.art-cell.readonly{cursor:default}
+td.art-cell.readonly:hover{background:transparent}
 td.art-cell input{width:100%;border:none;background:transparent;color:var(--text);
   font-size:12px;font-family:inherit;padding:0;outline:none}
 
@@ -106,6 +109,7 @@ td.ed input,td.ed select{
   text-align:right;min-width:70px}
 td.ed input[type=text],td.ed input.art{text-align:left;min-width:100px}
 td.ed select{min-width:130px;cursor:pointer}
+td.ed select.status-sel{min-width:0;text-align:left;font-size:11px}
 td.ed input:focus,td.ed select:focus{
   outline:none;background:rgba(88,166,255,.1);border:1px solid var(--blue)}
 td.ed input:hover,td.ed select:hover{background:var(--bg3)}
@@ -124,9 +128,9 @@ td.cb-cell,th.cb-cell{width:32px;padding:3px 6px;text-align:center;vertical-alig
 td.cb-cell input[type=checkbox],th.cb-cell input[type=checkbox]{
   width:14px;height:14px;accent-color:var(--blue);cursor:pointer}
 tbody tr.selected{background:rgba(88,166,255,.14)!important}
-tbody tr.selected .sc0,tbody tr.selected .sc1,tbody tr.selected .sc2,tbody tr.selected .sc3{background:rgb(20,54,105)!important}
+tbody tr.selected .sc0,tbody tr.selected .sc1,tbody tr.selected .sc2,tbody tr.selected .sc3,tbody tr.selected .sc4{background:rgb(20,54,105)!important}
 [data-theme="light"] tbody tr.selected{background:rgba(59,130,246,.12)!important}
-[data-theme="light"] tbody tr.selected .sc0,[data-theme="light"] tbody tr.selected .sc1,[data-theme="light"] tbody tr.selected .sc2,[data-theme="light"] tbody tr.selected .sc3{background:rgb(186,220,255)!important}
+[data-theme="light"] tbody tr.selected .sc0,[data-theme="light"] tbody tr.selected .sc1,[data-theme="light"] tbody tr.selected .sc2,[data-theme="light"] tbody tr.selected .sc3,[data-theme="light"] tbody tr.selected .sc4{background:rgb(186,220,255)!important}
 
 /* Bulk edit bar */
 .bulk-bar{display:none;align-items:center;gap:10px;padding:8px 20px;
@@ -304,6 +308,7 @@ tfoot td.fcomp{background:var(--comp-bg)}
   <select class="bulk-field" id="bulkField" onchange="onBulkFieldChange()">
     <optgroup label="Идентификация">
       <option value="brand">Бренд</option>
+      <option value="status">Статус</option>
     </optgroup>
     <optgroup label="Себестоимость">
       <option value="cost_price">Себест. ₽</option>
@@ -338,6 +343,7 @@ tfoot td.fcomp{background:var(--comp-bg)}
     <option value="">— склад —</option>
   </select>
   <select class="bulk-val" id="bulkTaxSysVal" style="display:none"></select>
+  <select class="bulk-val" id="bulkStatusVal" style="display:none"></select>
   <input class="bulk-val" id="bulkTextVal" type="text" placeholder="Значение" style="display:none">
   <input class="bulk-val" id="bulkNumVal" type="number" step="any" placeholder="Значение">
   <button class="bulk-apply" onclick="applyBulk()">Применить</button>
@@ -491,6 +497,50 @@ function onTaxSelect(key, selectEl) {
   if (inp) inp.value = chosen.pct;
 }
 
+// ─── Статусы ───────────────────────────────────────────────────────────────────
+const STATUS_PRESETS_DEFAULT = ['Активен', 'Приостановлен', 'Архив', 'Тест'];
+function loadStatusPresets() {
+  try { return JSON.parse(localStorage.getItem('statusPresets') || 'null') || STATUS_PRESETS_DEFAULT; }
+  catch { return STATUS_PRESETS_DEFAULT; }
+}
+function saveStatusPresets(list) { localStorage.setItem('statusPresets', JSON.stringify(list)); }
+let STATUS_PRESETS = loadStatusPresets();
+
+function statusOptions(selected) {
+  const opts = STATUS_PRESETS.map(s =>
+    `<option value="${esc(s)}" ${s===selected?'selected':''}>${esc(s)}</option>`
+  ).join('');
+  return `<option value="" ${!selected?'selected':''}>—</option>` + opts + `<option value="__custom__">+ Своя…</option>`;
+}
+
+function onStatusSelect(key, selectEl) {
+  const val = selectEl.value;
+  if (val === '__custom__') {
+    const label = prompt('Название статуса:');
+    if (!label) { selectEl.value = ''; return; }
+    if (!STATUS_PRESETS.includes(label)) {
+      STATUS_PRESETS.push(label);
+      saveStatusPresets(STATUS_PRESETS);
+      initBulkStatus();
+    }
+    onInput(key, 'status', label);
+    selectEl.outerHTML = `<select class="status-sel" onchange="onStatusSelect('${key}',this)">${statusOptions(label)}</select>`;
+    refreshAllStatusSelects(key);
+    return;
+  }
+  onInput(key, 'status', val);
+}
+
+function refreshAllStatusSelects(skipKey) {
+  rows.forEach(r => {
+    if (r._key === skipKey) return;
+    const tr = document.querySelector(`tr[data-key="${r._key}"]`);
+    if (!tr) return;
+    const sel = tr.querySelector('.status-sel');
+    if (sel) sel.innerHTML = statusOptions(r.status || '');
+  });
+}
+
 let rows = [];       // [{id, _key, _dirty, project, ...fields}]
 let currentProject = '';
 let saveTimers = {};
@@ -508,6 +558,7 @@ let _fltOpenCol = null, _fltTempVals = null;
 const COL_DEFS = [
   {k:'seller_article',   get:r=>r.seller_article||'',                         type:'text'},
   {k:'wb_article',       get:r=>String(r.wb_article||''),                     type:'text'},
+  {k:'status',           get:r=>r.status||'',                                  type:'text'},
   {k:'cost_price',       get:r=>+r.cost_price||0,                             type:'num'},
   {k:'packaging',        get:r=>+r.packaging||0,                              type:'num'},
   {k:'logistics_to_wb',  get:r=>+r.logistics_to_wb||0,                        type:'num'},
@@ -910,7 +961,7 @@ function updateComputedCells(key) {
 function makeEmptyRow(overrides = {}) {
   return {
     id: null, _key: newKey(), _dirty: true, project: currentProject,
-    brand: currentProject, wb_article: '', seller_article: '',
+    brand: currentProject, wb_article: '', seller_article: '', status: '',
     cost_price: 0, logistics_to_wb: 0, packaging: 0, overhead: 0, defect_pct: 0,
     width_cm: null, length_cm: null, height_cm: null, liters: null,
     redemption_pct: 100, warehouse: '', irp: 1.0, il: 1, logistics_ktr: null,
@@ -984,7 +1035,10 @@ function rowHTML(r) {
     <button class="del-btn" data-id="${r.id||''}" onclick="deleteRow('${key}',${r.id||'null'})">✕</button>
   </td>
   <td class="art-cell sc2" onclick="editArt('${key}','seller_article',this)" title="Кликните для редактирования">${esc(r.seller_article||'')||'<em style="color:var(--text3);font-style:normal">—</em>'}</td>
-  <td class="art-cell sc3" onclick="editArt('${key}','wb_article',this)" title="Кликните для редактирования">${esc(String(r.wb_article||''))||'<em style="color:var(--text3);font-style:normal">—</em>'}</td>
+  <td class="art-cell sc3 readonly" title="WB артикул нельзя изменить">${esc(String(r.wb_article||''))||'<em style="color:var(--text3);font-style:normal">—</em>'}</td>
+  <td class="ed sc4" style="padding:3px 4px">
+    <select class="status-sel" onchange="onStatusSelect('${key}',this)">${statusOptions(r.status||'')}</select>
+  </td>
   <td class="ed">${n(r.cost_price,'cost_price')}</td>
   <td class="ed">${n(r.packaging,'packaging')}</td>
   <td class="ed">${n(r.logistics_to_wb,'logistics_to_wb')}</td>
@@ -1061,7 +1115,7 @@ function renderContent(state) {
     <tr class="grp-row">
       <th class="cb-cell sc0"></th>
       <th class="sc1"></th>
-      <th colspan="2" class="left sc2">Идентификация</th>
+      <th colspan="3" class="left sc2">Идентификация</th>
       <th colspan="5">Себестоимость</th>
       <th class="grp-comp">↓</th>
       <th colspan="6">Параметры ВБ</th>
@@ -1074,6 +1128,7 @@ function renderContent(state) {
       <th class="left sc1"></th>
       ${thSF('seller_article','Арт. продавца','left sc2')}
       ${thSF('wb_article','WB арт.','left sc3')}
+      ${thSF('status','Статус','left sc4')}
       ${thSF('cost_price','Себест.₽')}
       ${thSF('packaging','Упак.₽')}
       ${thSF('logistics_to_wb','Лог.ВБ₽')}
@@ -1154,14 +1209,14 @@ function updateFooter() {
   const avgRoi    = avg(sumRoi);
   const avgBM     = avg(sumBatchMargin);
 
-  // Колонки: sc0 sc1 sc2+sc3(colspan=2) | cp pkg ltwb ovh def | totalCost
+  // Колонки: sc0 sc1 sc2+sc3+sc4(colspan=3) | cp pkg ltwb ovh def | totalCost
   //          | lit red wh irp il | logKtr | stor30 storTotal
   //          | com% wbp spp | clientPrice | tax | usn | drr% | drrRub
   //          | stock | capital | capitalCost | commission | profit | margin | roi | batchMargin
   tfoot.innerHTML = `<tr>
     <td class="sc0"></td>
     <td class="sc1"></td>
-    <td class="left sc2" colspan="2">Итого (${n}${n !== rows.length ? '/'+rows.length : ''})</td>
+    <td class="left sc2" colspan="3">Итого (${n}${n !== rows.length ? '/'+rows.length : ''})</td>
     <td></td><td></td><td></td><td></td><td></td>
     <td class="fcomp" title="Σ Ит.себест.">${fmtR(sumTotalCost)}</td>
     <td></td>
@@ -1260,14 +1315,16 @@ function updateBulkBar() {
 }
 
 function onBulkFieldChange() {
-  const field  = document.getElementById('bulkField').value;
-  const isWh   = field === 'warehouse';
-  const isTax  = field === 'tax_system';
-  const isTxt  = BULK_TEXT_FIELDS.has(field) && !isTax;
-  document.getElementById('bulkWarehouseVal').style.display = isWh  ? '' : 'none';
-  document.getElementById('bulkTaxSysVal').style.display    = isTax ? '' : 'none';
-  document.getElementById('bulkTextVal').style.display      = isTxt ? '' : 'none';
-  document.getElementById('bulkNumVal').style.display       = (!isWh && !isTax && !isTxt) ? '' : 'none';
+  const field    = document.getElementById('bulkField').value;
+  const isWh     = field === 'warehouse';
+  const isTax    = field === 'tax_system';
+  const isStatus = field === 'status';
+  const isTxt    = BULK_TEXT_FIELDS.has(field) && !isTax && !isStatus;
+  document.getElementById('bulkWarehouseVal').style.display = isWh     ? '' : 'none';
+  document.getElementById('bulkTaxSysVal').style.display    = isTax    ? '' : 'none';
+  document.getElementById('bulkStatusVal').style.display    = isStatus ? '' : 'none';
+  document.getElementById('bulkTextVal').style.display      = isTxt    ? '' : 'none';
+  document.getElementById('bulkNumVal').style.display       = (!isWh && !isTax && !isStatus && !isTxt) ? '' : 'none';
 }
 
 async function deleteBulk() {
@@ -1289,16 +1346,18 @@ async function deleteBulk() {
 }
 
 function applyBulk() {
-  const field  = document.getElementById('bulkField').value;
-  const isWh   = field === 'warehouse';
-  const isTax  = field === 'tax_system';
-  const isTxt  = BULK_TEXT_FIELDS.has(field) && !isTax;
-  const rawVal = isWh  ? document.getElementById('bulkWarehouseVal').value
-               : isTax ? document.getElementById('bulkTaxSysVal').value
-               : isTxt ? document.getElementById('bulkTextVal').value
-               :          document.getElementById('bulkNumVal').value;
-  if (rawVal === '' && !isWh) return;
-  const val = isWh || isTax ? rawVal : (BULK_NUM_FIELDS.has(field) ? +rawVal : rawVal);
+  const field    = document.getElementById('bulkField').value;
+  const isWh     = field === 'warehouse';
+  const isTax    = field === 'tax_system';
+  const isStatus = field === 'status';
+  const isTxt    = BULK_TEXT_FIELDS.has(field) && !isTax && !isStatus;
+  const rawVal = isWh     ? document.getElementById('bulkWarehouseVal').value
+               : isTax    ? document.getElementById('bulkTaxSysVal').value
+               : isStatus ? document.getElementById('bulkStatusVal').value
+               : isTxt    ? document.getElementById('bulkTextVal').value
+               :            document.getElementById('bulkNumVal').value;
+  if (rawVal === '' && !isWh && !isStatus) return;
+  const val = isWh || isTax || isStatus ? rawVal : (BULK_NUM_FIELDS.has(field) ? +rawVal : rawVal);
 
   const taxPreset = isTax ? TAX_PRESETS.find(t => t.label === val) : null;
   rows.filter(r => selectedKeys.has(r._key)).forEach(r => {
@@ -1316,6 +1375,8 @@ function applyBulk() {
       } else if (isTax) {
         const sel = tr.querySelector('.tax-sel'); if (sel) sel.value = TAX_PRESETS.findIndex(t=>t.label===val);
         const inp = tr.querySelector('.tax-pct-inp'); if (inp && taxPreset) inp.value = taxPreset.pct;
+      } else if (isStatus) {
+        const sel = tr.querySelector('.status-sel'); if (sel) sel.value = val;
       } else {
         const inp = tr.querySelector(`input[oninput*="'${field}'"]`); if (inp) inp.value = val;
       }
@@ -1334,6 +1395,11 @@ function initBulkWarehouse() {
 function initBulkTaxSys() {
   const sel = document.getElementById('bulkTaxSysVal');
   sel.innerHTML = TAX_PRESETS.map(t => `<option value="${esc(t.label)}">${esc(t.label)}</option>`).join('');
+}
+function initBulkStatus() {
+  const sel = document.getElementById('bulkStatusVal');
+  sel.innerHTML = '<option value="">—</option>' +
+    STATUS_PRESETS.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
 }
 
 // ─── Обновить все налоговые дропдауны в таблице (после добавления нового пресета) ─
@@ -1407,9 +1473,8 @@ function editArt(key, field, td) {
   if (td.querySelector('input')) return; // уже редактируется
   const r = rows.find(x => x._key === key);
   const cur = r ? (String(r[field] || '')) : '';
-  const isNum = field === 'wb_article';
   const inp = document.createElement('input');
-  inp.type = isNum ? 'number' : 'text';
+  inp.type = 'text';
   inp.value = cur;
   inp.oninput = () => onInput(key, field, inp.value);
   inp.onblur = () => {
@@ -1568,6 +1633,7 @@ document.addEventListener('click', e => {
 document.body.dataset.theme = localStorage.getItem('theme') || 'dark';
 initBulkWarehouse();
 initBulkTaxSys();
+initBulkStatus();
 onBulkFieldChange();
 renderContent();
 </script>
