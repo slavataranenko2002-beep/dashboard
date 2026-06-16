@@ -742,7 +742,11 @@ def index():
         "dashboard.html",
         current_user=u,
         visible_projects=visible,
-        all_projects_json=json.dumps(all_db_projects),
+        all_projects_json=json.dumps([
+            {"id": p["id"], "name": p["name"], "emoji": p["emoji"],
+             "color": p["color"], "sort_order": p["sort_order"], "active": p["active"]}
+            for p in all_db_projects
+        ]),
         show_wb=(role != "seller"),
         projects_json=json.dumps([p["name"] for p in visible]),
         show_design=_design_auth(u),
