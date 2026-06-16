@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Forest Idle</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; overflow: hidden; touch-action: none; }
+canvas { display: block; }
+#ui {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; background: rgba(0,0,0,0.7);
+  z-index: 10; font-family: Arial, sans-serif;
+}
+#ui .res {
+  display: flex; align-items: center; gap: 4px;
+  background: rgba(255,255,255,0.1); border-radius: 8px;
+  padding: 4px 8px; color: #fff; font-size: 13px; font-weight: bold;
+}
+#ui .res span { font-size: 16px; }
+#gold { color: #ffd700; }
+#logs-count { color: #8B4513; }
+#meat-count { color: #ff6b6b; }
+#btn-upgrade {
+  margin-left: auto; background: #4a90d9; color: #fff;
+  border: none; border-radius: 8px; padding: 6px 12px;
+  font-size: 13px; font-weight: bold; cursor: pointer;
+}
+#upgrade-menu {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: rgba(10,10,30,0.97); color: #fff;
+  padding: 12px; z-index: 20; display: none;
+  font-family: Arial, sans-serif; max-height: 60vh; overflow-y: auto;
+}
+#upgrade-menu h2 { text-align: center; margin-bottom: 10px; font-size: 16px; color: #ffd700; }
+.upg-section { margin-bottom: 10px; }
+.upg-section h3 { font-size: 13px; color: #aaa; margin-bottom: 6px; }
+.upg-btn {
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(255,255,255,0.08); border-radius: 8px;
+  padding: 8px 10px; margin-bottom: 6px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+.upg-btn:active { background: rgba(255,255,255,0.15); }
+.upg-btn .upg-info { font-size: 12px; }
+.upg-btn .upg-name { font-size: 13px; font-weight: bold; }
+.upg-btn .upg-cost { color: #ffd700; font-size: 12px; }
+.upg-btn .upg-level { color: #4a90d9; font-size: 11px; }
+#close-menu {
+  display: block; width: 100%; padding: 10px;
+  background: #c0392b; border: none; color: #fff;
+  border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 8px;
+}
+#joystick-zone {
+  position: fixed; bottom: 20px; left: 20px;
+  width: 120px; height: 120px; z-index: 10;
+}
+#joystick-base {
+  width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3);
+}
+#joystick-knob {
+  position: absolute; width: 50px; height: 50px; border-radius: 50%;
+  background: rgba(255,255,255,0.5); border: 2px solid rgba(255,255,255,0.8);
+  top: 35px; left: 35px; pointer-events: none;
+  transition: none;
+}
+#msg {
+  position: fixed; top: 50px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.8); color: #fff; padding: 6px 14px;
+  border-radius: 10px; font-family: Arial; font-size: 13px;
+  z-index: 30; pointer-events: none; opacity: 0;
+  transition: opacity 0.3s;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="res"><span>🪙</span><span id="gold">0</span></div>
+  <div class="res"><span>🪵</span><span id="logs-count">0/10</span></div>
+  <div class="res"><span>🥩</span><span id="meat-count">0/10</span></div>
+  <button id="btn-upgrade">⚔️ Прокачка</button>
+</div>
+<div id="upgrade-menu">
+  <h2>⚔️ Прокачка и постройки</h2>
+  <div class="upg-section">
+    <h3>🏗️ Постройки</h3>
+    <div class="upg-btn" id="upg-sawmill">
+      <div class="upg-info">
+        <div class="upg-name">🪚 Лесопилка</div>
+        <div style="font-size:11px;color:#aaa">Даёт золото за бревна x2</div>
+      </div>
+      <div>
+        <div class="upg-cost" id="cost-sawmill">🪙 50</div>
+        <div class="upg-level" id="lvl-sawmill">Ур. 0</div>
+      </div>
+    </div>
+    <div class="upg-btn" id="upg-market">
+      <div class="upg-info">
+        <div class="upg-name">🏪 Рынок</div>
+        <div style="font-size:11px;color:#aaa">Даёт золото за мясо x2</div>
+      </div>
+      <div>
+        <div class="upg-cost" id="cost-market">🪙 60</div>
+        <div class="upg-level" id="lvl-market">Ур. 0</div>
+      </div>
+    </div>
+  </div>
+  <div class="upg-section">
+    <h3>⚔️ Боевые улучшения</h3>
+    <div class="upg-btn" id="upg-axes">
+      <div class="upg-info">
+        <div class="upg-name">🪓 Орбитальные топоры</div>
+        <div style="font-size:11px;color:#aaa">Топоры крутятся вокруг игрока</div>
+      </div>
+      <div>
+        <div class="upg-cost" id="cost-axes">🪙 80</div>
+        <div class="upg-level" id="lvl-axes">Ур. 0/3</div>
+      </div>
+    </div>
+    <div class="upg-btn" id="upg-speed">
+      <div class="upg-info">
+        <div class="upg-name">👟 Скорость</div>
+        <div style="font-size:11px;color:#aaa">Игрок движется быстрее</div>
+      </div>
+      <div>
+        <div class="upg-cost" id="cost-speed">🪙 40</div>
+        <div class="upg-level" id="lvl-speed">Ур. 0/5</div>
+      </div>
+    </div>
+    <div class="upg-btn" id="upg-axespeed">
+      <div class="upg-info">
+        <div class="upg-name">💨 Скорость топоров</div>
+        <div style="font-size:11px;color:#aaa">Орбитальные топоры быстрее</div>
+      </div>
+      <div>
+        <div class="upg-cost" id="cost-axespeed">🪙 50</div>
+        <div class="upg-level" id="lvl-axespeed">Ур. 0/5</div>
+      </div>
+    </div>
+  </div>
+  <button id="close-menu">✖ Закрыть</button>
+</div>
+<div id="joystick-zone">
+  <div id="joystick-base"></div>
+  <div id="joystick-knob"></div>
+</div>
+<div id="msg"></div>
+<script>
+// ---- Constants ----
+const TILE = 40;
+const MAP_W = 28, MAP_H = 28;
+const MAX_LOGS = 10, MAX_MEAT = 10;
+const PLAYER_BASE_SPEED = 160;
+
+// ---- Canvas setup ----
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- Game State ----
+const state = {
+  gold: 0,
+  logs: 0,
+  meat: 0,
+  sawmill: 0,
+  market: 0,
+  axeLevel: 0,
+  speedLevel: 0,
+  axeSpeedLevel: 0,
+  camera: { x: 0, y: 0 }
+};
+
+// ---- Map ----
+// 0=ground, 1=tree, 2=home-territory, 3=path
+const map = [];
+for (let y = 0; y < MAP_H; y++) {
+  map[y] = [];
+  for (let x = 0; x < MAP_W; x++) {
+    const cx = MAP_W / 2, cy = MAP_H / 2;
+    const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+    if (dist < 4.5) map[y][x] = 2; // home territory
+    else if (dist < 5.5) map[y][x] = 3; // path border
+    else map[y][x] = Math.random() < 0.55 ? 1 : 0; // forest
+  }
+}
+
+// ---- Trees ----
+const trees = [];
+for (let y = 0; y < MAP_H; y++) {
+  for (let x = 0; x < MAP_W; x++) {
+    if (map[y][x] === 1) {
+      trees.push({ x: x * TILE + 20, y: y * TILE + 20, hp: 3, maxHp: 3, respawn: 0, alive: true, chopAnim: 0 });
+    }
+  }
+}
+
+// ---- Enemies ----
+const enemies = [];
+function spawnEnemy() {
+  const cx = MAP_W / 2 * TILE, cy = MAP_H / 2 * TILE;
+  let ex, ey, tries = 0;
+  do {
+    ex = (2 + Math.random() * (MAP_W - 4)) * TILE;
+    ey = (2 + Math.random() * (MAP_H - 4)) * TILE;
+    tries++;
+  } while (Math.sqrt((ex - cx) ** 2 + (ey - cy) ** 2) < 6 * TILE && tries < 30);
+  enemies.push({ x: ex, y: ey, hp: 3, maxHp: 3, alive: true, vx: 0, vy: 0, respawn: 0, hitAnim: 0 });
+}
+for (let i = 0; i < 8; i++) spawnEnemy();
+
+// ---- Drops ----
+const drops = []; // {x,y,type,anim}
+
+// ---- Drop Zones ----
+const dropZones = [
+  { x: 4, y: 4, type: 'logs', label: '🪵 Брёвна', current: 0, max: 10, reward: 5 },
+  { x: MAP_W - 6, y: 4, type: 'meat', label: '🥩 Мясо', current: 0, max: 8, reward: 8 },
+  { x: 4, y: MAP_H - 6, type: 'logs', label: '🪵 Лесопилка', current: 0, max: 15, reward: 6 },
+  { x: MAP_W - 6, y: MAP_H - 6, type: 'meat', label: '🥩 Рынок', current: 0, max: 12, reward: 10 },
+];
+
+// ---- Buildings ----
+const buildings = [
+  { x: MAP_W / 2 * TILE, y: MAP_H / 2 * TILE, label: '🏠', type: 'home' }
+];
+
+// ---- Player ----
+const player = {
+  x: MAP_W / 2 * TILE, y: MAP_H / 2 * TILE,
+  r: 16, speed: PLAYER_BASE_SPEED,
+  chopCd: 0, attackCd: 0,
+  facing: 1
+};
+
+// ---- Orbital axes ----
+const orbitAxes = [];
+let orbitAngle = 0;
+
+// ---- Floating texts ----
+const floatTexts = [];
+
+// ---- Joystick ----
+const joy = { active: false, id: -1, ox: 0, oy: 0, dx: 0, dy: 0 };
+const jZone = document.getElementById('joystick-zone');
+const jKnob = document.getElementById('joystick-knob');
+const jRect = () => jZone.getBoundingClientRect();
+
+function updateJoystickVisual() {
+  const r = 35;
+  const kx = 35 + joy.dx * r;
+  const ky = 35 + joy.dy * r;
+  jKnob.style.left = kx + 'px';
+  jKnob.style.top = ky + 'px';
+}
+
+jZone.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const rect = jRect();
+  joy.active = true;
+  joy.id = t.identifier;
+  joy.ox = rect.left + 60;
+  joy.oy = rect.top + 60;
+  joy.dx = 0; joy.dy = 0;
+  updateJoystickVisual();
+}, { passive: false });
+
+document.addEventListener('touchmove', e => {
+  if (!joy.active) return;
+  for (let t of e.changedTouches) {
+    if (t.identifier === joy.id) {
+      let dx = t.clientX - joy.ox;
+      let dy = t.clientY - joy.oy;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 40) { dx = dx / len * 40; dy = dy / len * 40; }
+      joy.dx = dx / 40;
+      joy.dy = dy / 40;
+      updateJoystickVisual();
+    }
+  }
+}, { passive: false });
+
+document.addEventListener('touchend', e => {
+  for (let t of e.changedTouches) {
+    if (t.identifier === joy.id) {
+      joy.active = false;
+      joy.dx = 0; joy.dy = 0;
+      updateJoystickVisual();
+    }
+  }
+});
+
+// Keyboard fallback
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+// ---- UI ----
+function showMsg(text) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.style.opacity = '0', 1800);
+}
+
+function updateUI() {
+  document.getElementById('gold').textContent = state.gold;
+  document.getElementById('logs-count').textContent = state.logs + '/10';
+  document.getElementById('meat-count').textContent = state.meat + '/10';
+
+  const upgrades = [
+    { id: 'sawmill', cost: (state.sawmill + 1) * 50, lvl: state.sawmill, max: 5 },
+    { id: 'market', cost: (state.market + 1) * 60, lvl: state.market, max: 5 },
+    { id: 'axes', cost: (state.axeLevel + 1) * 80, lvl: state.axeLevel, max: 3 },
+    { id: 'speed', cost: (state.speedLevel + 1) * 40, lvl: state.speedLevel, max: 5 },
+    { id: 'axespeed', cost: (state.axeSpeedLevel + 1) * 50, lvl: state.axeSpeedLevel, max: 5 },
+  ];
+  for (const u of upgrades) {
+    const maxLvl = u.lvl >= u.max;
+    document.getElementById('cost-' + u.id).textContent = maxLvl ? '✅ MAX' : '🪙 ' + u.cost;
+    document.getElementById('lvl-' + u.id).textContent = 'Ур. ' + u.lvl + '/' + u.max;
+  }
+}
+
+document.getElementById('btn-upgrade').onclick = () => {
+  document.getElementById('upgrade-menu').style.display = 'block';
+  updateUI();
+};
+document.getElementById('close-menu').onclick = () => {
+  document.getElementById('upgrade-menu').style.display = 'none';
+};
+
+function tryUpgrade(id) {
+  const upgrades = {
+    sawmill: { costFn: () => (state.sawmill + 1) * 50, max: 5, apply: () => state.sawmill++ },
+    market: { costFn: () => (state.market + 1) * 60, max: 5, apply: () => state.market++ },
+    axes: { costFn: () => (state.axeLevel + 1) * 80, max: 3, apply: () => { state.axeLevel++; rebuildOrbitAxes(); } },
+    speed: { costFn: () => (state.speedLevel + 1) * 40, max: 5, apply: () => { state.speedLevel++; player.speed = PLAYER_BASE_SPEED + state.speedLevel * 30; } },
+    axespeed: { costFn: () => (state.axeSpeedLevel + 1) * 50, max: 5, apply: () => state.axeSpeedLevel++ },
+  };
+  const u = upgrades[id];
+  const current = { sawmill: state.sawmill, market: state.market, axes: state.axeLevel, speed: state.speedLevel, axespeed: state.axeSpeedLevel }[id];
+  if (current >= u.max) { showMsg('Уже максимум!'); return; }
+  const cost = u.costFn();
+  if (state.gold < cost) { showMsg('Не хватает золота! Нужно 🪙' + cost); return; }
+  state.gold -= cost;
+  u.apply();
+  showMsg('Улучшение куплено! 🎉');
+  updateUI();
+}
+
+['sawmill','market','axes','speed','axespeed'].forEach(id => {
+  document.getElementById('upg-' + id).onclick = () => tryUpgrade(id);
+});
+
+// ---- Orbit Axes ----
+function rebuildOrbitAxes() {
+  orbitAxes.length = 0;
+  const count = state.axeLevel;
+  for (let i = 0; i < count; i++) {
+    orbitAxes.push({ angle: (Math.PI * 2 / count) * i });
+  }
+}
+
+// ---- Helpers ----
+function dist2(ax, ay, bx, by) {
+  return (ax - bx) ** 2 + (ay - by) ** 2;
+}
+
+function addFloat(x, y, text, color = '#ffd700') {
+  floatTexts.push({ x, y, text, color, life: 1.2, vy: -50 });
+}
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+// ---- Game loop ----
+let last = 0;
+function loop(ts) {
+  const dt = Math.min((ts - last) / 1000, 0.05);
+  last = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  // Player movement
+  let mx = 0, my = 0;
+  if (joy.active) { mx = joy.dx; my = joy.dy; }
+  if (keys['ArrowLeft'] || keys['a']) mx = -1;
+  if (keys['ArrowRight'] || keys['d']) mx = 1;
+  if (keys['ArrowUp'] || keys['w']) my = -1;
+  if (keys['ArrowDown'] || keys['s']) my = 1;
+
+  const mlen = Math.sqrt(mx * mx + my * my);
+  if (mlen > 0) {
+    mx /= mlen; my /= mlen;
+    if (mx !== 0) player.facing = mx > 0 ? 1 : -1;
+  }
+
+  const newPx = player.x + mx * player.speed * dt;
+  const newPy = player.y + my * player.speed * dt;
+  player.x = clamp(newPx, player.r, MAP_W * TILE - player.r);
+  player.y = clamp(newPy, player.r, MAP_H * TILE - player.r);
+
+  // Camera follow
+  state.camera.x = clamp(player.x - canvas.width / 2, 0, MAP_W * TILE - canvas.width);
+  state.camera.y = clamp(player.y - canvas.height / 2, 0, MAP_H * TILE - canvas.height);
+
+  // Orbit axes rotation
+  const orbitSpeed = (1 + state.axeSpeedLevel * 0.4) * Math.PI;
+  orbitAngle += orbitSpeed * dt;
+
+  // Update orbit axes angles
+  const count = orbitAxes.length;
+  for (let i = 0; i < count; i++) {
+    orbitAxes[i].angle = orbitAngle + (Math.PI * 2 / count) * i;
+  }
+
+  // Orbital axes hit trees & enemies
+  if (orbitAxes.length > 0) {
+    const orbitR = 60;
+    for (const ax of orbitAxes) {
+      const axX = player.x + Math.cos(ax.angle) * orbitR;
+      const axY = player.y + Math.sin(ax.angle) * orbitR;
+
+      // Hit trees
+      for (const t of trees) {
+        if (!t.alive) continue;
+        if (dist2(axX, axY, t.x, t.y) < 28 * 28) {
+          t.hp -= 3 * dt;
+          t.chopAnim = 0.15;
+          if (t.hp <= 0) chopTree(t);
+        }
+      }
+      // Hit enemies
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        if (dist2(axX, axY, e.x, e.y) < 26 * 26) {
+          e.hp -= 4 * dt;
+          e.hitAnim = 0.15;
+          if (e.hp <= 0) killEnemy(e);
+        }
+      }
+    }
+  }
+
+  // Player chop trees
+  player.chopCd -= dt;
+  if (player.chopCd <= 0 && mlen > 0) {
+    for (const t of trees) {
+      if (!t.alive) continue;
+      if (dist2(player.x, player.y, t.x, t.y) < 36 * 36) {
+        t.hp -= 2;
+        t.chopAnim = 0.2;
+        player.chopCd = 0.35;
+        if (t.hp <= 0) chopTree(t);
+        break;
+      }
+    }
+  }
+
+  // Player attack enemies
+  player.attackCd -= dt;
+  if (player.attackCd <= 0) {
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if (dist2(player.x, player.y, e.x, e.y) < 40 * 40) {
+        e.hp -= 1.5;
+        e.hitAnim = 0.2;
+        player.attackCd = 0.4;
+        if (e.hp <= 0) killEnemy(e);
+        break;
+      }
+    }
+  }
+
+  // Enemy movement (patrol/chase)
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    e.hitAnim = Math.max(0, e.hitAnim - dt);
+    const d2 = dist2(player.x, player.y, e.x, e.y);
+    if (d2 < 200 * 200) {
+      const d = Math.sqrt(d2);
+      e.vx = (player.x - e.x) / d * 60;
+      e.vy = (player.y - e.y) / d * 60;
+    } else {
+      e.vx += (Math.random() - 0.5) * 20;
+      e.vy += (Math.random() - 0.5) * 20;
+      const vl = Math.sqrt(e.vx * e.vx + e.vy * e.vy);
+      if (vl > 30) { e.vx = e.vx / vl * 30; e.vy = e.vy / vl * 30; }
+    }
+    e.x = clamp(e.x + e.vx * dt, TILE, (MAP_W - 1) * TILE);
+    e.y = clamp(e.y + e.vy * dt, TILE, (MAP_H - 1) * TILE);
+  }
+
+  // Respawn enemies
+  for (const e of enemies) {
+    if (!e.alive) {
+      e.respawn -= dt;
+      if (e.respawn <= 0) {
+        e.hp = e.maxHp;
+        e.alive = true;
+        const cx = MAP_W / 2 * TILE, cy = MAP_H / 2 * TILE;
+        let ex, ey, tries = 0;
+        do {
+          ex = (2 + Math.random() * (MAP_W - 4)) * TILE;
+          ey = (2 + Math.random() * (MAP_H - 4)) * TILE;
+          tries++;
+        } while (Math.sqrt((ex - cx) ** 2 + (ey - cy) ** 2) < 6 * TILE && tries < 20);
+        e.x = ex; e.y = ey;
+      }
+    }
+  }
+
+  // Respawn trees
+  for (const t of trees) {
+    if (!t.alive) {
+      t.respawn -= dt;
+      if (t.respawn <= 0) {
+        t.hp = t.maxHp;
+        t.alive = true;
+      }
+    }
+    t.chopAnim = Math.max(0, t.chopAnim - dt);
+  }
+
+  // Auto-pickup drops
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    if (dist2(player.x, player.y, d.x, d.y) < 40 * 40) {
+      if (d.type === 'log' && state.logs < MAX_LOGS) {
+        state.logs++;
+        addFloat(d.x, d.y, '+1🪵', '#8B4513');
+        drops.splice(i, 1);
+      } else if (d.type === 'meat' && state.meat < MAX_MEAT) {
+        state.meat++;
+        addFloat(d.x, d.y, '+1🥩', '#ff6b6b');
+        drops.splice(i, 1);
+      }
+    }
+  }
+
+  // Drop zones delivery
+  for (const zone of dropZones) {
+    const zx = zone.x * TILE + TILE;
+    const zy = zone.y * TILE + TILE;
+    if (dist2(player.x, player.y, zx, zy) < 55 * 55) {
+      if (zone.type === 'logs' && state.logs > 0 && zone.current < zone.max) {
+        const give = Math.min(state.logs, zone.max - zone.current);
+        state.logs -= give;
+        zone.current += give;
+        const mult = zone.type === 'logs' ? 1 + state.sawmill * 0.5 : 1 + state.market * 0.5;
+        const earned = Math.floor(give * zone.reward * mult);
+        state.gold += earned;
+        addFloat(zx, zy - 20, '+' + earned + '🪙', '#ffd700');
+        if (zone.current >= zone.max) {
+          zone.current = 0;
+          showMsg(zone.label + ' — поставка выполнена! 🎉');
+        }
+      } else if (zone.type === 'meat' && state.meat > 0 && zone.current < zone.max) {
+        const give = Math.min(state.meat, zone.max - zone.current);
+        state.meat -= give;
+        zone.current += give;
+        const mult = zone.type === 'meat' ? 1 + state.market * 0.5 : 1 + state.sawmill * 0.5;
+        const earned = Math.floor(give * zone.reward * mult);
+        state.gold += earned;
+        addFloat(zx, zy - 20, '+' + earned + '🪙', '#ffd700');
+        if (zone.current >= zone.max) {
+          zone.current = 0;
+          showMsg(zone.label + ' — поставка выполнена! 🎉');
+        }
+      }
+    }
+  }
+
+  // Float texts
+  for (let i = floatTexts.length - 1; i >= 0; i--) {
+    const f = floatTexts[i];
+    f.life -= dt;
+    f.y += f.vy * dt;
+    if (f.life <= 0) floatTexts.splice(i, 1);
+  }
+
+  updateUI();
+}
+
+function chopTree(t) {
+  t.alive = false;
+  t.respawn = 8 + Math.random() * 5;
+  drops.push({ x: t.x + (Math.random() - 0.5) * 20, y: t.y + (Math.random() - 0.5) * 20, type: 'log', anim: 0 });
+  addFloat(t.x, t.y - 20, '🪵', '#8B4513');
+}
+
+function killEnemy(e) {
+  e.alive = false;
+  e.respawn = 10 + Math.random() * 8;
+  drops.push({ x: e.x + (Math.random() - 0.5) * 20, y: e.y + (Math.random() - 0.5) * 20, type: 'meat', anim: 0 });
+  addFloat(e.x, e.y - 20, '🥩', '#ff6b6b');
+}
+
+// ---- Drawing ----
+function draw() {
+  const cam = state.camera;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Background tiles
+  const startTX = Math.floor(cam.x / TILE);
+  const startTY = Math.floor(cam.y / TILE);
+  const endTX = Math.min(MAP_W, startTX + Math.ceil(canvas.width / TILE) + 2);
+  const endTY = Math.min(MAP_H, startTY + Math.ceil(canvas.height / TILE) + 2);
+
+  for (let ty = startTY; ty < endTY; ty++) {
+    for (let tx = startTX; tx < endTX; tx++) {
+      const sx = tx * TILE - cam.x;
+      const sy = ty * TILE - cam.y;
+      const cell = map[ty][tx];
+      if (cell === 2) ctx.fillStyle = '#5a8c3c';
+      else if (cell === 3) ctx.fillStyle = '#7aaa5c';
+      else if (cell === 1) ctx.fillStyle = '#2d6a1f';
+      else ctx.fillStyle = '#4a7c35';
+      ctx.fillRect(sx, sy, TILE, TILE);
+      // Grid subtle
+      ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+      ctx.strokeRect(sx, sy, TILE, TILE);
+    }
+  }
+
+  // Drop zones
+  for (const zone of dropZones) {
+    const zx = zone.x * TILE - cam.x;
+    const zy = zone.y * TILE - cam.y;
+    const zw = TILE * 2, zh = TILE * 2;
+    ctx.fillStyle = zone.type === 'logs' ? 'rgba(139,69,19,0.4)' : 'rgba(255,107,107,0.4)';
+    ctx.fillRect(zx, zy, zw, zh);
+    ctx.strokeStyle = zone.type === 'logs' ? '#8B4513' : '#ff6b6b';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(zx, zy, zw, zh);
+    // Progress bar
+    const pct = zone.current / zone.max;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(zx, zy + zh + 2, zw, 8);
+    ctx.fillStyle = zone.type === 'logs' ? '#8B4513' : '#ff6b6b';
+    ctx.fillRect(zx, zy + zh + 2, zw * pct, 8);
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(zone.label, zx + zw / 2, zy + zh / 2 + 4);
+    ctx.fillText(zone.current + '/' + zone.max, zx + zw / 2, zy + zh / 2 + 18);
+  }
+
+  // Trees
+  for (const t of trees) {
+    const tx = t.x - cam.x;
+    const ty = t.y - cam.y;
+    if (tx < -30 || tx > canvas.width + 30 || ty < -30 || ty > canvas.height + 30) continue;
+    if (!t.alive) continue;
+    const shake = t.chopAnim > 0 ? Math.sin(Date.now() / 30) * 3 : 0;
+    ctx.save();
+    ctx.translate(tx + shake, ty);
+    // Trunk
+    ctx.fillStyle = '#5C3317';
+    ctx.fillRect(-5, 0, 10, 18);
+    // Canopy
+    ctx.fillStyle = '#1a5e1a';
+    ctx.beginPath();
+    ctx.arc(0, -8, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#2d8c2d';
+    ctx.beginPath();
+    ctx.arc(-3, -14, 13, 0, Math.PI * 2);
+    ctx.fill();
+    // HP bar
+    if (t.hp < t.maxHp) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(-15, -30, 30, 5);
+      ctx.fillStyle = '#4fc';
+      ctx.fillRect(-15, -30, 30 * (t.hp / t.maxHp), 5);
+    }
+    ctx.restore();
+  }
+
+  // Drops
+  for (const d of drops) {
+    const dx = d.x - cam.x;
+    const dy = d.y - cam.y;
+    ctx.font = '18px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.type === 'log' ? '🪵' : '🥩', dx, dy);
+  }
+
+  // Enemies
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const ex = e.x - cam.x;
+    const ey = e.y - cam.y;
+    if (ex < -40 || ex > canvas.width + 40 || ey < -40 || ey > canvas.height + 40) continue;
+    ctx.save();
+    ctx.translate(ex, ey);
+    if (e.hitAnim > 0) {
+      ctx.fillStyle = 'rgba(255,0,0,0.4)';
+      ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
+    }
+    // Body
+    ctx.fillStyle = '#8B4513';
+    ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    ctx.fillStyle = '#6B3310';
+    ctx.beginPath(); ctx.arc(-10, -10, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(10, -10, 6, 0, Math.PI * 2); ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#ff0';
+    ctx.beginPath(); ctx.arc(-5, -2, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(5, -2, 3, 0, Math.PI * 2); ctx.fill();
+    // HP bar
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(-16, -24, 32, 5);
+    ctx.fillStyle = '#f44';
+    ctx.fillRect(-16, -24, 32 * (e.hp / e.maxHp), 5);
+    ctx.restore();
+  }
+
+  // Buildings
+  for (const b of buildings) {
+    const bx = b.x - cam.x;
+    const by = b.y - cam.y;
+    ctx.font = '32px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(b.label, bx, by);
+  }
+
+  // Player
+  const px = player.x - cam.x;
+  const py = player.y - cam.y;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.scale(player.facing, 1);
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(0, 14, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
+  // Body
+  ctx.fillStyle = '#e8a87c';
+  ctx.beginPath(); ctx.arc(0, -2, 14, 0, Math.PI * 2); ctx.fill();
+  // Shirt
+  ctx.fillStyle = '#2c5f8a';
+  ctx.fillRect(-10, 8, 20, 12);
+  // Face
+  ctx.fillStyle = '#333';
+  ctx.beginPath(); ctx.arc(-4, -4, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -4, 3, 0, Math.PI * 2); ctx.fill();
+  // Inventory icons
+  if (state.logs > 0) {
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('🪵' + state.logs, 16, -10);
+  }
+  if (state.meat > 0) {
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('🥩' + state.meat, 16, 4);
+  }
+  ctx.restore();
+
+  // Orbital axes
+  const orbitR = 60;
+  for (const ax of orbitAxes) {
+    const axX = px + Math.cos(ax.angle) * orbitR;
+    const axY = py + Math.sin(ax.angle) * orbitR;
+    ctx.save();
+    ctx.translate(axX, axY);
+    ctx.rotate(ax.angle + Math.PI / 4);
+    ctx.font = '18px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('🪓', 0, 6);
+    ctx.restore();
+  }
+
+  // Float texts
+  for (const f of floatTexts) {
+    const fx = f.x - cam.x;
+    const fy = f.y - cam.y;
+    ctx.globalAlpha = Math.min(1, f.life * 1.5);
+    ctx.fillStyle = f.color;
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.text, fx, fy);
+  }
+  ctx.globalAlpha = 1;
+
+  // Mini-map
+  drawMinimap();
+}
+
+function drawMinimap() {
+  const mw = 80, mh = 80;
+  const mx = canvas.width - mw - 8;
+  const my = canvas.height - mh - 130;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(mx, my, mw, mh);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.strokeRect(mx, my, mw, mh);
+
+  const sx = mw / (MAP_W * TILE);
+  const sy = mh / (MAP_H * TILE);
+
+  for (const t of trees) {
+    if (!t.alive) continue;
+    ctx.fillStyle = '#1a5e1a';
+    ctx.fillRect(mx + t.x * sx - 1, my + t.y * sy - 1, 2, 2);
+  }
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    ctx.fillStyle = '#f44';
+    ctx.fillRect(mx + e.x * sx - 1, my + e.y * sy - 1, 2, 2);
+  }
+  for (const d of drops) {
+    ctx.fillStyle = d.type === 'log' ? '#8B4513' : '#ff6b6b';
+    ctx.fillRect(mx + d.x * sx - 1, my + d.y * sy - 1, 2, 2);
+  }
+  // Player
+  ctx.fillStyle = '#0ff';
+  ctx.fillRect(mx + player.x * sx - 2, my + player.y * sy - 2, 4, 4);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
