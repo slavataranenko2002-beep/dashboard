@@ -20,7 +20,7 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 from authlib.integrations.flask_client import OAuth
 
-from config import DATABASE_URL, PROJECTS, PROJECT_EMOJI
+from config import DATABASE_URL
 from db import get_conn
 
 # ─── App setup ────────────────────────────────────────────────────────────────
@@ -238,6 +238,34 @@ def _ensure_design_tables():
                     )
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id)")
+                # Проекты (кабинеты) — динамическое управление
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS projects (
+                        id         SERIAL PRIMARY KEY,
+                        name       TEXT NOT NULL UNIQUE,
+                        emoji      TEXT NOT NULL DEFAULT '⚪',
+                        color      TEXT NOT NULL DEFAULT '#888888',
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        active     BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                # Сеем данные из config.py если таблица пуста
+                cur.execute("SELECT COUNT(*) AS cnt FROM projects")
+                if cur.fetchone()["cnt"] == 0:
+                    _seed = [
+                        ("KSF",       "🔵", "#4a9eff", 0),
+                        ("KLIFE",     "🟣", "#a78bfa", 1),
+                        ("PA",        "🟢", "#4ade80", 2),
+                        ("PIELE",     "🟡", "#fbbf24", 3),
+                        ("Визенкова", "🟠", "#fb923c", 4),
+                    ]
+                    for _name, _emoji, _color, _order in _seed:
+                        cur.execute(
+                            "INSERT INTO projects (name, emoji, color, sort_order) "
+                            "VALUES (%s,%s,%s,%s) ON CONFLICT (name) DO NOTHING",
+                            (_name, _emoji, _color, _order)
+                        )
             conn.commit()
         logging.info("Design tables ready.")
         # Миграция created_by_email — в отдельной транзакции, ошибки не критичны
@@ -400,6 +428,19 @@ def _make_session_dict(user: dict) -> dict:
         "funnel_access":      bool(user.get("funnel_access")),
         "funnel_projects":    list(user.get("funnel_projects") or []),
     }
+
+def _all_projects() -> list:
+    """Активные проекты из БД, сортированные по sort_order."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM projects WHERE active=TRUE ORDER BY sort_order, id")
+            return [dict(r) for r in cur.fetchall()]
+
+def _project_emoji_dict() -> dict:
+    return {p["name"]: p["emoji"] for p in _all_projects()}
+
+def _project_names() -> list:
+    return [p["name"] for p in _all_projects()]
 
 def _design_projects(u) -> list | None:
     """None = все проекты (admin/employee), [] = нет доступа, [list] = проекты селлера."""
@@ -690,15 +731,18 @@ def index():
         return render_template("pending.html", user=u)
 
     role = u["role"]
+    all_db_projects = _all_projects()
     if role in ("admin", "employee"):
-        visible = [{"name": p, "emoji": PROJECT_EMOJI.get(p, "⚪")} for p in PROJECTS]
+        visible = [{"name": p["name"], "emoji": p["emoji"], "color": p["color"]} for p in all_db_projects]
     else:  # seller
-        visible = [{"name": p, "emoji": PROJECT_EMOJI.get(p, "⚪")} for p in u["projects"]]
+        visible = [{"name": p["name"], "emoji": p["emoji"], "color": p["color"]}
+                   for p in all_db_projects if p["name"] in (u["projects"] or [])]
 
     return render_template(
         "dashboard.html",
         current_user=u,
         visible_projects=visible,
+        all_projects_json=json.dumps(all_db_projects),
         show_wb=(role != "seller"),
         projects_json=json.dumps([p["name"] for p in visible]),
         show_design=_design_auth(u),
@@ -715,7 +759,7 @@ def admin_panel():
                 "SELECT * FROM users ORDER BY (role='pending') DESC, created_at ASC"
             )
             users = [dict(r) for r in cur.fetchall()]
-    return render_template("admin.html", users=users, all_projects=PROJECTS, wb_cabinets=WB_CABINETS)
+    return render_template("admin.html", users=users, all_projects=_project_names(), wb_cabinets=WB_CABINETS)
 
 @app.route("/api/admin/users/<int:user_id>", methods=["POST"])
 @require_admin_api
@@ -1125,6 +1169,99 @@ def api_admin_activity():
 def admin_activity():
     return render_template("activity.html")
 
+# ─── Управление проектами (кабинетами) ────────────────────────────────────────
+
+@app.route("/api/admin/projects")
+@require_auth
+def api_admin_get_projects():
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM projects ORDER BY sort_order, id")
+                return jsonify([dict(r) for r in cur.fetchall()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/projects", methods=["POST"])
+@require_admin_api
+def api_admin_create_project():
+    try:
+        d = request.json or {}
+        name  = (d.get("name") or "").strip()
+        emoji = (d.get("emoji") or "⚪").strip()
+        color = (d.get("color") or "#888888").strip()
+        if not name:
+            return jsonify({"error": "name required"}), 400
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COALESCE(MAX(sort_order),0)+1 AS pos FROM projects"
+                )
+                pos = cur.fetchone()["pos"]
+                cur.execute(
+                    "INSERT INTO projects (name, emoji, color, sort_order) "
+                    "VALUES (%s,%s,%s,%s) RETURNING *",
+                    (name, emoji, color, pos)
+                )
+                row = dict(cur.fetchone())
+            conn.commit()
+        return jsonify(row)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/projects/<int:proj_id>", methods=["PUT"])
+@require_admin_api
+def api_admin_update_project(proj_id):
+    try:
+        d = request.json or {}
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM projects WHERE id=%s", (proj_id,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "not found"}), 404
+                name       = d.get("name",       row["name"])
+                emoji      = d.get("emoji",      row["emoji"])
+                color      = d.get("color",      row["color"])
+                sort_order = d.get("sort_order", row["sort_order"])
+                active     = d.get("active",     row["active"])
+                cur.execute(
+                    "UPDATE projects SET name=%s, emoji=%s, color=%s, sort_order=%s, active=%s WHERE id=%s RETURNING *",
+                    (name, emoji, color, sort_order, active, proj_id)
+                )
+                updated = dict(cur.fetchone())
+            conn.commit()
+        return jsonify(updated)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/projects/<int:proj_id>", methods=["DELETE"])
+@require_admin_api
+def api_admin_delete_project(proj_id):
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT name FROM projects WHERE id=%s", (proj_id,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "not found"}), 404
+                proj_name = row["name"]
+                cur.execute(
+                    "SELECT COUNT(*) AS cnt FROM tasks WHERE project=%s AND done=FALSE",
+                    (proj_name,)
+                )
+                active_cnt = cur.fetchone()["cnt"]
+                if active_cnt > 0:
+                    # Деактивируем, не удаляем — есть активные задачи
+                    cur.execute("UPDATE projects SET active=FALSE WHERE id=%s", (proj_id,))
+                    conn.commit()
+                    return jsonify({"ok": True, "deactivated": True, "active_tasks": active_cnt})
+                cur.execute("DELETE FROM projects WHERE id=%s", (proj_id,))
+            conn.commit()
+        return jsonify({"ok": True, "deleted": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ─── Task API ─────────────────────────────────────────────────────────────────
 @app.route("/api/tasks")
 @require_auth
@@ -1329,6 +1466,101 @@ def api_delete(task_id):
                 cur.execute("DELETE FROM tasks WHERE id=%s", (task_id,))
             conn.commit()
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tasks/bulk", methods=["PUT"])
+@require_auth
+def api_bulk_update():
+    """Массовое редактирование задач: изменить проект/приоритет/исполнителя."""
+    try:
+        u = _session_user()
+        d = request.json or {}
+        ids = [int(i) for i in (d.get("ids") or [])]
+        if not ids:
+            return jsonify({"error": "no ids"}), 400
+        upd = d.get("update", {})
+        allowed_fields = {"project", "priority", "assignee", "assignee_email"}
+        fields = {k: v for k, v in upd.items() if k in allowed_fields}
+        if not fields:
+            return jsonify({"error": "no valid fields"}), 400
+        set_parts = []
+        vals = []
+        for k, v in fields.items():
+            set_parts.append(f"{k}=%s")
+            vals.append(v or None)
+        vals.append(ids)
+        changed_by = (u.get("name") or u.get("email", "unknown")) if u else "unknown"
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE tasks SET {', '.join(set_parts)} WHERE id=ANY(%s)",
+                    vals
+                )
+                for field, new_val in fields.items():
+                    for task_id in ids:
+                        cur.execute(
+                            "INSERT INTO task_history (task_id,changed_by,field,old_value,new_value) "
+                            "VALUES (%s,%s,%s,%s,%s)",
+                            (task_id, changed_by, field, None, str(new_val or ""))
+                        )
+            conn.commit()
+        return jsonify({"ok": True, "updated": len(ids)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tasks/bulk", methods=["DELETE"])
+@require_auth
+def api_bulk_delete():
+    """Массовое удаление задач."""
+    try:
+        d = request.json or {}
+        ids = [int(i) for i in (d.get("ids") or [])]
+        if not ids:
+            return jsonify({"error": "no ids"}), 400
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM tasks WHERE id=ANY(%s)", (ids,))
+            conn.commit()
+        return jsonify({"ok": True, "deleted": len(ids)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tasks/bulk-done", methods=["POST"])
+@require_auth
+def api_bulk_done():
+    """Массовое закрытие задач (автоматически добавляет системный комментарий)."""
+    try:
+        u = _session_user()
+        changed_by = (u.get("name") or u.get("email", "unknown")) if u else "unknown"
+        d = request.json or {}
+        ids = [int(i) for i in (d.get("ids") or [])]
+        comment = (d.get("comment") or "").strip() or f"Закрыто массовым действием ({changed_by})"
+        if not ids:
+            return jsonify({"error": "no ids"}), 400
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM tasks WHERE id=ANY(%s) AND done=FALSE",
+                    (ids,)
+                )
+                active_ids = [r["id"] for r in cur.fetchall()]
+                for task_id in active_ids:
+                    cur.execute(
+                        "INSERT INTO comments (task_id, author, text) VALUES (%s,%s,%s)",
+                        (task_id, changed_by, comment)
+                    )
+                    cur.execute(
+                        "UPDATE tasks SET done=TRUE, done_at=NOW() WHERE id=%s",
+                        (task_id,)
+                    )
+                    cur.execute(
+                        "INSERT INTO task_history (task_id,changed_by,field,old_value,new_value) "
+                        "VALUES (%s,%s,%s,%s,%s)",
+                        (task_id, changed_by, "Статус", "В работе", "Готово")
+                    )
+            conn.commit()
+        return jsonify({"ok": True, "closed": len(active_ids)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1789,7 +2021,7 @@ def plan_fact_page():
     return render_template(
         "plan_fact.html",
         projects=cabinets,
-        project_emoji=PROJECT_EMOJI,
+        project_emoji=_project_emoji_dict(),
         current_user=u,
         can_edit=_planfact_can_edit(u),
     )
@@ -2616,7 +2848,7 @@ def unit_page():
         "unit.html",
         current_user=u,
         projects=cabinets,
-        project_emoji=PROJECT_EMOJI,
+        project_emoji=_project_emoji_dict(),
     )
 
 
@@ -2638,6 +2870,7 @@ def _unit_row_params(d):
         "redemption_pct":   d.get("redemption_pct") or 100,
         "warehouse":        d.get("warehouse", ""),
         "irp":              d.get("irp") or 1.0,
+        "il":               d.get("il") or 1.0,
         "logistics_ktr":    d.get("logistics_ktr") or None,
         "reception_coef":   d.get("reception_coef", "x0"),
         "storage_per_day":  0,
@@ -2666,7 +2899,7 @@ def api_unit_rows_get():
                     SELECT id, project, brand, wb_article, seller_article,
                            cost_price, logistics_to_wb, packaging, overhead,
                            defect_pct, width_cm, length_cm, height_cm, liters,
-                           redemption_pct, warehouse, irp, logistics_ktr,
+                           redemption_pct, warehouse, irp, il, logistics_ktr,
                            reception_coef, storage_per_day, commission_pct,
                            wb_price, drr_pct, drr_external_rub, stock, spp_pct,
                            tax_system, tax_pct, status
@@ -2712,7 +2945,7 @@ def api_unit_rows_create():
                         (project, brand, wb_article, seller_article,
                          cost_price, logistics_to_wb, packaging, overhead,
                          defect_pct, width_cm, length_cm, height_cm, liters,
-                         redemption_pct, warehouse, irp, logistics_ktr,
+                         redemption_pct, warehouse, irp, il, logistics_ktr,
                          reception_coef, storage_per_day, commission_pct,
                          wb_price, drr_pct, drr_external_rub, stock, spp_pct,
                          tax_system, tax_pct, status)
@@ -2720,7 +2953,7 @@ def api_unit_rows_create():
                         (%(project)s, %(brand)s, %(wb_article)s, %(seller_article)s,
                          %(cost_price)s, %(logistics_to_wb)s, %(packaging)s, %(overhead)s,
                          %(defect_pct)s, %(width_cm)s, %(length_cm)s, %(height_cm)s, %(liters)s,
-                         %(redemption_pct)s, %(warehouse)s, %(irp)s, %(logistics_ktr)s,
+                         %(redemption_pct)s, %(warehouse)s, %(irp)s, %(il)s, %(logistics_ktr)s,
                          %(reception_coef)s, %(storage_per_day)s, %(commission_pct)s,
                          %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(stock)s, %(spp_pct)s,
                          %(tax_system)s, %(tax_pct)s, %(status)s)
@@ -2763,7 +2996,7 @@ def api_unit_rows_update(row_id):
                         defect_pct=%(defect_pct)s, width_cm=%(width_cm)s,
                         length_cm=%(length_cm)s, height_cm=%(height_cm)s, liters=%(liters)s,
                         redemption_pct=%(redemption_pct)s, warehouse=%(warehouse)s,
-                        irp=%(irp)s, logistics_ktr=%(logistics_ktr)s,
+                        irp=%(irp)s, il=%(il)s, logistics_ktr=%(logistics_ktr)s,
                         reception_coef=%(reception_coef)s, storage_per_day=%(storage_per_day)s,
                         commission_pct=%(commission_pct)s, wb_price=%(wb_price)s,
                         drr_pct=%(drr_pct)s, drr_external_rub=%(drr_external_rub)s,
@@ -3138,7 +3371,7 @@ def funnels_page():
     u = _session_user()
     allowed = _funnel_projects(u)
     cabinets = WB_CABINETS if allowed is None else [c for c in WB_CABINETS if c in allowed]
-    return render_template("funnels.html", current_user=u, projects=cabinets, project_emoji=PROJECT_EMOJI)
+    return render_template("funnels.html", current_user=u, projects=cabinets, project_emoji=_project_emoji_dict())
 
 
 def serialize_funnel(f):

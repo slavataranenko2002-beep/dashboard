@@ -88,7 +88,7 @@ th{padding:11px 16px;text-align:left;font-size:12px;color:var(--text3);font-weig
 td{padding:13px 16px;font-size:15px;border-bottom:1px solid var(--border);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:rgba(128,128,255,.03)}
-.done-row td{opacity:.4}.done-title{text-decoration:line-through}
+.done-row td{opacity:.4}.done-title{text-decoration:line-through}.sel-row td{background:rgba(74,158,255,.06)!important}
 
 /* Badges */
 .badge{display:inline-flex;align-items:center;font-size:13px;padding:3px 9px;border-radius:4px;font-weight:500;white-space:nowrap}
@@ -151,6 +151,44 @@ tr:hover td{background:rgba(128,128,255,.03)}
 .m-cancel{background:none;border:1px solid var(--border);color:var(--text2);padding:10px 18px;border-radius:8px;font-size:15px;cursor:pointer}
 .m-save{background:var(--blue);color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:500}
 .m-save:hover{opacity:.85}
+
+/* Управление проектами */
+.proj-manage-btn{margin:8px 12px 0;background:none;border:1px solid var(--border);color:var(--text3);padding:5px 12px;border-radius:8px;font-size:12px;cursor:pointer;width:calc(100% - 24px);text-align:left;transition:all .15s}
+.proj-manage-btn:hover{border-color:var(--blue);color:var(--text)}
+.proj-modal{width:560px}
+.proj-list{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;max-height:340px;overflow-y:auto}
+.proj-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg3)}
+.proj-item .proj-icon{font-size:20px;width:32px;text-align:center;cursor:pointer;border-radius:4px;padding:2px;transition:background .15s}
+.proj-item .proj-icon:hover{background:rgba(128,128,255,.1)}
+.proj-item .proj-name{flex:1;font-size:14px;font-weight:500}
+.proj-item input.proj-name-in{flex:1;background:var(--bg2);border:1px solid var(--blue);color:var(--text);padding:5px 8px;border-radius:6px;font-size:14px;font-weight:500;outline:none}
+.proj-color-dot{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex-shrink:0;transition:transform .15s}
+.proj-color-dot:hover{transform:scale(1.2)}
+.proj-item-acts{display:flex;gap:4px;flex-shrink:0}
+.proj-item .ab{font-size:12px;padding:4px 7px}
+.proj-add-form{display:flex;gap:8px;align-items:center;padding:10px 14px;border-radius:8px;border:1px dashed var(--border);margin-bottom:8px}
+.proj-add-form input[type=text]{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:14px;outline:none}
+.proj-add-form input[type=text]:focus{border-color:var(--blue)}
+.proj-emoji-pick{font-size:20px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;cursor:pointer}
+.proj-add-form input[type=color]{width:36px;height:36px;padding:2px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--bg3)}
+.proj-add-btn{background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap;font-weight:500}
+.proj-inactive{opacity:.45}
+.proj-inactive .proj-name{text-decoration:line-through}
+
+/* Массовое редактирование */
+.bulk-panel{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg2);border:1px solid var(--blue);border-radius:14px;padding:14px 20px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,.35);z-index:200;transition:transform .25s,opacity .25s;opacity:0;pointer-events:none;min-width:640px;max-width:calc(100vw - 40px);flex-wrap:wrap}
+.bulk-panel.open{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
+.bulk-count{font-size:13px;font-weight:600;color:var(--blue);white-space:nowrap}
+.bulk-sep{width:1px;height:28px;background:var(--border);flex-shrink:0}
+.bulk-panel select{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:7px;font-size:13px;padding:7px 10px}
+.bulk-apply{background:var(--blue);color:#fff;border:none;border-radius:7px;font-size:13px;padding:8px 14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.bulk-apply:hover{opacity:.85}
+.bulk-done-btn{background:var(--green);color:#fff;border:none;border-radius:7px;font-size:13px;padding:8px 14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.bulk-del-btn{background:none;border:1px solid var(--red);color:var(--red);border-radius:7px;font-size:13px;padding:7px 13px;cursor:pointer;white-space:nowrap}
+.bulk-clear{background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1;padding:2px 4px}
+.bulk-clear:hover{color:var(--text)}
+.task-cb-col{width:34px;padding-left:14px!important;padding-right:0!important}
+.task-cb{width:16px;height:16px;cursor:pointer;accent-color:var(--blue)}
 
 /* Comment button */
 .cb{background:none;border:1px solid transparent;color:var(--text3);padding:5px 9px;border-radius:5px;font-size:13px;cursor:pointer;transition:all .15s;white-space:nowrap}
@@ -506,6 +544,10 @@ tr:hover td{background:rgba(128,128,255,.03)}
       🎨 Дизайнеру <span class="nav-count" id="cnt-design">—</span>
     </button>
     {% endif %}
+    {% if current_user.role == 'admin' %}
+    <div class="nav-sep"></div>
+    <button class="proj-manage-btn" onclick="openProjModal()">⚙ Управление проектами</button>
+    {% endif %}
   </div>
 
   <!-- Main content -->
@@ -555,11 +597,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
           <label>Проект</label>
           <select class="ai" id="f-project">
             <option value="">Без проекта</option>
-            <option value="KSF">🔵 KSF</option>
-            <option value="KLIFE">🟣 KLIFE</option>
-            <option value="PA">🟢 PA</option>
-            <option value="PIELE">🟡 PIELE</option>
-            <option value="Визенкова">🟠 Визенкова</option>
+            {% for p in visible_projects %}<option value="{{ p.name }}">{{ p.emoji }} {{ p.name }}</option>{% endfor %}
           </select>
         </div>
         <div class="aff" style="min-width:120px">
@@ -587,6 +625,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
       <table>
         <thead>
           <tr>
+            {% if current_user.role != 'seller' %}<th class="task-cb-col"><input type="checkbox" class="task-cb" id="cb-all" onchange="toggleSelectAll(this)" title="Выбрать все"></th>{% endif %}
             <th style="width:32px">#</th>
             <th>Задача</th>
             <th>Проект</th>
@@ -599,7 +638,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="{{ 7 if current_user.role == 'seller' else 8 }}" class="empty"><div class="empty-ic">⏳</div>Загрузка...</td></tr>
+          <tr><td colspan="{{ 7 if current_user.role == 'seller' else 9 }}" class="empty"><div class="empty-ic">⏳</div>Загрузка...</td></tr>
         </tbody>
       </table>
     </div>
@@ -737,6 +776,49 @@ tr:hover td{background:rgba(128,128,255,.03)}
   </div>
 </div>
 
+<!-- Панель массового редактирования -->
+<div class="bulk-panel" id="bulk-panel">
+  <span class="bulk-count" id="bulk-count">0 выбрано</span>
+  <div class="bulk-sep"></div>
+  <select id="bulk-project">
+    <option value="">— проект —</option>
+    {% for p in visible_projects %}
+    <option value="{{ p.name }}">{{ p.emoji }} {{ p.name }}</option>
+    {% endfor %}
+  </select>
+  <select id="bulk-priority">
+    <option value="">— приоритет —</option>
+    <option value="high">🔴 Срочно</option>
+    <option value="med">🟡 Обычная</option>
+    <option value="low">🟢 Низкий</option>
+  </select>
+  <select id="bulk-assignee">
+    <option value="">— исполнитель —</option>
+  </select>
+  <button class="bulk-apply" onclick="bulkApply()">Применить</button>
+  <div class="bulk-sep"></div>
+  <button class="bulk-done-btn" onclick="bulkClose()">✓ Закрыть</button>
+  <button class="bulk-del-btn" onclick="bulkDelete()">🗑 Удалить</button>
+  <button class="bulk-clear" onclick="bulkClear()" title="Снять выбор">✕</button>
+</div>
+
+<!-- Project Management Modal (admin only) -->
+<div class="overlay" id="proj-overlay" onclick="if(event.target===this)closeProjModal()">
+  <div class="modal proj-modal">
+    <div class="modal-title">⚙ Управление проектами</div>
+    <div class="proj-list" id="proj-list"><!-- рендерится JS --></div>
+    <div class="proj-add-form">
+      <span class="proj-emoji-pick" id="new-proj-emoji" onclick="cycleProjEmoji(this)" title="Клик — сменить">⚪</span>
+      <input type="color" id="new-proj-color" value="#4a9eff" title="Цвет">
+      <input type="text" id="new-proj-name" placeholder="Название проекта…" onkeydown="if(event.key==='Enter')createProject()">
+      <button class="proj-add-btn" onclick="createProject()">+ Добавить</button>
+    </div>
+    <div class="macts">
+      <button class="m-cancel" onclick="closeProjModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <!-- Edit Modal -->
 <div class="overlay" id="overlay" onclick="overlayClick(event)">
   <div class="modal">
@@ -750,11 +832,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
       <label>Проект</label>
       <select id="e-project">
         <option value="">Без проекта</option>
-        <option value="KSF">🔵 KSF</option>
-        <option value="KLIFE">🟣 KLIFE</option>
-        <option value="PA">🟢 PA</option>
-        <option value="PIELE">🟡 PIELE</option>
-        <option value="Визенкова">🟠 Визенкова</option>
+        {% for p in visible_projects %}<option value="{{ p.name }}">{{ p.emoji }} {{ p.name }}</option>{% endfor %}
       </select>
     </div>
     <div class="mf">
@@ -836,6 +914,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
 <script>
 let allTasks = [];
 let taskMap = {};
+let selectedTasks = new Set();     // ids выбранных задач для bulk-edit
 let expandedSubtasks = new Set(); // ids задач с раскрытыми подзадачами
 let subtasksMap = {};             // task_id -> [subtask, ...]
 let subtasksLoading = new Set();  // task_id, которые сейчас грузятся
@@ -850,7 +929,7 @@ async function loadUsers() {
 }
 
 function _populateAssigneeSels() {
-  ['f-who','e-who','df-who','de-who'].forEach(id => {
+  ['f-who','e-who','df-who','de-who','bulk-assignee'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const cur = sel.value;
@@ -876,13 +955,10 @@ let todayClaims = {};   // task_id → {id, task_id, user_name, title, project, 
 const USER_ROLE = {{ current_user.role | tojson }};
 const USER_NAME = {{ current_user.name | tojson }};
 
-const PROJ_COLORS = {
-  KSF:'#4a9eff', KLIFE:'#a78bfa',
-  PA:'#4ade80', PIELE:'#fbbf24', 'Визенкова':'#fb923c'
-};
-const PROJ_EMOJI = {
-  KSF:'🔵', KLIFE:'🟣', PA:'🟢', PIELE:'🟡', 'Визенкова':'🟠'
-};
+// Проекты — динамически из БД (все активные)
+const ALL_PROJECTS_DB = {{ all_projects_json | safe }};
+const PROJ_COLORS = Object.fromEntries(ALL_PROJECTS_DB.map(p=>[p.name, p.color]));
+const PROJ_EMOJI  = Object.fromEntries(ALL_PROJECTS_DB.map(p=>[p.name, p.emoji]));
 const PRIO = {high:'🔴 Срочно', med:'🟡 Обычная', low:'🟢 Низкий'};
 const MON = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
 
@@ -1009,7 +1085,7 @@ function render(){
   };
 
   if(!tasks.length){
-    tbody.innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:8}" class="empty"><div class="empty-ic">📭</div>Задач нет</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:9}" class="empty"><div class="empty-ic">📭</div>Задач нет</td></tr>`;
     return;
   }
   tbody.innerHTML = tasks.map((t,i)=>{
@@ -1043,7 +1119,13 @@ function render(){
     const subArrow = `<button class="${arrowCls}" onclick="toggleSubtasks(event,${t.id})" title="Подзадачи">${isOpen?'▼':'▶'}</button>`;
     const subBadge = subTotal ? `<span class="sub-badge ${subDone===subTotal?'all-done':''}">${subDone}/${subTotal}</span>` : '';
 
-    const mainRow = `<tr class="${t.done?'done-row':''}" translate="no">
+    const isSel = selectedTasks.has(t.id);
+    const cbCell = USER_ROLE !== 'seller'
+      ? `<td class="task-cb-col"><input type="checkbox" class="task-cb" ${isSel?'checked':''} onchange="toggleTaskSelect(${t.id},this)"></td>`
+      : '';
+
+    const mainRow = `<tr class="${t.done?'done-row':''}${isSel?' sel-row':''}" translate="no">
+      ${cbCell}
       <td style="color:var(--text3);font-size:13px">${i+1}</td>
       <td style="font-weight:500;max-width:280px" class="${t.done?'done-title':''}">${subArrow}${esc(t.title)}${subBadge}</td>
       <td>${projBadge(t.project)}</td>
@@ -1063,7 +1145,7 @@ function render(){
 
 // ── Подзадачи: раскрывающийся список ──────────────────────────────────────────
 
-function _subtaskColspan(){ return USER_ROLE==='seller' ? 7 : 8; }
+function _subtaskColspan(){ return USER_ROLE==='seller' ? 7 : 9; }
 
 function renderSubtaskPanel(t){
   const subs = subtasksMap[t.id];
@@ -1366,7 +1448,7 @@ async function load(){
     updateAssigneeFilter();
     if(curView==='tasks') render(); else renderToday();
   } catch(e){
-    document.getElementById('tbody').innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:8}" class="empty">Ошибка загрузки</td></tr>`;
+    document.getElementById('tbody').innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:9}" class="empty">Ошибка загрузки</td></tr>`;
   }
 }
 
@@ -2250,6 +2332,229 @@ async function _activityPing(){
 }
 _activityPing(); // при загрузке страницы
 setInterval(_activityPing, 60000); // каждую минуту
+
+// ── Массовое редактирование задач ────────────────────────────────────────────
+
+function toggleTaskSelect(taskId, cb){
+  if(cb.checked) selectedTasks.add(taskId);
+  else           selectedTasks.delete(taskId);
+  _updateBulkPanel();
+  // синхронизировать «выбрать все»
+  const cbAll = document.getElementById('cb-all');
+  if(cbAll){
+    const visible = allTasks.filter(t => !curProject || curProject==='__none__' ? !t.project : t.project===curProject);
+    cbAll.checked = visible.length > 0 && visible.every(t=>selectedTasks.has(t.id));
+    cbAll.indeterminate = selectedTasks.size > 0 && !cbAll.checked;
+  }
+}
+
+function toggleSelectAll(cbAll){
+  let tasks = allTasks;
+  if(curProject === '__none__') tasks = tasks.filter(t=>!t.project);
+  else if(curProject)          tasks = tasks.filter(t=>t.project===curProject);
+  if(curStatus==='active') tasks = tasks.filter(t=>!t.done);
+  else if(curStatus==='done') tasks = tasks.filter(t=>t.done);
+  if(cbAll.checked) tasks.forEach(t=>selectedTasks.add(t.id));
+  else              selectedTasks.clear();
+  _updateBulkPanel();
+  render();
+}
+
+function bulkClear(){
+  selectedTasks.clear();
+  const cbAll = document.getElementById('cb-all');
+  if(cbAll){ cbAll.checked=false; cbAll.indeterminate=false; }
+  _updateBulkPanel();
+  render();
+}
+
+function _updateBulkPanel(){
+  const panel = document.getElementById('bulk-panel');
+  const cnt   = document.getElementById('bulk-count');
+  const n = selectedTasks.size;
+  if(n > 0){
+    panel.classList.add('open');
+    cnt.textContent = `${n} выбрано`;
+  } else {
+    panel.classList.remove('open');
+  }
+}
+
+async function bulkApply(){
+  if(!selectedTasks.size) return;
+  const proj  = document.getElementById('bulk-project').value;
+  const prio  = document.getElementById('bulk-priority').value;
+  const who   = document.getElementById('bulk-assignee').value;
+  const upd   = {};
+  if(proj) upd.project = proj;
+  if(prio) upd.priority = prio;
+  if(who){
+    const u = _userByEmail(who);
+    upd.assignee_email = who;
+    upd.assignee = u ? u.first_name : null;
+  }
+  if(!Object.keys(upd).length){ alert('Выберите хотя бы одно поле для изменения'); return; }
+  try{
+    const r = await fetch('/api/tasks/bulk',{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ids:[...selectedTasks], update:upd})
+    });
+    const d = await r.json();
+    if(d.error){ alert('Ошибка: '+d.error); return; }
+    // сбросить селекты
+    document.getElementById('bulk-project').value='';
+    document.getElementById('bulk-priority').value='';
+    document.getElementById('bulk-assignee').value='';
+    bulkClear(); load();
+  }catch(e){ alert('Ошибка: '+e.message); }
+}
+
+async function bulkClose(){
+  if(!selectedTasks.size) return;
+  const comment = prompt('Комментарий для закрытия задач (необязательно):') ?? '';
+  try{
+    const r = await fetch('/api/tasks/bulk-done',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ids:[...selectedTasks], comment})
+    });
+    const d = await r.json();
+    if(d.error){ alert('Ошибка: '+d.error); return; }
+    bulkClear(); load();
+  }catch(e){ alert('Ошибка: '+e.message); }
+}
+
+async function bulkDelete(){
+  if(!selectedTasks.size) return;
+  if(!confirm(`Удалить ${selectedTasks.size} задач(и)?`)) return;
+  try{
+    const r = await fetch('/api/tasks/bulk',{
+      method:'DELETE', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ids:[...selectedTasks]})
+    });
+    const d = await r.json();
+    if(d.error){ alert('Ошибка: '+d.error); return; }
+    bulkClear(); load();
+  }catch(e){ alert('Ошибка: '+e.message); }
+}
+
+// ── Управление проектами (только admin) ──────────────────────────────────────
+
+const PROJ_EMOJIS = ['⚪','🔵','🟣','🟢','🟡','🟠','🔴','🟤','⚫','⭐','💎','🔶','🔷','✅','🎯','🚀','🏆','📦','🛒','💼'];
+let _projEmojiIdx = 0;
+let _allProjectsData = [...ALL_PROJECTS_DB]; // локальная копия
+
+async function openProjModal(){
+  const r = await fetch('/api/admin/projects');
+  _allProjectsData = await r.json();
+  renderProjList();
+  document.getElementById('proj-overlay').classList.add('open');
+}
+
+function closeProjModal(){
+  document.getElementById('proj-overlay').classList.remove('open');
+}
+
+function renderProjList(){
+  const list = document.getElementById('proj-list');
+  list.innerHTML = _allProjectsData.map(p=>`
+    <div class="proj-item ${p.active?'':'proj-inactive'}" data-id="${p.id}">
+      <span class="proj-icon" onclick="cycleProjItemEmoji(${p.id})" title="Клик — сменить эмодзи">${esc(p.emoji)}</span>
+      <input class="proj-name-in" value="${esc(p.name)}" onchange="markProjDirty(${p.id},'name',this.value)" onblur="saveProjField(${p.id})">
+      <input type="color" value="${esc(p.color)}" class="proj-color-dot" style="background:${esc(p.color)}" oninput="markProjDirty(${p.id},'color',this.value);this.style.background=this.value" onchange="saveProjField(${p.id})" title="Цвет">
+      <div class="proj-item-acts">
+        ${p.active
+          ? `<button class="ab dl" onclick="deleteProject(${p.id})" title="Удалить / скрыть">🗑</button>`
+          : `<button class="ab" onclick="restoreProject(${p.id})" title="Восстановить">↩</button>`}
+      </div>
+    </div>`).join('');
+}
+
+const _projDirty = {}; // id -> {field: value}
+function markProjDirty(id, field, value){
+  if(!_projDirty[id]) _projDirty[id] = {};
+  _projDirty[id][field] = value;
+  // обновить локально для превью
+  const p = _allProjectsData.find(x=>x.id===id);
+  if(p) p[field] = value;
+}
+
+async function saveProjField(id){
+  if(!_projDirty[id]) return;
+  try{
+    await fetch('/api/admin/projects/'+id,{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(_projDirty[id])
+    });
+    delete _projDirty[id];
+  }catch(e){ console.error(e); }
+}
+
+function cycleProjItemEmoji(id){
+  const p = _allProjectsData.find(x=>x.id===id);
+  if(!p) return;
+  const idx = (PROJ_EMOJIS.indexOf(p.emoji)+1) % PROJ_EMOJIS.length;
+  p.emoji = PROJ_EMOJIS[idx];
+  markProjDirty(id,'emoji', p.emoji);
+  saveProjField(id);
+  renderProjList();
+}
+
+function cycleProjEmoji(el){
+  _projEmojiIdx = (_projEmojiIdx+1) % PROJ_EMOJIS.length;
+  el.textContent = PROJ_EMOJIS[_projEmojiIdx];
+}
+
+async function createProject(){
+  const name  = document.getElementById('new-proj-name').value.trim();
+  const emoji = document.getElementById('new-proj-emoji').textContent;
+  const color = document.getElementById('new-proj-color').value;
+  if(!name){ document.getElementById('new-proj-name').focus(); return; }
+  try{
+    const r = await fetch('/api/admin/projects',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, emoji, color})
+    });
+    const d = await r.json();
+    if(d.error){ alert('Ошибка: '+d.error); return; }
+    document.getElementById('new-proj-name').value='';
+    _projEmojiIdx = 0;
+    document.getElementById('new-proj-emoji').textContent='⚪';
+    // перезагрузить список
+    const r2 = await fetch('/api/admin/projects');
+    _allProjectsData = await r2.json();
+    renderProjList();
+    // перезагрузить страницу чтобы сайдбар обновился
+    setTimeout(()=>location.reload(), 400);
+  }catch(e){ alert('Ошибка: '+e.message); }
+}
+
+async function deleteProject(id){
+  const p = _allProjectsData.find(x=>x.id===id);
+  const name = p ? p.name : id;
+  if(!confirm(`Удалить проект «${name}»?\n\nЕсли есть активные задачи — проект будет скрыт, а не удалён.`)) return;
+  try{
+    const r = await fetch('/api/admin/projects/'+id,{method:'DELETE'});
+    const d = await r.json();
+    if(d.error){ alert('Ошибка: '+d.error); return; }
+    const r2 = await fetch('/api/admin/projects');
+    _allProjectsData = await r2.json();
+    renderProjList();
+    setTimeout(()=>location.reload(), 400);
+  }catch(e){ alert('Ошибка: '+e.message); }
+}
+
+async function restoreProject(id){
+  try{
+    await fetch('/api/admin/projects/'+id,{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({active: true})
+    });
+    const r2 = await fetch('/api/admin/projects');
+    _allProjectsData = await r2.json();
+    renderProjList();
+    setTimeout(()=>location.reload(), 400);
+  }catch(e){ alert('Ошибка: '+e.message); }
+}
 </script>
 
 <div id="notif-container"></div>
