@@ -1,860 +1,910 @@
 """
-wb_report.py — Генерация HTML еженедельного отчёта WB по образцу.
-
-Использует данные из wb_api.collect_report_data().
+wb_report.py — 5-вкладочный HTML отчёт WB.
+Вкладки: Сводка / Воронка / Реклама / Юнит / Рекомендации
 """
 from __future__ import annotations
 
-import html
+import html as _esc
+import json
 from datetime import date
-from typing import Iterable
 
 from wb_api import ADVERT_TYPE
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Форматирование чисел/дат
-# ──────────────────────────────────────────────────────────────────────────────
-
-MONTHS = [
-    "января", "февраля", "марта", "апреля", "мая", "июня",
-    "июля", "августа", "сентября", "октября", "ноября", "декабря",
-]
+MONTHS = ["января","февраля","марта","апреля","мая","июня",
+          "июля","августа","сентября","октября","ноября","декабря"]
 
 
-def fmt_int(v: float | int | None) -> str:
-    if v is None:
-        return "—"
-    return f"{int(round(v)):,}".replace(",", " ")
+# ─── форматирование ────────────────────────────────────────────────────────────
 
+def fmt_int(v):
+    if v is None: return "—"
+    return f"{int(round(v)):,}".replace(",", " ")
 
-def fmt_money(v: float | int | None, suffix: str = " ₽") -> str:
-    if v is None:
-        return "—"
-    return f"{int(round(v)):,}".replace(",", " ") + suffix
+def fmt_money(v, suffix=" ₽"):
+    if v is None: return "—"
+    return f"{int(round(v)):,}".replace(",", " ") + suffix
 
-
-def fmt_pct(v: float | None, digits: int = 1) -> str:
-    if v is None:
-        return "—"
+def fmt_pct(v, digits=1):
+    if v is None: return "—"
     return f"{v:.{digits}f}%"
-
 
 def fmt_period(d_from: date, d_to: date) -> str:
     if d_from.month == d_to.month and d_from.year == d_to.year:
-        return f"{d_from.day:02d} — {d_to.day:02d} {MONTHS[d_to.month-1]} {d_to.year}"
-    return (
-        f"{d_from.day:02d} {MONTHS[d_from.month-1]} — "
-        f"{d_to.day:02d} {MONTHS[d_to.month-1]} {d_to.year}"
-    )
+        return f"{d_from.day:02d} — {d_to.day:02d} {MONTHS[d_to.month-1]} {d_to.year}"
+    return (f"{d_from.day:02d} {MONTHS[d_from.month-1]} — "
+            f"{d_to.day:02d} {MONTHS[d_to.month-1]} {d_to.year}")
 
-
-def delta_pct(cur: float, prev: float) -> float | None:
-    if not prev:
-        return None
-    return (cur - prev) / prev * 100
-
-
-def delta_html(cur: float, prev: float, prev_label: str, unit: str = "") -> str:
-    """KPI-дельта vs прошлый период."""
-    if prev is None or prev == 0:
-        return '<div class="kpi-delta neutral">— нет данных пред. периода</div>'
-    pct = (cur - prev) / prev * 100
-    arrow = "▲" if pct > 0 else "▼"
-    cls = "up" if pct > 0 else ("down" if pct < 0 else "neutral")
-    return (
-        f'<div class="kpi-delta {cls}">{arrow} '
-        f'{abs(pct):.0f}% &nbsp; пред: {prev_label}</div>'
-    )
-
-
-def drr_class(drr: float) -> str:
-    if drr <= 0:
-        return "drr-na"
-    if drr < 5:
-        return "drr-good"
-    if drr < 10:
-        return "drr-ok"
-    return "drr-bad"
-
-
-def ctr_class(ctr: float) -> str:
-    """CTR в одежде: <3% плохо, 3–4.5% средне, ≥4.5% отлично."""
-    if ctr <= 0:
-        return "drr-na"
-    if ctr < 3:
-        return "drr-bad"
-    if ctr < 4.5:
-        return "drr-ok"
-    return "drr-good"
-
-
-def short_money(v: float) -> str:
-    """4 429 769 ₽ -> 4 429 тыс."""
-    if v >= 1_000_000:
-        return f"{v/1_000_000:.1f} млн".replace(".", ",")
-    if v >= 1_000:
-        return f"{v/1_000:.0f} тыс".replace(".", ",")
+def short_money(v):
+    if v is None: return "—"
+    if v >= 1_000_000: return f"{v/1_000_000:.1f} млн".replace(".", ",")
+    if v >= 1_000: return f"{v/1_000:.0f} тыс"
     return fmt_int(v)
 
+def delta_badge(cur, prev, unit=""):
+    if not prev: return ""
+    d = (cur - prev) / prev * 100
+    if d > 0: return f'<span class="badge up">▲ {d:+.0f}%</span>'
+    if d < 0: return f'<span class="badge dn">▼ {d:.0f}%</span>'
+    return '<span class="badge nt">= 0%</span>'
 
-def short_num(v: float) -> str:
-    if v >= 1_000_000:
-        return f"{v/1_000_000:.1f}M".replace(".", ",")
-    if v >= 1_000:
-        return f"{v/1_000:.0f}K"
-    return fmt_int(v)
 
+# ─── CSS ──────────────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────────────────────────────────────
-# HTML
-# ──────────────────────────────────────────────────────────────────────────────
-
-CSS = r"""
+CSS = """
 :root {
-  --bg: #0e0f14; --surface: #161820; --surface2: #1e2030; --border: #2a2d3e;
-  --accent: #7c6af7; --accent2: #4fd1c5; --warn: #f6ad55; --danger: #fc5c65;
-  --success: #48bb78; --text: #e8eaf6; --text-muted: #7b7f9e; --text-dim: #4a4e6b;
-  --transition: background .25s, color .25s, border-color .25s;
+  --bg:#0e0f14; --surf:#161820; --surf2:#1d1f2d; --surf3:#252840;
+  --brd:#2a2d3e; --brd2:#363a56;
+  --acc:#7c6af7; --acc2:#4fd1c5;
+  --warn:#f6ad55; --danger:#fc5c65; --ok:#48bb78;
+  --txt:#e8eaf6; --txt2:#9aa1bf; --txt3:#4a4e6b;
+  --tr:.2s;
 }
 :root.light {
-  --bg: #f3f5f9; --surface: #ffffff; --surface2: #f1f3f9; --border: #dde1ea;
-  --accent: #6450e6; --accent2: #2eb8ac; --warn: #c97a16; --danger: #d83a48;
-  --success: #2f9c5d; --text: #1a1d2e; --text-muted: #5a6072; --text-dim: #9aa1b3;
+  --bg:#f0f2f8; --surf:#fff; --surf2:#f4f6fb; --surf3:#eaecf4;
+  --brd:#dde0ea; --brd2:#c8ccd8;
+  --acc:#6450e6; --acc2:#2eb8ac;
+  --warn:#c97a16; --danger:#d83a48; --ok:#2f9c5d;
+  --txt:#1a1d2e; --txt2:#5a6072; --txt3:#9aa1b3;
 }
-/* Светлая тема: точечно перекрашиваем элементы, у которых был светло-фиолетовый
-   акцентный цвет — на белом фоне они становились нечитаемыми. */
-:root.light .sku-code     { color: #4a3fb5; }
-:root.light .brand-badge  { color: #4a3fb5; background: rgba(124,106,247,0.08); border-color: rgba(124,106,247,0.25); }
-:root.light .camp-ark     { color: #4a3fb5; background: rgba(124,106,247,0.10); }
-:root.light .camp-search  { color: #1a8d83; background: rgba(46,184,172,0.12); }
-:root.light .num-info     { color: #4a3fb5; background: rgba(124,106,247,0.15); }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 14px; line-height: 1.6; min-height: 100vh; transition: var(--transition); }
-body::before {
-  content: ''; position: fixed; inset: 0;
-  background-image:
-    radial-gradient(circle at 20% 20%, rgba(124,106,247,0.06) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(79,209,197,0.04) 0%, transparent 50%);
-  pointer-events: none; z-index: 0;
-}
-:root.light body::before { opacity: .35; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:'Inter',sans-serif;font-size:14px;line-height:1.6;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(circle at 18% 18%,rgba(124,106,247,.06) 0%,transparent 50%),radial-gradient(circle at 82% 82%,rgba(79,209,197,.04) 0%,transparent 50%);pointer-events:none;z-index:0}
+:root.light body::before{opacity:.3}
+a{color:inherit;text-decoration:none}
 
-/* Floating toolbar (PDF / HTML / theme) */
-.toolbar-fixed { position: fixed; top: 18px; right: 18px; z-index: 100; display: flex; gap: 8px; }
-.tb-btn {
-  background: var(--surface); border: 1px solid var(--border);
-  color: var(--text-muted); height: 38px; padding: 0 14px;
-  border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 500;
-  display: inline-flex; align-items: center; gap: 6px;
-  transition: var(--transition), transform .15s;
-  box-shadow: 0 2px 12px rgba(0,0,0,.15); font-family: inherit;
-}
-.tb-btn:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
-.tb-btn.icon-only { width: 38px; padding: 0; justify-content: center; font-size: 16px; }
-.tb-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.tb-btn.primary:hover { color: #fff; opacity: .9; }
-.page { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 48px 32px; }
+/* ── toolbar ── */
+.toolbar{position:fixed;top:16px;right:16px;z-index:200;display:flex;gap:8px}
+.tbtn{height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--brd);background:var(--surf);color:var(--txt2);font-size:13px;font-family:inherit;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:var(--tr);box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.tbtn:hover{border-color:var(--acc);color:var(--acc)}
+.tbtn.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.tbtn.pri:hover{opacity:.88;color:#fff}
+.tbtn.ico{width:36px;padding:0;justify-content:center;font-size:16px}
 
-/* Header */
-.report-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 48px; padding-bottom: 32px; border-bottom: 1px solid var(--border); }
-.brand-badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(124,106,247,0.12); border: 1px solid rgba(124,106,247,0.3); border-radius: 6px; padding: 4px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #a89df8; margin-bottom: 16px; }
-.report-title { font-family: 'Unbounded', sans-serif; font-size: 28px; font-weight: 900; color: var(--text); line-height: 1.2; max-width: 600px; }
-.report-title span { color: var(--accent); }
-.report-meta { text-align: right; }
-.report-meta .period { font-family: 'Unbounded', sans-serif; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
-.report-meta .date { font-size: 12px; color: var(--text-dim); }
+/* ── page ── */
+.page{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:32px 28px 64px}
 
-/* KPI */
-.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 40px; }
-.kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
-.kpi-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), var(--accent2)); opacity: 0.6; }
-.kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
-.kpi-value { font-family: 'Unbounded', sans-serif; font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
-.kpi-delta { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
-.kpi-delta.up { color: var(--success); background: rgba(72,187,120,0.1); }
-.kpi-delta.down { color: var(--danger); background: rgba(252,92,101,0.1); }
-.kpi-delta.neutral { color: var(--text-muted); background: rgba(123,127,158,0.1); }
+/* ── report header ── */
+.rep-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;padding-bottom:24px;border-bottom:1px solid var(--brd)}
+.rep-badge{display:inline-flex;align-items:center;gap:7px;background:rgba(124,106,247,.12);border:1px solid rgba(124,106,247,.28);border-radius:6px;padding:4px 11px;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#a89df8;margin-bottom:12px}
+.rep-title{font-family:'Unbounded',sans-serif;font-size:24px;font-weight:900;line-height:1.2}
+.rep-title span{color:var(--acc)}
+.rep-meta{text-align:right}
+.rep-meta .period{font-family:'Unbounded',sans-serif;font-size:13px;color:var(--txt2);margin-bottom:4px}
+.rep-meta .sub{font-size:12px;color:var(--txt3)}
+.rep-chips{display:flex;gap:8px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap}
+.rep-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:5px;font-size:12px;background:var(--surf2);border:1px solid var(--brd);color:var(--txt2)}
+.rep-chip b{color:var(--txt)}
 
-/* Section */
-.section-title { font-family: 'Unbounded', sans-serif; font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
-.section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+/* ── tabs ── */
+.tabs{display:flex;gap:2px;background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:4px;margin-bottom:28px;overflow-x:auto}
+.tab-btn{flex:1;min-width:max-content;padding:9px 18px;border-radius:9px;border:none;background:transparent;color:var(--txt2);font-size:13px;font-weight:500;font-family:inherit;cursor:pointer;transition:var(--tr);white-space:nowrap;text-align:center}
+.tab-btn:hover{color:var(--txt);background:var(--surf2)}
+.tab-btn.active{background:var(--acc);color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(124,106,247,.35)}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
 
-/* Tables */
-.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; overflow-y: hidden; margin-bottom: 40px; -webkit-overflow-scrolling: touch; }
-table { width: 100%; border-collapse: collapse; }
-thead th { background: var(--surface2); padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
-thead th.right { text-align: right; }
-tbody tr { border-bottom: 1px solid var(--border); }
-tbody tr:last-child { border-bottom: none; }
-tbody td { padding: 11px 16px; color: var(--text); vertical-align: middle; }
-tbody td.right { text-align: right; }
-tbody td.muted { color: var(--text-muted); }
-.sku-code { font-weight: 600; font-family: 'Unbounded', sans-serif; font-size: 11px; color: #c0beff; }
-.sku-name { font-size: 12px; color: var(--text-muted); display: block; margin-top: 2px; max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sku-link { display: inline-block; text-decoration: none; color: inherit; transition: opacity .15s, color .15s; position: relative; padding-right: 14px; }
-.sku-link:hover { opacity: .85; }
-.sku-link:hover .sku-code { color: var(--accent); }
-.sku-link::after { content: '↗'; position: absolute; top: 0; right: 0; font-size: 10px; color: var(--text-dim); opacity: 0; transition: opacity .15s; }
-.sku-link:hover::after { opacity: 1; color: var(--accent); }
-.drr-pill { display: inline-block; padding: 3px 9px; border-radius: 5px; font-weight: 600; font-size: 12px; }
-.drr-good { background: rgba(72,187,120,0.12); color: var(--success); }
-.drr-ok   { background: rgba(246,173,85,0.12); color: var(--warn); }
-.drr-bad  { background: rgba(252,92,101,0.12); color: var(--danger); }
-.drr-na   { background: transparent; color: var(--text-dim); }
-.change-pos { color: var(--success); font-size: 11px; font-weight: 600; }
-.change-neg { color: var(--danger); font-size: 11px; font-weight: 600; }
-.change-new { color: var(--accent2); font-size: 11px; font-weight: 600; }
-.buyout-bar { display: flex; align-items: center; gap: 8px; }
-.bar-track { width: 60px; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
-.bar-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
-.total-row { background: var(--surface2) !important; border-top: 2px solid var(--border) !important; }
-.total-row td { font-weight: 700; color: var(--text) !important; }
-.camp-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
-.camp-ark    { background: rgba(124,106,247,0.12); color: #a89df8; }
-.camp-search { background: rgba(79,209,197,0.12); color: var(--accent2); }
-.camp-auto   { background: rgba(246,173,85,0.12); color: var(--warn); }
+/* ── section title ── */
+.sec{font-family:'Unbounded',sans-serif;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt);margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.sec::after{content:'';flex:1;height:1px;background:var(--brd)}
 
-/* Funnel */
-.funnel-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; background: var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 40px; }
-.funnel-step { background: var(--surface); padding: 20px 16px; text-align: center; }
-.funnel-step-label { font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
-.funnel-step-value { font-family: 'Unbounded', sans-serif; font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-.funnel-conv { font-size: 11px; color: var(--accent2); font-weight: 600; }
-.funnel-prev { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+/* ── metric cards grid ── */
+.kgrid{display:grid;gap:14px;margin-bottom:28px}
+.kgrid-4{grid-template-columns:repeat(4,1fr)}
+.kgrid-3{grid-template-columns:repeat(3,1fr)}
+.kgrid-2{grid-template-columns:repeat(2,1fr)}
+.kcard{background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:18px 18px 16px;position:relative;overflow:hidden}
+.kcard::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--acc),var(--acc2));opacity:.6}
+.kcard.green::before{background:linear-gradient(90deg,var(--ok),var(--acc2))}
+.kcard.orange::before{background:linear-gradient(90deg,var(--warn),#f68e3a)}
+.kcard.red::before{background:linear-gradient(90deg,var(--danger),#fc8f66)}
+.kc-label{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);margin-bottom:8px}
+.kc-val{font-family:'Unbounded',sans-serif;font-size:20px;font-weight:700;color:var(--txt);margin-bottom:6px;line-height:1.2}
+.kc-sub{font-size:12px;color:var(--txt3)}
 
-/* Note */
-.note-block { background: rgba(246,173,85,0.06); border: 1px solid rgba(246,173,85,0.2); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--text-muted); margin-bottom: 40px; }
-.note-block strong { color: var(--warn); }
+/* ── badge / delta ── */
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px}
+.badge.up{color:var(--ok);background:rgba(72,187,120,.1)}
+.badge.dn{color:var(--danger);background:rgba(252,92,101,.1)}
+.badge.nt{color:var(--txt2);background:rgba(123,127,158,.1)}
+.badge.warn{color:var(--warn);background:rgba(246,173,85,.1)}
 
-/* Done tasks */
-.done-tasks-section { margin-top: 32px; }
-.done-tasks-list { display: flex; flex-direction: column; gap: 8px; }
-.dt-row { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
-.dt-date { flex-shrink: 0; font-size: 12px; color: var(--text-muted); min-width: 36px; }
-.dt-title { flex: 1; color: var(--text); }
-.dt-who { flex-shrink: 0; font-size: 12px; color: var(--text-muted); background: rgba(124,106,247,0.15); padding: 2px 8px; border-radius: 20px; }
+/* ── pill ── */
+.pill{display:inline-block;padding:3px 9px;border-radius:5px;font-weight:600;font-size:12px}
+.pill.good{background:rgba(72,187,120,.12);color:var(--ok)}
+.pill.ok  {background:rgba(246,173,85,.12);color:var(--warn)}
+.pill.bad {background:rgba(252,92,101,.12);color:var(--danger)}
+.pill.na  {background:transparent;color:var(--txt3)}
+.pill.urgent{background:rgba(252,92,101,.18);color:var(--danger)}
 
-/* Insights */
-.insights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 40px; }
-.insight-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
-.insight-card h3 { font-family: 'Unbounded', sans-serif; font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-.insight-item { display: flex; gap: 10px; margin-bottom: 12px; font-size: 13px; line-height: 1.5; }
-.insight-item:last-child { margin-bottom: 0; }
-.insight-num { width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-top: 1px; }
-.num-urgent { background: rgba(252,92,101,0.2); color: var(--danger); }
-.num-ok     { background: rgba(72,187,120,0.2); color: var(--success); }
-.num-info   { background: rgba(124,106,247,0.2); color: #a89df8; }
-.num-warn   { background: rgba(246,173,85,0.2); color: var(--warn); }
-.insight-text { color: var(--text-muted); }
-.insight-text strong { color: var(--text); }
+/* ── insight cards ── */
+.ins-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:28px}
+.ins-card{background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:18px}
+.ins-card h3{font-family:'Unbounded',sans-serif;font-size:11px;font-weight:700;color:var(--txt);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.ins-row{display:flex;gap:9px;margin-bottom:10px;font-size:13px;line-height:1.5}
+.ins-row:last-child{margin-bottom:0}
+.ins-num{width:22px;height:22px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-top:2px}
+.n-ok    {background:rgba(72,187,120,.18);color:var(--ok)}
+.n-warn  {background:rgba(246,173,85,.18);color:var(--warn)}
+.n-bad   {background:rgba(252,92,101,.18);color:var(--danger)}
+.n-info  {background:rgba(124,106,247,.18);color:#a89df8}
+.ins-txt {color:var(--txt2)}
+.ins-txt strong{color:var(--txt)}
 
-/* Print modal */
-.print-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; }
-.print-modal-bg.open { display: flex; }
-.print-modal { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 24px; max-width: 460px; width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,.4); font-family: 'Inter', sans-serif; }
-.print-modal h3 { font-family: 'Unbounded', sans-serif; font-size: 15px; margin-bottom: 14px; color: var(--text); }
-.print-modal p { font-size: 13px; line-height: 1.55; color: var(--text-muted); margin-bottom: 12px; }
-.print-modal ol { padding-left: 20px; font-size: 13px; color: var(--text-muted); margin: 10px 0 18px; }
-.print-modal ol li { margin-bottom: 8px; }
-.print-modal ol b { color: var(--text); }
-.print-modal .actions { display: flex; gap: 10px; justify-content: flex-end; }
-.print-modal button { padding: 9px 16px; font-size: 13px; border-radius: 8px; cursor: pointer; font-family: inherit; }
-.print-modal .cancel { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
-.print-modal .ok { background: var(--accent); color: #fff; border: none; font-weight: 500; }
-.print-modal .ok:hover { opacity: .9; }
-.print-modal .hint { font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+/* ── filter strip ── */
+.fstrip{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;align-items:center}
+.fbtn{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--brd);background:var(--surf);color:var(--txt2);font-size:12px;font-weight:500;font-family:inherit;cursor:pointer;transition:var(--tr)}
+.fbtn:hover{border-color:var(--acc);color:var(--acc)}
+.fbtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.fsearch{flex:1;min-width:160px;height:32px;background:var(--surf);border:1px solid var(--brd);border-radius:7px;padding:0 12px;color:var(--txt);font-size:13px;font-family:inherit;outline:none;transition:var(--tr)}
+.fsearch:focus{border-color:var(--acc)}
+.fsearch::placeholder{color:var(--txt3)}
 
-/* PDF / печать: чистая светлая вёрстка, без декора, без переносов внутри карточек */
+/* ── article cards ── */
+.art-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-bottom:28px}
+.art-card{background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;position:relative;overflow:hidden;transition:border-color var(--tr)}
+.art-card:hover{border-color:var(--brd2)}
+.art-card.growth {border-left:3px solid var(--ok)}
+.art-card.stable {border-left:3px solid var(--acc2)}
+.art-card.decline{border-left:3px solid var(--warn)}
+.art-card.alert  {border-left:3px solid var(--danger)}
+.art-card[style*="display:none"]{display:none!important}
+
+.art-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px}
+.art-sku{font-family:'Unbounded',sans-serif;font-size:11px;font-weight:700;color:#c0beff}
+:root.light .art-sku{color:#5048c8}
+.art-name{font-size:11px;color:var(--txt2);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px}
+.art-status{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.art-status.growth {background:var(--ok)}
+.art-status.stable {background:var(--acc2)}
+.art-status.decline{background:var(--warn)}
+.art-status.alert  {background:var(--danger)}
+
+.art-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.art-m{background:var(--surf2);border-radius:7px;padding:8px 10px}
+.art-m .lbl{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.art-m .val{font-family:'Unbounded',sans-serif;font-size:14px;font-weight:700;color:var(--txt)}
+.art-m .sub{font-size:11px;color:var(--txt2);margin-top:1px}
+
+.art-funnel{margin-bottom:10px}
+.art-funnel-label{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.funnel-steps{display:flex;align-items:center;gap:3px}
+.fstep{display:flex;flex-direction:column;align-items:center;flex:1}
+.fstep-val{font-size:11px;font-weight:600;color:var(--txt);white-space:nowrap}
+.fstep-lbl{font-size:9px;color:var(--txt3);text-transform:uppercase;margin-top:1px}
+.fstep-arrow{color:var(--txt3);font-size:10px;flex-shrink:0;margin-top:-6px}
+.fconv{font-size:9px;color:var(--acc2);font-weight:600}
+
+.art-bar{margin-bottom:10px}
+.bar-track{width:100%;height:4px;background:var(--surf3);border-radius:2px;overflow:hidden}
+.bar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+
+.art-footer{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* ── tables ── */
+.tbl-wrap{background:var(--surf);border:1px solid var(--brd);border-radius:12px;overflow-x:auto;margin-bottom:28px}
+table{width:100%;border-collapse:collapse}
+thead th{background:var(--surf2);padding:10px 14px;text-align:left;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);border-bottom:1px solid var(--brd);white-space:nowrap}
+thead th.r{text-align:right}
+tbody tr{border-bottom:1px solid var(--brd)}
+tbody tr:last-child{border-bottom:none}
+tbody td{padding:10px 14px;color:var(--txt);vertical-align:middle}
+tbody td.r{text-align:right}
+tbody td.dim{color:var(--txt2)}
+.tot-row td{font-weight:700;background:var(--surf2)!important}
+.sku-code{font-weight:600;font-family:'Unbounded',sans-serif;font-size:11px;color:#c0beff}
+:root.light .sku-code{color:#5048c8}
+.sku-name{font-size:11px;color:var(--txt2);display:block;margin-top:2px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sku-link{display:inline-block;color:inherit;position:relative;padding-right:14px}
+.sku-link:hover .sku-code{color:var(--acc)}
+.sku-link::after{content:'↗';position:absolute;top:0;right:0;font-size:9px;color:var(--txt3);opacity:0;transition:.15s}
+.sku-link:hover::after{opacity:1;color:var(--acc)}
+.camp-tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:500}
+.ct-ark   {background:rgba(124,106,247,.12);color:#a89df8}
+.ct-search{background:rgba(79,209,197,.12);color:var(--acc2)}
+.ct-auto  {background:rgba(246,173,85,.12);color:var(--warn)}
+.buyout-bar{display:flex;align-items:center;gap:7px}
+.bb-track{width:52px;height:4px;background:var(--surf3);border-radius:2px;overflow:hidden;flex-shrink:0}
+.bb-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+
+/* ── unit health ── */
+.health{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:5px}
+.health.good  {background:rgba(72,187,120,.1);color:var(--ok)}
+.health.ok    {background:rgba(246,173,85,.1);color:var(--warn)}
+.health.bad   {background:rgba(252,92,101,.1);color:var(--danger)}
+.health.urgent{background:rgba(252,92,101,.2);color:var(--danger)}
+
+/* ── recommendations ── */
+.rec-list{display:flex;flex-direction:column;gap:10px;margin-bottom:28px}
+.rec-item{display:flex;gap:12px;background:var(--surf);border:1px solid var(--brd);border-left:3px solid var(--brd2);border-radius:8px;padding:14px 16px;font-size:13px;line-height:1.55}
+.rec-item.urgent{border-left-color:var(--danger)}
+.rec-item.warn  {border-left-color:var(--warn)}
+.rec-item.ok    {border-left-color:var(--ok)}
+.rec-item.info  {border-left-color:var(--acc)}
+.rec-icon{font-size:18px;flex-shrink:0;margin-top:1px}
+.rec-body{flex:1}
+.rec-body b{color:var(--txt);display:block;margin-bottom:3px}
+.rec-body span{color:var(--txt2)}
+
+/* ── done tasks ── */
+.dt-list{display:flex;flex-direction:column;gap:7px;margin-bottom:28px}
+.dt-row{display:flex;align-items:baseline;gap:10px;padding:9px 14px;background:var(--surf);border:1px solid var(--brd);border-radius:8px}
+.dt-date{flex-shrink:0;font-size:12px;color:var(--txt2);min-width:32px}
+.dt-title{flex:1;font-size:13px;color:var(--txt)}
+.dt-who{flex-shrink:0;font-size:11px;color:var(--txt2);background:rgba(124,106,247,.15);padding:2px 8px;border-radius:20px}
+
+/* ── print ── */
 @media print {
-  @page { size: A4; margin: 14mm 12mm; }
-  :root {
-    --bg: #ffffff; --surface: #ffffff; --surface2: #f4f5f9; --border: #d3d7e2;
-    --text: #111418; --text-muted: #4a4f60; --text-dim: #8a90a0;
-  }
-  body { background: #ffffff !important; color: #111418 !important; font-size: 11pt; }
-  body::before { display: none !important; }
-  .toolbar-fixed { display: none !important; }
-  .page { padding: 0 !important; max-width: none !important; }
-  .kpi-card, .insight-card, .table-wrap, .funnel-row, .note-block, .report-header {
-    page-break-inside: avoid; break-inside: avoid;
-  }
-  .insights-grid { page-break-inside: auto; }
-  thead { display: table-header-group; }   /* повтор заголовков таблиц на новой странице */
-  tr { page-break-inside: avoid; }
-  a { color: inherit; text-decoration: none; }
+  @page{size:A4;margin:14mm 12mm}
+  :root{--bg:#fff;--surf:#fff;--surf2:#f4f5f9;--brd:#d3d7e2;--txt:#111418;--txt2:#4a4f60;--txt3:#8a90a0}
+  body{background:#fff!important;font-size:11pt}
+  body::before{display:none!important}
+  .toolbar,.tabs{display:none!important}
+  .tab-pane{display:block!important}
+  .page{padding:0!important;max-width:none!important}
+  .kcard,.ins-card,.tbl-wrap,.art-card,.rec-item{page-break-inside:avoid;break-inside:avoid}
+  .art-grid{grid-template-columns:repeat(2,1fr)!important}
 }
 """
 
+# ─── JavaScript ───────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Сборка HTML
-# ──────────────────────────────────────────────────────────────────────────────
+JS = r"""
+// ── theme ──
+function applyTheme(t){
+  document.documentElement.classList.toggle('light',t==='light');
+  var b=document.getElementById('theme-btn');
+  if(b) b.textContent=t==='light'?'🌙':'☀️';
+}
+function toggleTheme(){
+  var n=document.documentElement.classList.contains('light')?'dark':'light';
+  try{localStorage.setItem('theme',n)}catch(e){}
+  applyTheme(n);
+}
+try{applyTheme(localStorage.getItem('theme')||'dark')}catch(e){applyTheme('dark')}
 
-def render_html(data: dict, insights: dict | None = None, done_tasks: list | None = None) -> str:
-    """
-    Рендерит полный HTML отчёт.
-    data — результат wb_api.collect_report_data()
-    insights — опционально, {"leaders":[...], "problems":[...], "urgent":[...], "next_week":[...]}
-    done_tasks — опционально, [{title, assignee, done_at}, ...] — задачи за период
-    """
-    cabinet  = data["cabinet"]
-    d_from   = data["date_from"]
-    d_to     = data["date_to"]
-    prev_from = data["prev_from"]
-    prev_to   = data["prev_to"]
-    kpi      = data["kpi"]
-    funnel   = data["funnel"]
+// ── tabs ──
+function showTab(id){
+  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.toggle('active',b.dataset.tab===id)});
+  document.querySelectorAll('.tab-pane').forEach(function(p){p.classList.toggle('active',p.id==='pane-'+id)});
+  try{localStorage.setItem('wb-tab',id)}catch(e){}
+}
+document.addEventListener('DOMContentLoaded',function(){
+  var t=null;
+  try{t=localStorage.getItem('wb-tab')}catch(e){}
+  if(!t) t='summary';
+  showTab(t);
+});
 
-    period_label  = fmt_period(d_from, d_to)
-    prev_label    = fmt_period(prev_from, prev_to)
-    generated_at  = d_to.strftime("%d.%m.%Y")
-    # имя файла для скачивания HTML: wb_KLIFE_2026-05-09_2026-05-15.html
-    filename_html = f"wb_{cabinet}_{d_from}_{d_to}.html"
-    # Источник выкупов (для подсказки в шапке)
-    buyouts_source = data.get("buyouts_source", "statistics_api")
-    buyouts_note = (
-        '<div class="date" style="margin-top:6px;color:var(--warn);font-size:11px">'
-        '⚠ выкупы посчитаны из воронки (в Statistics API нет продаж за период)</div>'
-        if buyouts_source == "funnel_fallback" else ""
+// ── funnel filters ──
+function funnelFilter(btn,status){
+  document.querySelectorAll('#pane-funnel .fbtn[data-f]').forEach(function(b){b.classList.toggle('on',b===btn)});
+  _applyFunnelFilter();
+}
+function _applyFunnelFilter(){
+  var active=document.querySelector('#pane-funnel .fbtn[data-f].on');
+  var f=active?active.dataset.f:'all';
+  var q=(document.getElementById('funnel-search')||{}).value||'';
+  q=q.toLowerCase().trim();
+  document.querySelectorAll('.art-card').forEach(function(c){
+    var ok=(f==='all'||c.dataset.status===f);
+    if(ok&&q) ok=c.dataset.sku.toLowerCase().indexOf(q)>=0||c.dataset.name.toLowerCase().indexOf(q)>=0;
+    c.style.display=ok?'':'none';
+  });
+}
+document.addEventListener('DOMContentLoaded',function(){
+  var s=document.getElementById('funnel-search');
+  if(s) s.addEventListener('input',_applyFunnelFilter);
+  var firstF=document.querySelector('#pane-funnel .fbtn[data-f]');
+  if(firstF) firstF.classList.add('on');
+});
+
+// ── unit filters ──
+function unitFilter(btn,range){
+  document.querySelectorAll('#pane-unit .fbtn[data-mf]').forEach(function(b){b.classList.toggle('on',b===btn)});
+  var rows=document.querySelectorAll('#unit-tbody tr');
+  rows.forEach(function(r){
+    var m=parseFloat(r.dataset.margin||'0');
+    var ok=true;
+    if(range==='25') ok=m>=25;
+    else if(range==='10') ok=m>=10&&m<25;
+    else if(range==='0') ok=m>=0&&m<10;
+    else if(range==='neg') ok=m<0;
+    r.style.display=ok?'':'none';
+  });
+}
+document.addEventListener('DOMContentLoaded',function(){
+  var f=document.querySelector('#pane-unit .fbtn[data-mf]');
+  if(f) f.classList.add('on');
+});
+
+// ── ads filters ──
+function adsFilter(btn,f){
+  document.querySelectorAll('#pane-ads .fbtn[data-af]').forEach(function(b){b.classList.toggle('on',b===btn)});
+  var rows=document.querySelectorAll('#ads-tbody tr');
+  rows.forEach(function(r){
+    var ok=f==='all'||(f==='active'&&r.dataset.status==='active')||(f===r.dataset.type);
+    r.style.display=ok?'':'none';
+  });
+}
+document.addEventListener('DOMContentLoaded',function(){
+  var f=document.querySelector('#pane-ads .fbtn[data-af]');
+  if(f) f.classList.add('on');
+});
+
+// ── pdf / html ──
+var _filename=document.title.replace(/[^a-zA-Z0-9а-яёА-ЯЁ _\-]/g,'_')+'.html';
+function downloadPDF(){window.print()}
+function downloadHTML(){
+  var h='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
+  var b=new Blob([h],{type:'text/html;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(b);a.download=_filename;
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},100);
+}
+document.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();downloadHTML()}
+});
+"""
+
+
+# ─── calc unit economics ──────────────────────────────────────────────────────
+
+def _calc_unit(row: dict) -> dict:
+    wb_price     = float(row.get("wb_price") or 0)
+    spp_pct      = float(row.get("spp_pct") or 0)
+    comm_pct     = float(row.get("commission_pct") or 0)
+    cost_price   = float(row.get("cost_price") or 0)
+    log_to_wb    = float(row.get("logistics_to_wb") or 0)
+    packaging    = float(row.get("packaging") or 0)
+    overhead     = float(row.get("overhead") or 0)
+    defect_pct   = float(row.get("defect_pct") or 0)
+    log_ktr      = float(row.get("logistics_ktr") or 0)
+    drr_pct      = float(row.get("drr_pct") or 0)
+    drr_ext      = float(row.get("drr_external_rub") or 0)
+    tax_pct      = float(row.get("tax_pct") or 7)
+
+    net_price    = wb_price * (1 - spp_pct / 100)
+    commission   = net_price * comm_pct / 100
+    logistics    = log_ktr if log_ktr else 0.0
+    defect_rub   = cost_price * defect_pct / 100
+    drr_rub      = net_price * drr_pct / 100 + drr_ext
+    tax_rub      = net_price * tax_pct / 100
+    total_costs  = (cost_price + log_to_wb + packaging + overhead
+                    + defect_rub + commission + logistics + drr_rub + tax_rub)
+    profit       = net_price - total_costs
+    margin_pct   = profit / net_price * 100 if net_price else 0
+    return {
+        "net_price":  net_price,
+        "commission": commission,
+        "logistics":  logistics,
+        "drr_rub":    drr_rub,
+        "tax_rub":    tax_rub,
+        "cost_price": cost_price,
+        "profit":     profit,
+        "margin_pct": margin_pct,
+    }
+
+
+# ─── data helpers ─────────────────────────────────────────────────────────────
+
+def _g(p: dict, field: str, period: str) -> float:
+    from wb_api import _funnel_metric
+    return _funnel_metric(p, field, period)
+
+def _delta_orders(p: dict) -> float | None:
+    cur  = _g(p, "orderCount", "selected")
+    prev = _g(p, "orderCount", "past")
+    if prev == 0: return None if cur == 0 else 999
+    return (cur - prev) / prev * 100
+
+def _art_status(p: dict) -> str:
+    d = _delta_orders(p)
+    orders = _g(p, "orderCount", "selected")
+    if orders == 0 or d is None: return "alert"
+    if d >= 20:  return "growth"
+    if d >= -10: return "stable"
+    if d >= -50: return "decline"
+    return "alert"
+
+STATUS_LABEL = {
+    "growth":  "Рост",
+    "stable":  "Стабильно",
+    "decline": "Падение",
+    "alert":   "Тревога",
+    "all":     "Все",
+}
+
+# ─── main entry point ─────────────────────────────────────────────────────────
+
+def render_html(data: dict, done_tasks: list | None = None, unit_data: list | None = None) -> str:
+    done_tasks = done_tasks or []
+    unit_data  = unit_data  or []
+
+    cabinet    = data["cabinet"]
+    d_from     = data["date_from"]
+    d_to       = data["date_to"]
+    prev_from  = data["prev_from"]
+    prev_to    = data["prev_to"]
+    kpi        = data["kpi"]
+
+    period_label = fmt_period(d_from, d_to)
+    prev_label   = fmt_period(prev_from, prev_to)
+    generated_at = d_to.strftime("%d.%m.%Y")
+
+    n_articles  = len([p for p in data["products"] if _g(p,"orderCount","selected") >= 1])
+    n_campaigns = len(data["campaign_spend"])
+    buyouts_src = data.get("buyouts_source","")
+    buyouts_warn = (
+        '<span class="badge warn">⚠ выкупы из воронки</span>'
+        if buyouts_src == "funnel_fallback" else ""
     )
 
-    kpi_html     = _render_kpi(kpi)
-    note_html    = _render_note(kpi)
-    funnel_html  = _render_funnel(funnel)
-    stock_html   = _render_stock_block(kpi)
-    products_html = _render_products_table(data)
-    campaigns_html = _render_campaigns_table(data)
-    insights_html = _render_insights(insights or _default_insights(data))
-    done_tasks_html = _render_done_tasks(done_tasks or [])
+    summary_html  = _render_summary(data, unit_data)
+    funnel_html   = _render_funnel_tab(data)
+    ads_html      = _render_ads_tab(data)
+    unit_html     = _render_unit_tab(unit_data, data)
+    recs_html     = _render_recs_tab(data, unit_data)
+    done_html     = _render_done_tasks(done_tasks)
 
     return f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Еженедельный отчёт по рекламе — {html.escape(cabinet)} | {period_label}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WB Отчёт — {_esc.escape(cabinet)} | {period_label}</title>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>{CSS}</style>
 </head>
 <body>
-<div class="toolbar-fixed">
-  <button class="tb-btn primary" onclick="downloadPDF()" title="Сохранить отчёт как PDF (Ctrl/Cmd + P)">📄 PDF</button>
-  <button class="tb-btn" onclick="downloadHTML()" title="Скачать HTML-файл на компьютер">💾 HTML</button>
-  <button class="tb-btn icon-only" id="theme-btn" onclick="toggleTheme()" title="Сменить тему">🌙</button>
+<div class="toolbar">
+  <button class="tbtn pri" onclick="downloadPDF()">📄 PDF</button>
+  <button class="tbtn" onclick="downloadHTML()">💾 HTML</button>
+  <button class="tbtn ico" id="theme-btn" onclick="toggleTheme()">☀️</button>
 </div>
-
-<!-- Модалка с инструкцией перед печатью в PDF: убрать URL/дату из колонтитулов -->
-<div class="print-modal-bg" id="print-modal" onclick="if(event.target===this)closePrintModal()">
-  <div class="print-modal">
-    <h3>📄 Сохранение в PDF — важно!</h3>
-    <p>В открывшемся окне печати <b>обязательно отключите колонтитулы</b>, иначе на каждой странице будет напечатан URL дашборда и дата.</p>
-    <ol>
-      <li>В диалоге печати раскройте <b>«Ещё настройки»</b> (или «More settings»)</li>
-      <li>Снимите галочку <b>«Колонтитулы»</b> (или «Headers and footers»)</li>
-      <li>В поле «Назначение» выберите <b>«Сохранить как PDF»</b> и нажмите «Сохранить»</li>
-    </ol>
-    <div class="actions">
-      <button class="cancel" onclick="closePrintModal()">Отмена</button>
-      <button class="ok" onclick="confirmPrint()">Открыть диалог печати</button>
-    </div>
-    <div class="hint">Эту подсказку можно отключить, нажав «Запомнить выбор»</div>
-  </div>
-</div>
-<script>
-function applyTheme(t){{
-  document.documentElement.classList.toggle('light', t==='light');
-  var b = document.getElementById('theme-btn');
-  if (b) b.textContent = t==='light' ? '🌙' : '☀️';
-}}
-function toggleTheme(){{
-  var n = document.documentElement.classList.contains('light') ? 'dark' : 'light';
-  try {{ localStorage.setItem('theme', n); }} catch(e){{}}
-  applyTheme(n);
-}}
-try {{ applyTheme(localStorage.getItem('theme')||'dark'); }} catch(e){{ applyTheme('dark'); }}
-
-function downloadPDF(){{
-  // Сначала показываем напоминалку: в Chrome/Safari/Firefox по умолчанию
-  // печатается URL страницы и дата в колонтитулах. Нужно их вручную снять.
-  try {{
-    if (localStorage.getItem('skip-pdf-hint') === '1') {{ window.print(); return; }}
-  }} catch(e){{}}
-  document.getElementById('print-modal').classList.add('open');
-}}
-function closePrintModal(){{
-  document.getElementById('print-modal').classList.remove('open');
-}}
-function confirmPrint(){{
-  closePrintModal();
-  // Микро-пауза чтобы модалка успела закрыться визуально перед открытием print
-  setTimeout(function(){{ window.print(); }}, 50);
-}}
-function downloadHTML(){{
-  // Сохраняем HTML текущей страницы как файл на компьютер.
-  // Включаем сам DOCTYPE и тег <html> — файл откроется автономно в любом браузере.
-  var html = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
-  var blob = new Blob([html], {{type: 'text/html;charset=utf-8'}});
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = '{filename_html}';
-  document.body.appendChild(a); a.click();
-  setTimeout(function(){{ URL.revokeObjectURL(a.href); a.remove(); }}, 100);
-}}
-// Ctrl/Cmd + S → скачать HTML
-document.addEventListener('keydown', function(e){{
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {{ e.preventDefault(); downloadHTML(); }}
-}});
-</script>
 <div class="page">
 
-  <div class="report-header">
+  <!-- header -->
+  <div class="rep-header">
     <div>
-      <div class="brand-badge">🛍 Wildberries · {html.escape(cabinet)}</div>
-      <h1 class="report-title">Еженедельный<br>отчёт по <span>рекламе</span></h1>
+      <div class="rep-badge">🛍 Wildberries · {_esc.escape(cabinet)}</div>
+      <h1 class="rep-title">Аналитический<br>отчёт <span>WB</span></h1>
     </div>
-    <div class="report-meta">
+    <div class="rep-meta">
       <div class="period">{period_label}</div>
-      <div class="date">Отчёт сформирован: {generated_at}</div>
-      <div class="date" style="margin-top:6px; color: var(--text-muted)">Сравнение: {prev_label}</div>
-      {buyouts_note}
+      <div class="sub">Сформирован: {generated_at}</div>
+      <div class="sub">Сравнение: {prev_label}</div>
+      <div class="rep-chips">
+        <span class="rep-chip">📦 <b>{n_articles}</b> артикулов</span>
+        <span class="rep-chip">📣 <b>{n_campaigns}</b> кампаний</span>
+        {buyouts_warn}
+      </div>
     </div>
   </div>
 
-  <div class="section-title">Общая сводка по кабинету</div>
-  {kpi_html}
+  <!-- tabs -->
+  <div class="tabs">
+    <button class="tab-btn" data-tab="summary"  onclick="showTab('summary')">📊 Сводка</button>
+    <button class="tab-btn" data-tab="funnel"   onclick="showTab('funnel')">🔽 Воронка</button>
+    <button class="tab-btn" data-tab="ads"      onclick="showTab('ads')">📣 Реклама</button>
+    <button class="tab-btn" data-tab="unit"     onclick="showTab('unit')">💰 Юнит</button>
+    <button class="tab-btn" data-tab="recs"     onclick="showTab('recs')">💡 Рекомендации</button>
+  </div>
 
-  {note_html}
+  <!-- Сводка -->
+  <div class="tab-pane" id="pane-summary">{summary_html}{done_html}</div>
 
-  <div class="section-title">Воронка продаж</div>
-  {funnel_html}
-  {stock_html}
+  <!-- Воронка -->
+  <div class="tab-pane" id="pane-funnel">{funnel_html}</div>
 
-  <div class="section-title">ДРР и эффективность по артикулам — текущая неделя</div>
-  {products_html}
+  <!-- Реклама -->
+  <div class="tab-pane" id="pane-ads">{ads_html}</div>
 
-  <div class="section-title">Активные рекламные кампании ({fmt_period(d_from, d_to)})</div>
-  {campaigns_html}
+  <!-- Юнит -->
+  <div class="tab-pane" id="pane-unit">{unit_html}</div>
 
-  <div class="section-title">Выводы и рекомендации</div>
-  {insights_html}
-
-  {done_tasks_html}
+  <!-- Рекомендации -->
+  <div class="tab-pane" id="pane-recs">{recs_html}</div>
 
 </div>
+<script>{JS}</script>
 </body>
 </html>"""
 
 
-# ── KPI блок ──────────────────────────────────────────────────────────────────
-def _render_kpi(kpi: dict) -> str:
-    def card(label: str, value: str, delta_html_str: str) -> str:
-        return f"""
-        <div class="kpi-card">
-          <div class="kpi-label">{label}</div>
-          <div class="kpi-value">{value}</div>
-          {delta_html_str}
-        </div>
-        """
+# ─── Сводка ───────────────────────────────────────────────────────────────────
 
-    cards = [
-        card("Расход на рекламу", fmt_money(kpi["spend"]),
-             '<div class="kpi-delta neutral">— нет данных пред. периода</div>'),
+def _render_summary(data: dict, unit_data: list) -> str:
+    kpi = data["kpi"]
+    f   = data["funnel"]
 
-        card("Выручка заказов", fmt_money(kpi["revenue"]),
-             delta_html(kpi["revenue"], kpi["revenue_prev"],
-                        f"{short_money(kpi['revenue_prev'])}.")),
+    # avg margin from unit_data
+    margins = []
+    for row in unit_data:
+        u = _calc_unit(row)
+        if u["net_price"] > 0:
+            margins.append(u["margin_pct"])
+    avg_margin = sum(margins) / len(margins) if margins else None
 
-        card("Заказы", f'{fmt_int(kpi["orders"])} шт',
-             delta_html(kpi["orders"], kpi["orders_prev"],
-                        f"{fmt_int(kpi['orders_prev'])} шт")),
+    spend = kpi["spend"]
+    rev   = kpi["revenue"]
+    orders= kpi["orders"]
+    drr   = kpi["drr"]
+    ctr   = kpi.get("ctr", 0) or 0
+    cpo   = spend / orders if orders else 0
 
-        card("ДРР по заказам",
-             fmt_pct(kpi["drr"]),
-             ('<div class="kpi-delta up">✦ Отличный показатель</div>' if kpi["drr"] < 5 and kpi["drr"] > 0 else
-              '<div class="kpi-delta neutral">средний</div>' if kpi["drr"] < 10 else
-              '<div class="kpi-delta down">высокий</div>') +
-             (f'<div class="kpi-delta neutral" style="margin-top:4px">ДРР продаж: {fmt_pct(kpi["drr_sales"])}</div>'
-              if kpi.get("drr_sales") else "")),
+    views = f.get("visits") or f.get("views") or 0
+    basket= f.get("basket") or 0
+    b_prev= f.get("basket_prev") or 0
+    o_prev= f.get("orders_prev") or 0
+    v_prev= f.get("views_prev") or 0
+    buyout= f.get("buyout_pct") or 0
 
-        card(
-            "CPO (cтоимость заказа)",
-            f'{fmt_int(kpi["spend"] / kpi["orders"])} ₽' if kpi.get("orders") else "—",
-            '<div class="kpi-delta neutral">расход / заказы</div>',
-        ),
+    rev_prev = kpi.get("revenue_prev") or 0
+    ord_prev = kpi.get("orders_prev") or 0
+    views_prev = kpi.get("views_prev") or 0
 
-        card("Переходы в карточку", fmt_int(kpi["visits"]),
-             delta_html(kpi["visits"], kpi["views_prev"],
-                        f"{fmt_int(kpi['views_prev'])}")),
+    drr_cls  = {"good":"green","ok":"orange","bad":"red","na":""}.get(
+        "good" if drr and drr<5 else "ok" if drr and drr<10 else "bad" if drr else "na", "")
+    margin_color = ("green" if avg_margin and avg_margin >= 25
+                    else "orange" if avg_margin and avg_margin >= 10
+                    else "red" if avg_margin is not None else "")
 
-        card("В корзину / CTR", f'{fmt_int(kpi["basket"])} шт',
-             f'<div class="kpi-delta neutral">CTR {kpi["ctr"]:.0f}%  ·  Конв. {kpi["cr"]:.0f}%</div>'),
+    # sections
+    sections = []
 
-        card("% Выкупа (кабинет)", fmt_pct(kpi["buyout_pct"], 0),
-             (lambda diff: (
-                 f'<div class="kpi-delta up">▲ +{diff:.0f}пп &nbsp; пред: {kpi["buyout_pct_prev"]:.0f}%</div>'
-                 if diff > 0 else
-                 f'<div class="kpi-delta down">▼ {diff:.0f}пп &nbsp; пред: {kpi["buyout_pct_prev"]:.0f}%</div>'
-                 if diff < 0 else
-                 f'<div class="kpi-delta neutral">= пред: {kpi["buyout_pct_prev"]:.0f}%</div>'
-             ))(kpi["buyout_pct"] - kpi["buyout_pct_prev"])),
-    ]
-    return '<div class="kpi-grid">' + "".join(cards) + "</div>"
+    # Воронка
+    ctr_f  = (basket / views * 100) if views else 0
+    cr_f   = (orders / basket * 100) if basket else 0
+    sections.append(f"""
+    <div class="sec">Воронка продаж</div>
+    <div class="kgrid kgrid-4">
+      {_kcard("Переходы в карточку", fmt_int(views), delta_badge(views, views_prev), "")}
+      {_kcard("Добавили в корзину",   fmt_int(basket), delta_badge(basket, b_prev), f"CTR {ctr_f:.1f}%")}
+      {_kcard("Заказов",    fmt_int(orders) + " шт", delta_badge(orders, ord_prev), "")}
+      {_kcard("% Выкупа",   fmt_pct(buyout, 0), _buyout_delta_badge(f), "", accent="green" if buyout>=60 else "orange" if buyout>=45 else "red")}
+    </div>
+    """)
+
+    # Реклама
+    sections.append(f"""
+    <div class="sec">Реклама</div>
+    <div class="kgrid kgrid-4">
+      {_kcard("Расход",           fmt_money(spend),     '<span class="badge nt">расход на рекламу</span>', "")}
+      {_kcard("ДРР по заказам",   fmt_pct(drr),         _drr_badge(drr), "расход / выручка заказов", accent=drr_cls)}
+      {_kcard("CPO (цена заказа)", fmt_money(cpo) if cpo else "—", '<span class="badge nt">расход / заказы</span>', "")}
+      {_kcard("CTR",              fmt_pct(ctr) if ctr else "—", '<span class="badge nt">клики / показы</span>', "")}
+    </div>
+    """)
+
+    # Юнит / итог
+    stock = kpi.get("stock_total", 0) or 0
+    fp    = kpi.get("sales_for_pay", 0) or 0
+    drr_s = kpi.get("drr_sales") or 0
+    margin_val = fmt_pct(avg_margin) if avg_margin is not None else "нет данных"
+    sections.append(f"""
+    <div class="sec">Итоги кабинета</div>
+    <div class="kgrid kgrid-4">
+      {_kcard("Выручка заказов",  fmt_money(rev), delta_badge(rev, rev_prev), "", accent="green" if rev > rev_prev else "")}
+      {_kcard("К получению",      fmt_money(fp) if fp else "—", '<span class="badge nt">фактические выплаты</span>', "")}
+      {_kcard("Остаток на складе",fmt_int(stock) + " шт" if stock else "—", "", "в наличии")}
+      {_kcard("Средняя маржа",    margin_val, "", "по данным юнит-экономики", accent=margin_color)}
+    </div>
+    """)
+
+    ins = _build_insights(data, unit_data)
+    ins_html = f"""
+    <div class="sec">Выводы недели</div>
+    <div class="ins-grid">
+      {_ins_card("🟢 Что улучшается", ins["leaders"])}
+      {_ins_card("🔴 Главные проблемы", ins["problems"])}
+    </div>
+    """
+
+    return "".join(sections) + ins_html
 
 
-# ── Note блок ─────────────────────────────────────────────────────────────────
-def _render_note(kpi: dict) -> str:
-    parts = []
-    rev_d   = delta_pct(kpi["revenue"], kpi["revenue_prev"])
-    ord_d   = delta_pct(kpi["orders"],  kpi["orders_prev"])
-    views_d = delta_pct(kpi["views"],   kpi["views_prev"])
+def _kcard(label, val, badge_html, sub, accent=""):
+    cls = f" {accent}" if accent else ""
+    return f"""
+    <div class="kcard{cls}">
+      <div class="kc-label">{label}</div>
+      <div class="kc-val">{val}</div>
+      {badge_html}
+      {f'<div class="kc-sub">{sub}</div>' if sub else ''}
+    </div>"""
 
-    if rev_d is not None and abs(rev_d) >= 10:
-        parts.append(
-            f"Выручка vs прошлая неделя — {rev_d:+.0f}%, "
-            f"заказы — {ord_d:+.0f}%, показы — {views_d:+.0f}%."
-        )
-    if kpi["drr"] and kpi["drr"] < 5:
-        parts.append(f"<strong>ДРР кабинета {kpi['drr']:.1f}%</strong> — отличный результат.")
-    elif kpi["drr"] >= 10:
-        parts.append(f"<strong>ДРР {kpi['drr']:.1f}%</strong> — требует внимания.")
+def _drr_badge(drr):
+    if not drr: return '<span class="badge nt">нет данных</span>'
+    if drr < 5:   return '<span class="badge up">✦ отличный</span>'
+    if drr < 10:  return '<span class="badge warn">средний</span>'
+    return '<span class="badge dn">высокий</span>'
 
-    if kpi["buyout_pct"] and kpi["buyout_pct_prev"]:
-        diff = kpi["buyout_pct"] - kpi["buyout_pct_prev"]
-        if abs(diff) >= 1:
-            verb = "вырос" if diff > 0 else "снизился"
-            parts.append(
-                f"Выкуп {verb} с {kpi['buyout_pct_prev']:.0f}% до {kpi['buyout_pct']:.0f}%."
-            )
+def _buyout_delta_badge(f):
+    cur  = f.get("buyout_pct") or 0
+    prev = f.get("buyout_pct_prev") or 0
+    if not prev: return ""
+    d = cur - prev
+    if d > 0: return f'<span class="badge up">▲ +{d:.0f}пп</span>'
+    if d < 0: return f'<span class="badge dn">▼ {d:.0f}пп</span>'
+    return '<span class="badge nt">= 0</span>'
 
-    if not parts:
-        parts.append("Метрики стабильны относительно предыдущей недели.")
+def _ins_card(title, items):
+    rows = ""
+    for i, it in enumerate(items, 1):
+        cls_map = {"ok":"n-ok","warn":"n-warn","urgent":"n-bad","info":"n-info"}
+        nc = cls_map.get(it.get("num","info"), "n-info")
+        lbl = "!" if it.get("num") == "urgent" else str(i)
+        rows += (f'<div class="ins-row">'
+                 f'<span class="ins-num {nc}">{lbl}</span>'
+                 f'<span class="ins-txt">{it["text"]}</span>'
+                 f'</div>')
+    return f'<div class="ins-card"><h3>{title}</h3>{rows}</div>'
 
-    return (
-        '<div class="note-block"><strong>⚠ Важно:</strong> ' +
-        " ".join(parts) + "</div>"
+
+# ─── Воронка tab ──────────────────────────────────────────────────────────────
+
+def _render_funnel_tab(data: dict) -> str:
+    products = data["products"]
+    products = sorted(
+        [p for p in products if _g(p,"orderCount","selected") >= 1 or _g(p,"orderCount","past") >= 1],
+        key=lambda p: _g(p,"orderSum","selected"), reverse=True
     )
 
-
-# ── Funnel блок ───────────────────────────────────────────────────────────────
-def _render_funnel(f: dict) -> str:
-    ctr   = (f["basket"] / f["views"] * 100) if f["views"] else 0
-    cr    = (f["orders"] / f["basket"] * 100) if f["basket"] else 0
-
-    return f"""
-    <div class="funnel-row">
-      <div class="funnel-step">
-        <div class="funnel-step-label">Переходы в карточку</div>
-        <div class="funnel-step-value">{fmt_int(f["visits"])}</div>
-        <div class="funnel-prev">пред: {fmt_int(f["views_prev"])}</div>
-      </div>
-      <div class="funnel-step">
-        <div class="funnel-step-label">В корзину</div>
-        <div class="funnel-step-value">{fmt_int(f["basket"])}</div>
-        <div class="funnel-conv">конв. {ctr:.0f}%</div>
-        <div class="funnel-prev">пред: {fmt_int(f["basket_prev"])}</div>
-      </div>
-      <div class="funnel-step">
-        <div class="funnel-step-label">Заказано</div>
-        <div class="funnel-step-value">{fmt_int(f["orders"])}</div>
-        <div class="funnel-conv">конв. {cr:.0f}%</div>
-        <div class="funnel-prev">пред: {fmt_int(f["orders_prev"])}</div>
-      </div>
-      <div class="funnel-step">
-        <div class="funnel-step-label">Выкуп</div>
-        <div class="funnel-step-value">{f["buyout_pct"]:.0f}%</div>
-        <div class="funnel-conv">{fmt_int(f.get("buyouts", 0))} шт</div>
-        <div class="funnel-prev">пред: {f["buyout_pct_prev"]:.0f}%</div>
-      </div>
-    </div>
-    """
-
-
-# ── Блок складских остатков ───────────────────────────────────────────────────
-def _render_stock_block(kpi: dict) -> str:
-    total = kpi.get("stock_total", 0)
-    drr_s = kpi.get("drr_sales", 0)
-    fp    = kpi.get("sales_for_pay", 0)
-
-    stock_val = fmt_int(total) + " шт" if total else "—"
-    drr_s_val = fmt_pct(drr_s) if drr_s else "—"
-    fp_val    = fmt_money(fp)  if fp    else "—"
-
-    drr_cls = drr_class(drr_s) if drr_s else "drr-na"
-    drr_color = {"drr-good": "var(--success)", "drr-ok": "var(--warn)",
-                 "drr-bad": "var(--danger)"}.get(drr_cls, "var(--text-muted)")
-
-    return f"""
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:40px">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px">
-        <div class="kpi-label">В наличии (кабинет)</div>
-        <div class="kpi-value" style="font-size:20px">{stock_val}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">складской остаток на сейчас</div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px">
-        <div class="kpi-label">ДРР по продажам</div>
-        <div class="kpi-value" style="font-size:20px;color:{drr_color}">{drr_s_val}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">расход / фактические выплаты</div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px">
-        <div class="kpi-label">Выручка продаж (к получению)</div>
-        <div class="kpi-value" style="font-size:20px">{fp_val}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">сумма forPay по выкупам</div>
-      </div>
-    </div>
-    """
-
-
-# ── Products таблица ──────────────────────────────────────────────────────────
-def _render_products_table(data: dict) -> str:
-    products = data["products"]
-    if not products:
-        return (
-            '<div class="table-wrap"><div style="padding:24px; '
-            'color:var(--text-muted); text-align:center">Нет данных по карточкам '
-            'за выбранный период.</div></div>'
-        )
-
-    # Фильтруем: только артикулы с хотя бы 1 заказом за период
-    products = [p for p in products if _g(p, "orderCount", "selected") >= 1]
-
-    if not products:
-        return (
-            '<div class="table-wrap"><div style="padding:24px; '
-            'color:var(--text-muted); text-align:center">За выбранный период '
-            'нет артикулов с заказами.</div></div>'
-        )
-
-    # Сортируем по выручке убыв.
-    products = sorted(
-        products,
-        key=lambda p: _g(p, "orderSum", "selected"),
-        reverse=True,
-    )[:25]
-
-    rows = []
-    tot_spend = tot_orders = tot_rev = 0.0
-    tot_bought = 0.0
-    tot_stock = 0
-    tot_for_pay = 0.0
-
-    # Расход на уровне кабинета (на артикулы не разбивается — это ограничение API).
-    # В таблице покажем расход кампании, ассоциированной с артикулом — если
-    # в campName кампании встречается код артикула. Иначе — прочерк.
-    spend_by_keyword = {}
+    spend_by_kw = {}
     for adv_id, cell in data["campaign_spend"].items():
         name = (cell.get("campName") or "").upper()
-        spend_by_keyword[name] = spend_by_keyword.get(name, 0.0) + cell["sum"]
+        spend_by_kw[name] = spend_by_kw.get(name, 0.0) + cell["sum"]
 
-    # Источник выкупов — Statistics API (sales), а не воронка: данные ВБ в воронке ненадёжные
-    sales_by_vendor         = data.get("sales_by_vendor", {}) or {}
-    sales_by_vendor_prev    = data.get("sales_by_vendor_prev", {}) or {}
-    sales_for_pay_by_vendor = data.get("sales_for_pay_by_vendor", {}) or {}
-    stock_by_vendor         = data.get("stock_by_vendor", {}) or {}
+    sales_by_v    = data.get("sales_by_vendor") or {}
+    sales_prev_v  = data.get("sales_by_vendor_prev") or {}
+    stock_by_v    = data.get("stock_by_vendor") or {}
 
+    counts = {"all": 0, "growth": 0, "stable": 0, "decline": 0, "alert": 0}
+    cards  = []
     for p in products:
         prod    = p.get("product") or {}
         nm_id   = prod.get("nmId") or prod.get("nmID") or ""
         name    = prod.get("title") or prod.get("subjectName") or prod.get("brandName") or ""
         vendor  = prod.get("vendorCode") or ""
 
-        orders     = _g(p, "orderCount", "selected")
-        orders_prev= _g(p, "orderCount", "past")
-        revenue    = _g(p, "orderSum", "selected")
+        orders      = _g(p, "orderCount", "selected")
+        orders_prev = _g(p, "orderCount", "past")
+        revenue     = _g(p, "orderSum",   "selected")
+        views_p     = _g(p, "openCardCount", "selected") or 0
+        basket_p    = _g(p, "addToCartCount", "selected") or 0
 
-        # Выкупы по артикулу из Statistics API; ключ — supplierArticle == vendorCode
-        buyouts        = int(sales_by_vendor.get(str(vendor), 0))
-        buyouts_prev   = int(sales_by_vendor_prev.get(str(vendor), 0))
-        buyout_pct     = (buyouts / orders * 100) if orders else 0
-        buyout_pct_prev= (buyouts_prev / orders_prev * 100) if orders_prev else 0
+        buyouts     = int(sales_by_v.get(str(vendor), 0))
+        buyout_pct  = (buyouts / orders * 100) if orders else 0
+        stock       = int(stock_by_v.get(str(vendor), 0))
 
-        # ищем расход по vendorCode в campName
-        spend = 0.0
+        spend_art = 0.0
         if vendor:
             v_up = vendor.upper()
-            for name_key, val in spend_by_keyword.items():
-                if v_up in name_key:
-                    spend += val
-        drr = (spend / revenue * 100) if revenue and spend else 0
-        cpo = (spend / orders) if orders and spend else 0
+            for kw, val in spend_by_kw.items():
+                if v_up in kw:
+                    spend_art += val
+        drr_art = (spend_art / revenue * 100) if revenue and spend_art else 0
 
-        # ДРР по продажам — расход / фактические выплаты (forPay)
-        art_for_pay = float(sales_for_pay_by_vendor.get(str(vendor), 0))
-        drr_sales_art = (spend / art_for_pay * 100) if art_for_pay and spend else 0
+        status = _art_status(p)
+        counts["all"] += 1
+        counts[status] = counts.get(status, 0) + 1
 
-        # Складской остаток по артикулу
-        stock = int(stock_by_vendor.get(str(vendor), 0))
-
-        # дельта заказов
-        if orders_prev == 0 and orders > 0:
-            delta_lbl = '<span class="change-pos change-new">new</span>'
-        elif orders_prev > 0:
-            dp = (orders - orders_prev) / orders_prev * 100
-            cls = "change-pos" if dp >= 0 else "change-neg"
-            delta_lbl = f'<span class="{cls}">{dp:+.0f}%</span>'
+        d = _delta_orders(p)
+        if d is None:
+            d_badge = '<span class="badge nt">нет пред.</span>'
+        elif d >= 999:
+            d_badge = '<span class="badge up">new</span>'
         else:
-            delta_lbl = ""
+            d_badge = (f'<span class="badge up">▲ {d:+.0f}%</span>' if d >= 0
+                       else f'<span class="badge dn">▼ {d:.0f}%</span>')
 
-        # дельта выкупа
-        if buyout_pct_prev:
-            db = buyout_pct - buyout_pct_prev
-            cls = "change-pos" if db >= 0 else "change-neg"
-            buyout_delta = f' <span class="{cls}">{db:+.0f}пп</span>'
-        elif buyout_pct > 0:
-            buyout_delta = ' <span class="change-new">new</span>'
-        else:
-            buyout_delta = ""
+        ctr_p = (basket_p / views_p * 100) if views_p else 0
+        cr_p  = (orders / basket_p * 100) if basket_p else 0
 
-        # Цвет ДРР
-        drr_cls = drr_class(drr)
-        drr_label = fmt_pct(drr) if spend > 0 else "без рекл."
+        # funnel steps
+        funnel_steps = f"""
+        <div class="art-funnel-label">Конверсия воронки</div>
+        <div class="funnel-steps">
+          <div class="fstep">
+            <div class="fstep-val">{_short_num(views_p)}</div>
+            <div class="fstep-lbl">просм</div>
+          </div>
+          <div class="fstep-arrow">›</div>
+          <div class="fstep">
+            <div class="fstep-val">{_short_num(basket_p)}</div>
+            <div class="fstep-lbl">корзина</div>
+            <div class="fconv">{ctr_p:.1f}%</div>
+          </div>
+          <div class="fstep-arrow">›</div>
+          <div class="fstep">
+            <div class="fstep-val">{fmt_int(orders)}</div>
+            <div class="fstep-lbl">заказ</div>
+            <div class="fconv">{cr_p:.1f}%</div>
+          </div>
+          <div class="fstep-arrow">›</div>
+          <div class="fstep">
+            <div class="fstep-val">{buyout_pct:.0f}%</div>
+            <div class="fstep-lbl">выкуп</div>
+          </div>
+        </div>
+        """
 
-        # Ячейка артикула: если есть nmId — оборачиваем в кликабельную ссылку на WB
-        sku_inner = (
-            f'<span class="sku-code">{html.escape(str(vendor or nm_id))}</span>'
-            f'<span class="sku-name">{html.escape(name[:60])}</span>'
-        )
+        sku_inner = f'<span class="art-sku">{_esc.escape(str(vendor or nm_id))}</span>'
         if nm_id:
-            sku_cell = (
-                f'<a class="sku-link" '
-                f'href="https://www.wildberries.ru/catalog/{nm_id}/detail.aspx?targetUrl=GP" '
-                f'target="_blank" rel="noopener noreferrer" '
-                f'title="Открыть карточку на Wildberries">{sku_inner}</a>'
-            )
-        else:
-            sku_cell = sku_inner
+            sku_inner = (f'<a class="sku-link" href="https://www.wildberries.ru/catalog/{nm_id}/detail.aspx" '
+                         f'target="_blank" rel="noopener">{sku_inner}</a>')
 
-        drr_s_cls   = drr_class(drr_sales_art)
-        drr_s_label = fmt_pct(drr_sales_art) if drr_sales_art else '<span class="muted">—</span>'
+        footer_parts = []
+        if stock:
+            footer_parts.append(f'<span class="badge nt">📦 {fmt_int(stock)} шт</span>')
+        if spend_art:
+            dcls = {"good":"up","ok":"warn","bad":"dn","na":"nt"}.get(
+                "good" if drr_art<5 else "ok" if drr_art<10 else "bad", "dn")
+            footer_parts.append(f'<span class="badge {dcls}">ДРР {drr_art:.1f}%</span>')
+        if orders_prev:
+            footer_parts.append(f'<span class="badge nt">пред: {fmt_int(orders_prev)} зак</span>')
 
-        rows.append(f"""
-        <tr>
-          <td>{sku_cell}</td>
-          <td class="right">{fmt_int(spend) if spend else '<span class="muted">—</span>'}</td>
-          <td class="right">{fmt_int(orders)} {delta_lbl}</td>
-          <td class="right">{fmt_int(revenue)}</td>
-          <td class="right"><span class="drr-pill {drr_cls}">{drr_label}</span></td>
-          <td class="right"><span class="drr-pill {drr_s_cls}">{drr_s_label}</span></td>
-          <td class="right">
-            <div class="buyout-bar">
-              <div class="bar-track"><div class="bar-fill" style="width:{min(100,buyout_pct):.0f}%"></div></div>
-              {buyout_pct:.0f}%{buyout_delta}
+        bar_pct = min(100, buyout_pct)
+        cards.append(f"""
+        <div class="art-card {status}" data-status="{status}" data-sku="{_esc.escape(str(vendor))}" data-name="{_esc.escape(name[:80])}">
+          <div class="art-head">
+            <div>
+              {sku_inner}
+              <div class="art-name">{_esc.escape(name[:70])}</div>
             </div>
-          </td>
-          <td class="right">{fmt_int(stock) if stock else '<span class="muted">—</span>'}</td>
-          <td class="right">{fmt_int(cpo) if cpo else '<span class="muted">—</span>'}</td>
-        </tr>
+            <div class="art-status {status}"></div>
+          </div>
+          <div class="art-metrics">
+            <div class="art-m">
+              <div class="lbl">Заказы</div>
+              <div class="val">{fmt_int(orders)} {d_badge}</div>
+              <div class="sub">{fmt_money(revenue)}</div>
+            </div>
+            <div class="art-m">
+              <div class="lbl">Выкуп</div>
+              <div class="val">{buyout_pct:.0f}%</div>
+              <div class="sub">{fmt_int(buyouts)} шт</div>
+            </div>
+          </div>
+          <div class="art-funnel">{funnel_steps}</div>
+          <div class="art-bar">
+            <div class="bar-track"><div class="bar-fill" style="width:{bar_pct:.0f}%"></div></div>
+          </div>
+          <div class="art-footer">{' '.join(footer_parts)}</div>
+        </div>
         """)
 
-        tot_spend  += spend
-        tot_orders += orders
-        tot_rev    += revenue
-        tot_bought += buyouts
-        tot_stock  += stock
-        tot_for_pay += art_for_pay
-
-    tot_drr      = (tot_spend / tot_rev * 100)      if tot_rev     else 0
-    tot_drr_s    = (tot_spend / tot_for_pay * 100)  if tot_for_pay else 0
-    tot_buy      = (tot_bought / tot_orders * 100)  if tot_orders  else 0
-    tot_cpo      = (tot_spend / tot_orders)         if tot_orders  else 0
+    filter_btns = ""
+    for key in ["all", "growth", "stable", "decline", "alert"]:
+        cnt = counts.get(key, 0)
+        label = STATUS_LABEL[key]
+        filter_btns += f'<button class="fbtn" data-f="{key}" onclick="funnelFilter(this,\'{key}\')">{label} ({cnt})</button>'
 
     return f"""
-    <div class="table-wrap">
-      <table style="min-width:860px">
-        <thead><tr>
-          <th>Артикул</th>
-          <th class="right">Расход ₽</th>
-          <th class="right">Заказы шт</th>
-          <th class="right">Выручка заказов ₽</th>
-          <th class="right">ДРР заказ %</th>
-          <th class="right">ДРР продаж %</th>
-          <th class="right">% Выкупа</th>
-          <th class="right">Остаток шт</th>
-          <th class="right">CPO ₽</th>
-        </tr></thead>
-        <tbody>
-          {''.join(rows)}
-          <tr class="total-row">
-            <td><strong>ИТОГО</strong></td>
-            <td class="right">{fmt_int(tot_spend)}</td>
-            <td class="right">{fmt_int(tot_orders)}</td>
-            <td class="right">{fmt_int(tot_rev)}</td>
-            <td class="right"><span class="drr-pill {drr_class(tot_drr)}">{fmt_pct(tot_drr)}</span></td>
-            <td class="right"><span class="drr-pill {drr_class(tot_drr_s)}">{fmt_pct(tot_drr_s) if tot_for_pay else '—'}</span></td>
-            <td class="right">{tot_buy:.0f}%</td>
-            <td class="right">{fmt_int(tot_stock) if tot_stock else '—'}</td>
-            <td class="right">{fmt_int(tot_cpo)}</td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="fstrip">
+      {filter_btns}
+      <input class="fsearch" id="funnel-search" type="text" placeholder="Поиск по артикулу...">
     </div>
+    <div class="art-grid">{''.join(cards) if cards else '<div style="color:var(--txt2);padding:24px">Нет данных по артикулам за период.</div>'}</div>
     """
 
 
-def _g(p: dict, field: str, period: str) -> float:
-    """Локальный shortcut к _funnel_metric."""
-    from wb_api import _funnel_metric
-    return _funnel_metric(p, field, period)
+def _short_num(v):
+    if not v: return "0"
+    if v >= 1_000_000: return f"{v/1_000_000:.1f}M"
+    if v >= 1_000: return f"{v/1_000:.0f}K"
+    return str(int(v))
 
 
-# ── Campaigns таблица ─────────────────────────────────────────────────────────
-def _render_campaigns_table(data: dict) -> str:
-    spend = data["campaign_spend"]
-    stats = data["campaign_stats"]
+# ─── Реклама tab ──────────────────────────────────────────────────────────────
 
-    rows = []
-    total_spend = total_shows = 0.0
+def _render_ads_tab(data: dict) -> str:
+    spend  = data["campaign_spend"]
+    stats  = data["campaign_stats"]
 
-    # Сортируем по расходу убыв.
+    if not spend:
+        return '<div style="color:var(--txt2);padding:24px">Нет активных кампаний за период.</div>'
+
     items = sorted(spend.items(), key=lambda kv: kv[1]["sum"], reverse=True)
+
+    total_spend = total_views = total_orders_est = 0.0
+    rows = []
     for adv_id, cell in items:
-        s = stats.get(adv_id, {})
+        s     = stats.get(adv_id, {})
         views = float(s.get("views") or 0)
         ctr   = float(s.get("ctr") or 0)
-        a_type = ADVERT_TYPE.get(cell.get("advertType"), "—")
-        tag_cls = "camp-auto" if cell.get("advertType") == 8 else (
-            "camp-search" if cell.get("advertType") in (6, 9) else "camp-ark"
-        )
-        ctr_cell = (
-            f'<span class="drr-pill {ctr_class(ctr)}">{fmt_pct(ctr)}</span>'
-            if ctr else '<span class="muted">—</span>'
-        )
-        rows.append(f"""
-        <tr>
-          <td>{html.escape(str(cell.get("campName") or "—"))} <span style="color:var(--text-dim);font-size:11px">#{adv_id}</span></td>
-          <td><span class="camp-tag {tag_cls}">{a_type}</span></td>
-          <td class="right">{fmt_int(cell["sum"])}</td>
-          <td class="right">{fmt_int(views) if views else '<span class="muted">—</span>'}</td>
-          <td class="right">{ctr_cell}</td>
-        </tr>
-        """)
+        clicks= float(s.get("clicks") or 0)
+        a_type_id = cell.get("advertType")
+        a_type = ADVERT_TYPE.get(a_type_id, "—")
+        a_status = str(cell.get("advertStatus") or "").lower()
+        tag_cls = ("ct-auto" if a_type_id == 8
+                   else "ct-search" if a_type_id in (6, 9)
+                   else "ct-ark")
+        ctr_pill = (f'<span class="pill {("good" if ctr>=4.5 else "ok" if ctr>=3 else "bad")}">{ctr:.2f}%</span>'
+                    if ctr else '<span class="dim">—</span>')
+        cpc = (cell["sum"] / clicks) if clicks else 0
+        is_active  = a_status in ("9", "активный", "active")
+        status_dot = "🟢" if is_active else "🔴"
+        row_status = "active" if is_active else "paused"
+        row_type   = ("ark" if tag_cls == "ct-ark"
+                      else "search" if tag_cls == "ct-search" else "auto")
+        views_cell  = fmt_int(views) if views else '<span class=dim>—</span>'
+        clicks_cell = fmt_int(clicks) if clicks else '<span class=dim>—</span>'
+        cpc_cell    = fmt_money(cpc) if cpc else '<span class=dim>—</span>'
+        rows.append((
+            f'<tr data-status="{row_status}" data-type="{row_type}">'
+            f'<td><span class="sku-code">{_esc.escape(str(cell.get("campName") or "—"))}</span>'
+            f'<span class="sku-name">#{adv_id}</span></td>'
+            f'<td><span class="camp-tag {tag_cls}">{a_type}</span></td>'
+            f'<td class="dim">{status_dot}</td>'
+            f'<td class="r">{fmt_money(cell["sum"])}</td>'
+            f'<td class="r">{views_cell}</td>'
+            f'<td class="r">{ctr_pill}</td>'
+            f'<td class="r">{clicks_cell}</td>'
+            f'<td class="r">{cpc_cell}</td>'
+            f'</tr>'
+        ))
         total_spend += cell["sum"]
-        total_shows += views
+        total_views += views
 
-    if not rows:
-        rows.append(
-            '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">'
-            'Активных кампаний с расходом за период не найдено.</td></tr>'
-        )
+    filter_btns = (
+        '<button class="fbtn" data-af="all"    onclick="adsFilter(this,\'all\')">Все</button>'
+        '<button class="fbtn" data-af="active" onclick="adsFilter(this,\'active\')">Активные</button>'
+        '<button class="fbtn" data-af="ark"    onclick="adsFilter(this,\'ark\')">АРК</button>'
+        '<button class="fbtn" data-af="search" onclick="adsFilter(this,\'search\')">Поиск</button>'
+        '<button class="fbtn" data-af="auto"   onclick="adsFilter(this,\'auto\')">Авто</button>'
+    )
+
+    summary_cards = f"""
+    <div class="kgrid kgrid-3" style="margin-bottom:20px">
+      {_kcard("Общий расход", fmt_money(total_spend), "", f"{len(spend)} кампаний")}
+      {_kcard("Показов всего", fmt_int(total_views) if total_views else "—", "", "")}
+      {_kcard("ДРР кабинета", fmt_pct(data['kpi']['drr']), _drr_badge(data['kpi']['drr']), "расход / выручка заказов")}
+    </div>
+    """
 
     return f"""
-    <div class="table-wrap" style="margin-bottom:40px">
+    {summary_cards}
+    <div class="sec">Рекламные кампании</div>
+    <div class="fstrip">{filter_btns}</div>
+    <div class="tbl-wrap">
       <table>
-        <thead><tr>
-          <th>Кампания</th>
-          <th>Тип</th>
-          <th class="right">Расход ₽</th>
-          <th class="right">Показы</th>
-          <th class="right">CTR %</th>
-        </tr></thead>
-        <tbody>
+        <thead>
+          <tr>
+            <th>Кампания</th><th>Тип</th><th>Статус</th>
+            <th class="r">Расход ₽</th><th class="r">Показы</th>
+            <th class="r">CTR</th><th class="r">Клики</th><th class="r">CPC ₽</th>
+          </tr>
+        </thead>
+        <tbody id="ads-tbody">
           {''.join(rows)}
-          <tr class="total-row">
-            <td><strong>ИТОГО ({len(spend)} кампаний)</strong></td>
-            <td></td>
-            <td class="right">{fmt_int(total_spend)}</td>
-            <td class="right">{fmt_int(total_shows) if total_shows else '—'}</td>
-            <td class="right">—</td>
+          <tr class="tot-row">
+            <td colspan="3"><strong>ИТОГО</strong></td>
+            <td class="r">{fmt_money(total_spend)}</td>
+            <td class="r">{fmt_int(total_views) if total_views else "—"}</td>
+            <td class="r">—</td><td class="r">—</td><td class="r">—</td>
           </tr>
         </tbody>
       </table>
@@ -862,130 +912,289 @@ def _render_campaigns_table(data: dict) -> str:
     """
 
 
-# ── Insights блок ─────────────────────────────────────────────────────────────
-def _default_insights(data: dict) -> dict:
-    """Базовые автоматические выводы (без AI)."""
-    products = data["products"]
-    kpi = data["kpi"]
+# ─── Юнит tab ─────────────────────────────────────────────────────────────────
 
-    # ТОП-3 по росту заказов
+def _render_unit_tab(unit_data: list, wb_data: dict) -> str:
+    if not unit_data:
+        return '<div style="color:var(--txt2);padding:24px">Нет данных юнит-экономики для этого кабинета. Добавьте артикулы в раздел «Юнит-экономика».</div>'
+
+    rows = []
+    profits = []
+    margins = []
+    for row in unit_data:
+        u = _calc_unit(row)
+        net = u["net_price"]
+        if not net:
+            continue
+        m = u["margin_pct"]
+        margins.append(m)
+        profits.append(u["profit"])
+
+        wb_art = row.get("wb_article") or ""
+        s_art  = row.get("seller_article") or row.get("brand") or ""
+        price  = row.get("wb_price") or 0
+        spp    = row.get("spp_pct") or 0
+
+        m_cls = ("good" if m >= 25 else "ok" if m >= 10 else "bad" if m >= 0 else "urgent")
+        health_icon = "✅" if m >= 25 else "🟡" if m >= 10 else "🔴" if m >= 0 else "💀"
+        health_lbl  = ("Прибыльно" if m >= 25 else "Умеренно" if m >= 10
+                       else "Мало" if m >= 0 else "Убыток")
+
+        sku_inner = (f'<span class="sku-code">{_esc.escape(str(wb_art))}</span>'
+                     f'<span class="sku-name">{_esc.escape(str(s_art)[:50])}</span>')
+        if wb_art:
+            sku_inner = (f'<a class="sku-link" href="https://www.wildberries.ru/catalog/{wb_art}/detail.aspx" '
+                         f'target="_blank" rel="noopener">{sku_inner}</a>')
+
+        rows.append(f"""
+        <tr data-margin="{m:.2f}">
+          <td>{sku_inner}</td>
+          <td class="r">{fmt_money(net)}</td>
+          <td class="r dim">{fmt_money(price)} / {spp:.0f}%</td>
+          <td class="r">{fmt_money(u['cost_price'])}</td>
+          <td class="r">{fmt_money(u['commission'])}</td>
+          <td class="r">{fmt_money(u['logistics'])}</td>
+          <td class="r">{fmt_money(u['drr_rub'])}</td>
+          <td class="r">{fmt_money(u['tax_rub'])}</td>
+          <td class="r"><strong>{fmt_money(u['profit'])}</strong></td>
+          <td class="r"><span class="pill {m_cls}">{m:.1f}%</span></td>
+          <td><span class="health {m_cls}">{health_icon} {health_lbl}</span></td>
+        </tr>
+        """)
+
+    if not rows:
+        return '<div style="color:var(--txt2);padding:24px">Нет данных для расчёта.</div>'
+
+    avg_m  = sum(margins) / len(margins)
+    avg_p  = sum(profits) / len(profits)
+    pos_m  = sum(1 for m in margins if m > 0)
+    good_m = sum(1 for m in margins if m >= 25)
+
+    summary = f"""
+    <div class="kgrid kgrid-4" style="margin-bottom:20px">
+      {_kcard("Средняя маржа", fmt_pct(avg_m), "", f"{len(margins)} артикулов",
+              accent="green" if avg_m>=25 else "orange" if avg_m>=10 else "red")}
+      {_kcard("Средняя прибыль", fmt_money(avg_p), "", "с единицы товара")}
+      {_kcard("Прибыльных", f"{pos_m} шт",  "", f"из {len(margins)} артикулов")}
+      {_kcard("Маржа ≥25%",  f"{good_m} шт", "", "здоровые артикулы", accent="green" if good_m>0 else "")}
+    </div>
+    """
+
+    filter_btns = (
+        '<button class="fbtn" data-mf="all" onclick="unitFilter(this,\'all\')">Все</button>'
+        '<button class="fbtn" data-mf="25"  onclick="unitFilter(this,\'25\')">Маржа ≥25%</button>'
+        '<button class="fbtn" data-mf="10"  onclick="unitFilter(this,\'10\')">10–25%</button>'
+        '<button class="fbtn" data-mf="0"   onclick="unitFilter(this,\'0\')">0–10%</button>'
+        '<button class="fbtn" data-mf="neg" onclick="unitFilter(this,\'neg\')">Убыток</button>'
+    )
+
+    return f"""
+    {summary}
+    <div class="sec">Юнит-экономика по артикулам</div>
+    <div class="fstrip">{filter_btns}</div>
+    <div class="tbl-wrap">
+      <table style="min-width:900px">
+        <thead><tr>
+          <th>Артикул</th>
+          <th class="r">Цена нетто</th><th class="r">Цена / СПП</th>
+          <th class="r">Себест.</th><th class="r">Комиссия</th>
+          <th class="r">Логист.</th><th class="r">Реклама</th>
+          <th class="r">Налог</th><th class="r">Прибыль</th>
+          <th class="r">Маржа</th><th>Статус</th>
+        </tr></thead>
+        <tbody id="unit-tbody">{''.join(rows)}</tbody>
+      </table>
+    </div>
+    """
+
+
+# ─── Рекомендации ─────────────────────────────────────────────────────────────
+
+def _render_recs_tab(data: dict, unit_data: list) -> str:
+    recs = _build_recs(data, unit_data)
+    items = []
+    for r in recs:
+        items.append(f"""
+        <div class="rec-item {r['lvl']}">
+          <div class="rec-icon">{r['icon']}</div>
+          <div class="rec-body">
+            <b>{_esc.escape(r['title'])}</b>
+            <span>{_esc.escape(r['body'])}</span>
+          </div>
+        </div>
+        """)
+    if not items:
+        items.append('<div style="color:var(--txt2);padding:24px">Рекомендаций нет.</div>')
+    return f'<div class="sec">Рекомендации по результатам периода</div><div class="rec-list">{"".join(items)}</div>'
+
+
+def _build_recs(data: dict, unit_data: list) -> list:
+    recs = []
+    kpi  = data["kpi"]
+    prods = data["products"]
+    f    = data["funnel"]
+
+    drr  = kpi.get("drr") or 0
+    rev  = kpi.get("revenue") or 0
+    rev_prev = kpi.get("revenue_prev") or 0
+    orders   = kpi.get("orders") or 0
+    buyout   = (f.get("buyout_pct") or 0)
+    buyout_prev = (f.get("buyout_pct_prev") or 0)
+
+    # ДРР
+    if drr > 15:
+        recs.append({"lvl":"urgent","icon":"🚨","title":f"ДРР {drr:.1f}% — критически высокий",
+                     "body":"Снизить ставки в наиболее дорогих кампаниях, оптимизировать бюджет."})
+    elif drr > 10:
+        recs.append({"lvl":"warn","icon":"⚠️","title":f"ДРР {drr:.1f}% — выше нормы",
+                     "body":"Проверить эффективность кампаний с высоким расходом и низким выхлопом."})
+    elif 0 < drr < 5:
+        recs.append({"lvl":"ok","icon":"✅","title":f"ДРР {drr:.1f}% — отличный результат",
+                     "body":"Масштабируйте рабочие кампании при наличии складских остатков."})
+
+    # выкуп
+    if buyout < 50 and orders > 10:
+        recs.append({"lvl":"warn","icon":"📉","title":f"Выкуп {buyout:.0f}% — ниже нормы",
+                     "body":"Проверить фотографии, размерную сетку, описание и отзывы товаров."})
+    elif buyout_prev and (buyout - buyout_prev) < -5:
+        recs.append({"lvl":"warn","icon":"📉","title":f"Выкуп снизился с {buyout_prev:.0f}% до {buyout:.0f}%",
+                     "body":"Проанализировать причины возвратов. Проверить карточки товаров."})
+
+    # выручка
+    if rev_prev and rev < rev_prev * 0.85:
+        d = (rev - rev_prev) / rev_prev * 100
+        recs.append({"lvl":"urgent","icon":"📉","title":f"Выручка упала на {abs(d):.0f}%",
+                     "body":"Проверить наличие остатков, ставки рекламы, позиции в поиске."})
+    elif rev_prev and rev > rev_prev * 1.15:
+        d = (rev - rev_prev) / rev_prev * 100
+        recs.append({"lvl":"ok","icon":"📈","title":f"Выручка выросла на {d:.0f}%",
+                     "body":"Проверьте хватит ли остатков поддерживать темп. При ДРР < 5% — масштабируйте."})
+
+    # Лидеры роста
+    sorted_growth = sorted(prods, key=lambda p: (_delta_orders(p) or 0), reverse=True)
+    for p in sorted_growth[:2]:
+        d = _delta_orders(p)
+        if d is None or d < 20: continue
+        prod = p.get("product") or {}
+        vendor = prod.get("vendorCode") or prod.get("nmId") or "артикул"
+        recs.append({"lvl":"ok","icon":"🚀","title":f"{_esc.escape(str(vendor))}: рост заказов {d:+.0f}%",
+                     "body":"Убедитесь что хватает остатков и рекламный бюджет не ограничен."})
+
+    # Падения
+    for p in sorted(prods, key=lambda p: (_delta_orders(p) or 0))[:2]:
+        d = _delta_orders(p)
+        if d is None or d > -25: continue
+        prod = p.get("product") or {}
+        vendor = prod.get("vendorCode") or prod.get("nmId") or "артикул"
+        orders_n = _g(p,"orderCount","selected")
+        recs.append({"lvl":"warn","icon":"⚠️","title":f"{_esc.escape(str(vendor))}: заказы {d:.0f}%",
+                     "body":f"Текущая неделя: {fmt_int(orders_n)} заказов. Проверить ставки и карточку."})
+
+    # Юнит: убыточные
+    for row in unit_data:
+        u = _calc_unit(row)
+        if u["net_price"] > 0 and u["margin_pct"] < 0:
+            art = row.get("seller_article") or row.get("wb_article") or "артикул"
+            recs.append({"lvl":"urgent","icon":"💀","title":f"{art}: убыточный товар (маржа {u['margin_pct']:.1f}%)",
+                         "body":"Пересмотреть ценообразование или себестоимость. Прекратить рекламу."})
+        elif u["net_price"] > 0 and u["margin_pct"] < 10:
+            art = row.get("seller_article") or row.get("wb_article") or "артикул"
+            recs.append({"lvl":"warn","icon":"🟡","title":f"{art}: низкая маржа {u['margin_pct']:.1f}%",
+                         "body":"Рассмотреть повышение цены или снижение затрат."})
+
+    # Стоки
+    stock_total = kpi.get("stock_total") or 0
+    if stock_total < 20 and orders > 5:
+        recs.append({"lvl":"urgent","icon":"📦","title":f"Критически мало остатков: {fmt_int(stock_total)} шт",
+                     "body":"Срочно пополнить склад чтобы не потерять позиции."})
+
+    # Стандартные советы
+    recs.append({"lvl":"info","icon":"💡","title":"Сравнить с прошлой неделей по топ-5 артикулам",
+                 "body":"Принять решения по рекламным бюджетам на следующую неделю."})
+    recs.append({"lvl":"info","icon":"💡","title":"Проверить карточки с CTR < 3%",
+                 "body":"Обновить главное фото, A/B тест на изображении."})
+
+    return recs
+
+
+# ─── insights для Сводки ──────────────────────────────────────────────────────
+
+def _build_insights(data: dict, unit_data: list) -> dict:
+    kpi   = data["kpi"]
+    prods = data["products"]
+    f     = data["funnel"]
+
     leaders = []
-    sorted_growth = sorted(
-        [(p, _delta_orders(p)) for p in products],
-        key=lambda x: (x[1] if x[1] is not None else -999),
-        reverse=True,
-    )
-    for p, growth in sorted_growth[:3]:
-        if growth is None or growth <= 0:
-            continue
-        prod = p.get("product") or {}
-        name = prod.get("vendorCode") or prod.get("nmId") or "артикул"
-        leaders.append({
-            "num": "ok",
-            "text": f"<strong>{html.escape(str(name))}</strong> — рост заказов {growth:+.0f}%."
-        })
+    sorted_g = sorted(prods, key=lambda p: (_delta_orders(p) or 0), reverse=True)
+    for p in sorted_g[:3]:
+        d = _delta_orders(p)
+        if d is None or d <= 0: continue
+        prod   = p.get("product") or {}
+        vendor = prod.get("vendorCode") or prod.get("nmId") or "артикул"
+        leaders.append({"num":"ok",
+            "text": f"<strong>{_esc.escape(str(vendor))}</strong> — рост заказов {d:+.0f}%."})
 
-    # Проблемы
+    rev_d = (kpi["revenue"] - kpi["revenue_prev"]) / kpi["revenue_prev"] * 100 if kpi.get("revenue_prev") else None
+    if rev_d is not None and rev_d > 10:
+        leaders.append({"num":"ok","text": f"Выручка выросла на <strong>{rev_d:+.0f}%</strong> vs прошлый период."})
+    if (f.get("buyout_pct") or 0) >= 70:
+        leaders.append({"num":"ok","text": f"Высокий % выкупа: <strong>{f['buyout_pct']:.0f}%</strong>."})
+
+    avg_m_list = [_calc_unit(r)["margin_pct"] for r in unit_data if _calc_unit(r)["net_price"] > 0]
+    if avg_m_list:
+        avg_m = sum(avg_m_list) / len(avg_m_list)
+        if avg_m >= 25:
+            leaders.append({"num":"ok","text": f"Средняя маржа кабинета <strong>{avg_m:.1f}%</strong> — здоровая."})
+
     problems = []
-    if kpi["drr"] >= 10:
-        problems.append({
-            "num": "urgent",
-            "text": f"<strong>ДРР кабинета {kpi['drr']:.1f}%</strong> — выше нормы. Снижать ставки в дорогих кампаниях."
-        })
+    drr = kpi.get("drr") or 0
+    if drr > 10:
+        problems.append({"num":"urgent","text": f"<strong>ДРР {drr:.1f}%</strong> — выше нормы. Снизить ставки."})
+    elif drr > 15:
+        problems.append({"num":"urgent","text": f"<strong>ДРР {drr:.1f}%</strong> — критически высокий!"})
 
-    # топ-1 по падению заказов
-    fallers = sorted(
-        [(p, _delta_orders(p)) for p in products],
-        key=lambda x: (x[1] if x[1] is not None else 0),
-    )
-    for p, d in fallers[:2]:
-        if d is None or d >= -20:
-            continue
+    if rev_d is not None and rev_d < -10:
+        problems.append({"num":"warn","text": f"Выручка упала на <strong>{abs(rev_d):.0f}%</strong> vs прошлой недели."})
+
+    buyout = f.get("buyout_pct") or 0
+    buyout_prev = f.get("buyout_pct_prev") or 0
+    if buyout < 50 and kpi.get("orders", 0) > 5:
+        problems.append({"num":"warn","text": f"Низкий % выкупа: <strong>{buyout:.0f}%</strong>. Проверить карточки."})
+
+    for p in sorted(prods, key=lambda p: (_delta_orders(p) or 0))[:2]:
+        d = _delta_orders(p)
+        if d is None or d > -25: continue
         prod = p.get("product") or {}
-        name = prod.get("vendorCode") or prod.get("nmId") or ""
-        problems.append({
-            "num": "warn",
-            "text": f"<strong>{html.escape(str(name))}</strong> — заказы {d:+.0f}%. Проверить ставки/карточку."
-        })
+        vendor = prod.get("vendorCode") or prod.get("nmId") or "артикул"
+        problems.append({"num":"warn","text": f"<strong>{_esc.escape(str(vendor))}</strong>: заказы {d:.0f}%."})
 
-    # Срочные действия
-    urgent = []
-    for p in products:
-        spend = 0  # неизвестно по артикулу
-        rev   = _g(p, "orderSum", "selected")
-        ords  = _g(p, "orderCount", "selected")
-        if rev and ords and ords < 10 and rev < 30_000:
-            prod = p.get("product") or {}
-            urgent.append({
-                "num": "warn",
-                "text": f"<strong>{html.escape(str(prod.get('vendorCode') or prod.get('nmId')))}</strong> — мало заказов ({int(ords)}). Оценить целесообразность РК."
-            })
-            if len(urgent) >= 3:
-                break
+    if avg_m_list and sum(avg_m_list) / len(avg_m_list) < 10:
+        problems.append({"num":"warn","text": "Средняя маржа ниже 10%. Пересмотреть ценообразование."})
 
-    next_week = [
-        {"num": "info", "text": "Сравнить эту неделю с прошлой по топ-5 артикулам и принять решение по бюджетам."},
-        {"num": "info", "text": "Проверить карточки с низким выкупом — фото, размерная сетка, отзывы."},
-        {"num": "info", "text": "При ДРР < 5% — масштабировать рабочие кампании."},
-    ]
+    stock = kpi.get("stock_total") or 0
+    if stock < 20 and kpi.get("orders", 0) > 5:
+        problems.append({"num":"urgent","text": f"Критически мало остатков: <strong>{fmt_int(stock)} шт</strong>."})
 
     return {
-        "leaders":   leaders or [{"num": "info", "text": "Стабильная неделя без явных лидеров роста."}],
-        "problems":  problems or [{"num": "info", "text": "Критичных проблем в кабинете не обнаружено."}],
-        "urgent":    urgent or [{"num": "info", "text": "Срочных мер не требуется."}],
-        "next_week": next_week,
+        "leaders":  leaders  or [{"num":"info","text":"Данных для выводов о росте недостаточно."}],
+        "problems": problems or [{"num":"info","text":"Критичных проблем не обнаружено."}],
     }
 
 
-def _delta_orders(p: dict) -> float | None:
-    cur  = _g(p, "orderCount", "selected")
-    prev = _g(p, "orderCount", "past")
-    if prev == 0:
-        return None if cur == 0 else 999
-    return (cur - prev) / prev * 100
+# ─── done tasks ───────────────────────────────────────────────────────────────
 
-
-def _render_done_tasks(tasks: list[dict]) -> str:
-    """Блок выполненных задач проекта за период отчёта."""
+def _render_done_tasks(tasks: list) -> str:
     if not tasks:
         return ""
-    rows = ""
-    for t in tasks:
-        assignee = f'<span class="dt-who">@{html.escape(t["assignee"])}</span>' if t.get("assignee") else ""
-        rows += (
-            f'<div class="dt-row">'
-            f'<span class="dt-date">{html.escape(t["done_at"])}</span>'
-            f'<span class="dt-title">{html.escape(t["title"])}</span>'
-            f'{assignee}'
-            f'</div>'
-        )
+    rows = "".join(
+        f'<div class="dt-row">'
+        f'<span class="dt-date">{_esc.escape(t["done_at"])}</span>'
+        f'<span class="dt-title">{_esc.escape(t["title"])}</span>'
+        f'{"<span class=dt-who>@" + _esc.escape(t["assignee"]) + "</span>" if t.get("assignee") else ""}'
+        f'</div>'
+        for t in tasks
+    )
     return f"""
-    <section class="section done-tasks-section">
-      <h2 class="section-title">✅ Выполненные задачи за период</h2>
-      <div class="done-tasks-list">{rows}</div>
-    </section>
-    """
-
-
-def _render_insights(ins: dict) -> str:
-    def block(title: str, items: list[dict]) -> str:
-        lis = []
-        for i, item in enumerate(items, 1):
-            cls = f'num-{item.get("num", "info")}'
-            label = "!" if item.get("num") == "urgent" else str(i)
-            lis.append(
-                f'<div class="insight-item">'
-                f'<span class="insight-num {cls}">{label}</span>'
-                f'<span class="insight-text">{item["text"]}</span>'
-                f'</div>'
-            )
-        return f'<div class="insight-card"><h3>{title}</h3>{"".join(lis)}</div>'
-
-    return f"""
-    <div class="insights-grid">
-      {block("🟢 Лидеры недели",  ins["leaders"])}
-      {block("🔴 Проблемы",       ins["problems"])}
-      {block("⚡ Срочные действия", ins["urgent"])}
-      {block("📊 На следующую неделю", ins["next_week"])}
-    </div>
+    <div class="sec" style="margin-top:28px">Выполненные задачи за период</div>
+    <div class="dt-list">{rows}</div>
     """

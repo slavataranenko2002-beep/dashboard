@@ -1903,7 +1903,28 @@ def wb_report():
                     ]
         except Exception:
             done_tasks = []
-        html_out = render_html(data, done_tasks=done_tasks)
+        unit_data = []
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT wb_article, seller_article, brand, cost_price, "
+                        "logistics_to_wb, packaging, overhead, defect_pct, liters, "
+                        "redemption_pct, warehouse, irp, il, logistics_ktr, "
+                        "reception_coef, storage_per_day, commission_pct, "
+                        "wb_price, drr_pct, drr_external_rub, stock, spp_pct, "
+                        "tax_system, tax_pct, status "
+                        "FROM unit_economics WHERE project=%s ORDER BY id ASC",
+                        (cabinet,)
+                    )
+                    unit_data = [dict(r) for r in cur.fetchall()]
+            for row in unit_data:
+                for k, v in row.items():
+                    if hasattr(v, '__float__') and not isinstance(v, (int, bool)):
+                        row[k] = float(v) if v is not None else None
+        except Exception:
+            unit_data = []
+        html_out = render_html(data, done_tasks=done_tasks, unit_data=unit_data)
         return Response(html_out, mimetype="text/html")
     except RuntimeError as e:
         return Response(f"Ошибка: {e}", status=400)
