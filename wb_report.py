@@ -748,8 +748,8 @@ def _render_funnel_tab(data: dict) -> str:
         orders      = _g(p, "orderCount", "selected")
         orders_prev = _g(p, "orderCount", "past")
         revenue     = _g(p, "orderSum",   "selected")
-        clicks_p    = _g(p, "openCardCount", "selected") or 0   # переходы в карточку
-        basket_p    = _g(p, "addToCartCount", "selected") or 0
+        clicks_p    = _g(p, "openCount", "selected") or 0   # переходы в карточку
+        basket_p    = _g(p, "cartCount", "selected") or 0
 
         buyouts     = int(sales_by_v.get(str(vendor), 0))
         buyout_pct  = (buyouts / orders * 100) if orders else 0
