@@ -430,6 +430,56 @@ def _art_status(p: dict) -> str:
     if d >= -50:      return "decline"
     return "alert"
 
+# ─── Нормы % выкупа по категориям (мин, макс) ────────────────────────────────
+# Ключ — подстрока из subjectName товара (нижний регистр)
+BUYOUT_NORMS: dict[str, tuple[int, int]] = {
+    "рюкзак":         (30, 80),
+    "сумк":           (30, 80),   # сумка / сумки / сумочка
+    "мужск":          (30, 65),   # мужская одежда
+    "брюки мужск":    (30, 65),
+    "джинсы мужск":   (30, 65),
+    "костюм мужск":   (30, 65),
+    "женск":          (25, 40),   # женская одежда
+    "платье":         (25, 40),
+    "блузк":          (25, 40),
+    "пальто":         (25, 40),
+    "костюм":         (25, 40),   # не уточнён пол — по умолчанию женский
+    "брюки":          (25, 40),
+    "юбк":            (25, 40),
+    "джемпер":        (25, 40),
+    "свитер":         (25, 40),
+}
+_BUYOUT_DEFAULT = (30, 65)  # если категория не распознана
+
+
+def _detect_buyout_norm(products: list) -> tuple[int, int]:
+    """Определяет норму выкупа кабинета по subjectName товаров."""
+    from collections import Counter
+    matches: list[tuple[int, int]] = []
+    for p in products:
+        prod = p.get("product") or {}
+        subj = (prod.get("subjectName") or "").lower()
+        if not subj:
+            continue
+        for kw, norm in BUYOUT_NORMS.items():
+            if kw in subj:
+                matches.append(norm)
+                break
+    if not matches:
+        return _BUYOUT_DEFAULT
+    # Берём наиболее частую норму
+    counter = Counter(matches)
+    return counter.most_common(1)[0][0]
+
+
+def _buyout_status(buyout_pct: float, norm: tuple[int, int]) -> str:
+    """good / ok / bad относительно нормы категории."""
+    lo, hi = norm
+    if buyout_pct >= hi:   return "good"
+    if buyout_pct >= lo:   return "ok"
+    return "bad"
+
+
 STATUS_LABEL = {
     "growth":  "Рост",
     "stable":  "Стабильно",
@@ -540,6 +590,7 @@ def render_html(data: dict, done_tasks: list | None = None, unit_data: list | No
 def _render_summary(data: dict, unit_data: list) -> str:
     kpi = data["kpi"]
     f   = data["funnel"]
+    buyout_norm = _detect_buyout_norm(data["products"])
 
     # avg margin from unit_data
     margins = []
@@ -585,7 +636,9 @@ def _render_summary(data: dict, unit_data: list) -> str:
       {_kcard("Переходы в карточку", fmt_int(views), delta_badge(views, views_prev), "")}
       {_kcard("Добавили в корзину",   fmt_int(basket), delta_badge(basket, b_prev), f"CTR {ctr_f:.1f}%")}
       {_kcard("Заказов",    fmt_int(orders) + " шт", delta_badge(orders, ord_prev), "")}
-      {_kcard("% Выкупа",   fmt_pct(buyout, 0), _buyout_delta_badge(f), "", accent="green" if buyout>=60 else "orange" if buyout>=45 else "red")}
+      {_kcard("% Выкупа",   fmt_pct(buyout, 0), _buyout_delta_badge(f),
+              f"норма {buyout_norm[0]}–{buyout_norm[1]}%",
+              accent={"good":"green","ok":"orange","bad":"red"}.get(_buyout_status(buyout, buyout_norm),""))}
     </div>
     """)
 
@@ -669,6 +722,7 @@ def _ins_card(title, items):
 
 def _render_funnel_tab(data: dict) -> str:
     products = data["products"]
+    buyout_norm = _detect_buyout_norm(products)
     products = sorted(
         [p for p in products if _g(p,"orderCount","selected") >= 1 or _g(p,"orderCount","past") >= 1],
         key=lambda p: _g(p,"orderSum","selected"), reverse=True
@@ -694,7 +748,7 @@ def _render_funnel_tab(data: dict) -> str:
         orders      = _g(p, "orderCount", "selected")
         orders_prev = _g(p, "orderCount", "past")
         revenue     = _g(p, "orderSum",   "selected")
-        views_p     = _g(p, "openCardCount", "selected") or 0
+        clicks_p    = _g(p, "openCardCount", "selected") or 0   # переходы в карточку
         basket_p    = _g(p, "addToCartCount", "selected") or 0
 
         buyouts     = int(sales_by_v.get(str(vendor), 0))
@@ -726,36 +780,43 @@ def _render_funnel_tab(data: dict) -> str:
             d_badge = (f'<span class="badge up">▲ {d:+.0f}%</span>' if d >= 0
                        else f'<span class="badge dn">▼ {d:.0f}%</span>')
 
-        ctr_p = (basket_p / views_p * 100) if views_p else 0
-        cr_p  = (orders / basket_p * 100) if basket_p else 0
+        ctr_p = (basket_p / clicks_p * 100) if clicks_p else 0
+        cr_p  = (orders   / basket_p * 100) if basket_p else 0
+        b_status = _buyout_status(buyout_pct, buyout_norm)
+        b_color  = {"good":"var(--ok)","ok":"var(--warn)","bad":"var(--danger)"}.get(b_status,"var(--txt2)")
 
-        # funnel steps
-        funnel_steps = f"""
-        <div class="art-funnel-label">Конверсия воронки</div>
-        <div class="funnel-steps">
-          <div class="fstep">
-            <div class="fstep-val">{_short_num(views_p)}</div>
-            <div class="fstep-lbl">просм</div>
-          </div>
-          <div class="fstep-arrow">›</div>
-          <div class="fstep">
-            <div class="fstep-val">{_short_num(basket_p)}</div>
-            <div class="fstep-lbl">корзина</div>
-            <div class="fconv">{ctr_p:.1f}%</div>
-          </div>
-          <div class="fstep-arrow">›</div>
-          <div class="fstep">
-            <div class="fstep-val">{fmt_int(orders)}</div>
-            <div class="fstep-lbl">заказ</div>
-            <div class="fconv">{cr_p:.1f}%</div>
-          </div>
-          <div class="fstep-arrow">›</div>
-          <div class="fstep">
-            <div class="fstep-val">{buyout_pct:.0f}%</div>
-            <div class="fstep-lbl">выкуп</div>
-          </div>
-        </div>
-        """
+        # Строим воронку только из шагов с ненулевыми данными
+        fsteps = []
+        if clicks_p > 0:
+            fsteps.append(
+                f'<div class="fstep"><div class="fstep-val">{_short_num(clicks_p)}</div>'
+                f'<div class="fstep-lbl">клики</div></div>'
+                f'<div class="fstep-arrow">›</div>'
+            )
+        if basket_p > 0:
+            ctr_lbl = f'<div class="fconv">{ctr_p:.1f}%</div>' if clicks_p > 0 else ""
+            fsteps.append(
+                f'<div class="fstep"><div class="fstep-val">{_short_num(basket_p)}</div>'
+                f'<div class="fstep-lbl">корзина</div>{ctr_lbl}</div>'
+                f'<div class="fstep-arrow">›</div>'
+            )
+        cr_lbl = f'<div class="fconv">{cr_p:.1f}%</div>' if basket_p > 0 else ""
+        fsteps.append(
+            f'<div class="fstep"><div class="fstep-val">{fmt_int(orders)}</div>'
+            f'<div class="fstep-lbl">заказ</div>{cr_lbl}</div>'
+            f'<div class="fstep-arrow">›</div>'
+        )
+        fsteps.append(
+            f'<div class="fstep"><div class="fstep-val" style="color:{b_color}">{buyout_pct:.0f}%</div>'
+            f'<div class="fstep-lbl">выкуп</div>'
+            f'<div class="fconv" style="color:{b_color}">{buyout_norm[0]}–{buyout_norm[1]}%</div>'
+            f'</div>'
+        )
+
+        funnel_steps = (
+            f'<div class="art-funnel-label">Конверсия воронки</div>'
+            f'<div class="funnel-steps">{"".join(fsteps)}</div>'
+        )
 
         sku_inner = f'<span class="art-sku">{_esc.escape(str(vendor or nm_id))}</span>'
         if nm_id:
@@ -1039,6 +1100,8 @@ def _build_recs(data: dict, unit_data: list) -> list:
     kpi  = data["kpi"]
     prods = data["products"]
     f    = data["funnel"]
+    buyout_norm = _detect_buyout_norm(prods)
+    norm_lo, norm_hi = buyout_norm
 
     drr  = kpi.get("drr") or 0
     rev  = kpi.get("revenue") or 0
@@ -1058,11 +1121,14 @@ def _build_recs(data: dict, unit_data: list) -> list:
         recs.append({"lvl":"ok","icon":"✅","title":f"ДРР {drr:.1f}% — отличный результат",
                      "body":"Масштабируйте рабочие кампании при наличии складских остатков."})
 
-    # выкуп
-    if buyout < 50 and orders > 10:
-        recs.append({"lvl":"warn","icon":"📉","title":f"Выкуп {buyout:.0f}% — ниже нормы",
+    # выкуп — vs норма категории
+    if buyout >= norm_hi and orders > 5:
+        recs.append({"lvl":"ok","icon":"✅","title":f"Выкуп {buyout:.0f}% — выше нормы ({norm_lo}–{norm_hi}%)",
+                     "body":"Отличный показатель для категории. Следите за остатками."})
+    elif buyout < norm_lo and orders > 10:
+        recs.append({"lvl":"warn","icon":"📉","title":f"Выкуп {buyout:.0f}% — ниже нормы ({norm_lo}–{norm_hi}%)",
                      "body":"Проверить фотографии, размерную сетку, описание и отзывы товаров."})
-    elif buyout_prev and (buyout - buyout_prev) < -5:
+    if buyout_prev and (buyout - buyout_prev) < -5:
         recs.append({"lvl":"warn","icon":"📉","title":f"Выкуп снизился с {buyout_prev:.0f}% до {buyout:.0f}%",
                      "body":"Проанализировать причины возвратов. Проверить карточки товаров."})
 
@@ -1129,6 +1195,8 @@ def _build_insights(data: dict, unit_data: list) -> dict:
     kpi   = data["kpi"]
     prods = data["products"]
     f     = data["funnel"]
+    buyout_norm = _detect_buyout_norm(prods)
+    norm_lo, norm_hi = buyout_norm
 
     leaders = []
     sorted_g = sorted(prods, key=lambda p: (_delta_orders(p) or 0), reverse=True)
@@ -1143,8 +1211,10 @@ def _build_insights(data: dict, unit_data: list) -> dict:
     rev_d = (kpi["revenue"] - kpi["revenue_prev"]) / kpi["revenue_prev"] * 100 if kpi.get("revenue_prev") else None
     if rev_d is not None and rev_d > 10:
         leaders.append({"num":"ok","text": f"Выручка выросла на <strong>{rev_d:+.0f}%</strong> vs прошлый период."})
-    if (f.get("buyout_pct") or 0) >= 70:
-        leaders.append({"num":"ok","text": f"Высокий % выкупа: <strong>{f['buyout_pct']:.0f}%</strong>."})
+
+    buyout = f.get("buyout_pct") or 0
+    if buyout >= norm_hi and kpi.get("orders", 0) > 5:
+        leaders.append({"num":"ok","text": f"Выкуп <strong>{buyout:.0f}%</strong> — выше нормы ({norm_lo}–{norm_hi}%) для категории."})
 
     avg_m_list = [_calc_unit(r)["margin_pct"] for r in unit_data if _calc_unit(r)["net_price"] > 0]
     if avg_m_list:
@@ -1154,18 +1224,17 @@ def _build_insights(data: dict, unit_data: list) -> dict:
 
     problems = []
     drr = kpi.get("drr") or 0
-    if drr > 10:
-        problems.append({"num":"urgent","text": f"<strong>ДРР {drr:.1f}%</strong> — выше нормы. Снизить ставки."})
-    elif drr > 15:
-        problems.append({"num":"urgent","text": f"<strong>ДРР {drr:.1f}%</strong> — критически высокий!"})
+    if drr > 15:
+        problems.append({"num":"urgent","text": f"<strong>ДРР {drr:.1f}%</strong> — критически высокий! Снизить ставки."})
+    elif drr > 10:
+        problems.append({"num":"urgent","text": f"<strong>ДРР {drr:.1f}%</strong> — выше нормы. Оптимизировать кампании."})
 
     if rev_d is not None and rev_d < -10:
         problems.append({"num":"warn","text": f"Выручка упала на <strong>{abs(rev_d):.0f}%</strong> vs прошлой недели."})
 
-    buyout = f.get("buyout_pct") or 0
     buyout_prev = f.get("buyout_pct_prev") or 0
-    if buyout < 50 and kpi.get("orders", 0) > 5:
-        problems.append({"num":"warn","text": f"Низкий % выкупа: <strong>{buyout:.0f}%</strong>. Проверить карточки."})
+    if buyout < norm_lo and kpi.get("orders", 0) > 5:
+        problems.append({"num":"warn","text": f"Выкуп <strong>{buyout:.0f}%</strong> ниже нормы ({norm_lo}–{norm_hi}%). Проверить карточки."})
 
     for p in sorted(prods, key=lambda p: (_delta_orders(p) or 0))[:2]:
         d = _delta_orders(p)
