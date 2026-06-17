@@ -423,9 +423,11 @@ def _art_status(p: dict) -> str:
     d = _delta_orders(p)
     orders = _g(p, "orderCount", "selected")
     if orders == 0 or d is None: return "alert"
-    if d >= 20:  return "growth"
-    if d >= -10: return "stable"
-    if d >= -50: return "decline"
+    # ≥500% — скорее всего артефакт малой базы (1→6 = +500%), не «звезда»
+    if 20 <= d < 500: return "growth"
+    if d >= 500:      return "stable"
+    if d >= -10:      return "stable"
+    if d >= -50:      return "decline"
     return "alert"
 
 STATUS_LABEL = {
@@ -715,7 +717,11 @@ def _render_funnel_tab(data: dict) -> str:
         if d is None:
             d_badge = '<span class="badge nt">нет пред.</span>'
         elif d >= 999:
-            d_badge = '<span class="badge up">new</span>'
+            # prev=0, cur>0 — новый артикул в периоде
+            d_badge = '<span class="badge nt">new</span>'
+        elif d >= 500:
+            # артефакт малой базы — не выделяем как рост
+            d_badge = f'<span class="badge nt">▲ {d:.0f}%*</span>'
         else:
             d_badge = (f'<span class="badge up">▲ {d:+.0f}%</span>' if d >= 0
                        else f'<span class="badge dn">▼ {d:.0f}%</span>')
@@ -1070,11 +1076,11 @@ def _build_recs(data: dict, unit_data: list) -> list:
         recs.append({"lvl":"ok","icon":"📈","title":f"Выручка выросла на {d:.0f}%",
                      "body":"Проверьте хватит ли остатков поддерживать темп. При ДРР < 5% — масштабируйте."})
 
-    # Лидеры роста
+    # Лидеры роста (до +500% — выше считаем артефактом малой базы)
     sorted_growth = sorted(prods, key=lambda p: (_delta_orders(p) or 0), reverse=True)
     for p in sorted_growth[:2]:
         d = _delta_orders(p)
-        if d is None or d < 20: continue
+        if d is None or d < 20 or d >= 500: continue
         prod = p.get("product") or {}
         vendor = prod.get("vendorCode") or prod.get("nmId") or "артикул"
         recs.append({"lvl":"ok","icon":"🚀","title":f"{_esc.escape(str(vendor))}: рост заказов {d:+.0f}%",
@@ -1128,7 +1134,7 @@ def _build_insights(data: dict, unit_data: list) -> dict:
     sorted_g = sorted(prods, key=lambda p: (_delta_orders(p) or 0), reverse=True)
     for p in sorted_g[:3]:
         d = _delta_orders(p)
-        if d is None or d <= 0: continue
+        if d is None or d <= 0 or d >= 500: continue
         prod   = p.get("product") or {}
         vendor = prod.get("vendorCode") or prod.get("nmId") or "артикул"
         leaders.append({"num":"ok",
