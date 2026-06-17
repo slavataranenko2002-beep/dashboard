@@ -785,37 +785,27 @@ def _render_funnel_tab(data: dict) -> str:
         b_status = _buyout_status(buyout_pct, buyout_norm)
         b_color  = {"good":"var(--ok)","ok":"var(--warn)","bad":"var(--danger)"}.get(b_status,"var(--txt2)")
 
-        # Строим воронку только из шагов с ненулевыми данными
-        fsteps = []
-        if clicks_p > 0:
-            fsteps.append(
-                f'<div class="fstep"><div class="fstep-val">{_short_num(clicks_p)}</div>'
-                f'<div class="fstep-lbl">клики</div></div>'
-                f'<div class="fstep-arrow">›</div>'
-            )
-        if basket_p > 0:
-            ctr_lbl = f'<div class="fconv">{ctr_p:.1f}%</div>' if clicks_p > 0 else ""
-            fsteps.append(
-                f'<div class="fstep"><div class="fstep-val">{_short_num(basket_p)}</div>'
-                f'<div class="fstep-lbl">корзина</div>{ctr_lbl}</div>'
-                f'<div class="fstep-arrow">›</div>'
-            )
-        cr_lbl = f'<div class="fconv">{cr_p:.1f}%</div>' if basket_p > 0 else ""
-        fsteps.append(
-            f'<div class="fstep"><div class="fstep-val">{fmt_int(orders)}</div>'
-            f'<div class="fstep-lbl">заказ</div>{cr_lbl}</div>'
-            f'<div class="fstep-arrow">›</div>'
-        )
-        fsteps.append(
-            f'<div class="fstep"><div class="fstep-val" style="color:{b_color}">{buyout_pct:.0f}%</div>'
-            f'<div class="fstep-lbl">выкуп</div>'
-            f'<div class="fconv" style="color:{b_color}">{buyout_norm[0]}–{buyout_norm[1]}%</div>'
-            f'</div>'
-        )
+        # Воронка: всегда 4 шага, «—» если данных нет от API
+        clicks_val = _short_num(clicks_p) if clicks_p else "—"
+        basket_val = _short_num(basket_p) if basket_p else "—"
+        ctr_lbl    = f'<div class="fconv">{ctr_p:.1f}%</div>' if clicks_p and basket_p else ""
+        cr_lbl     = f'<div class="fconv">{cr_p:.1f}%</div>'  if basket_p else ""
 
         funnel_steps = (
             f'<div class="art-funnel-label">Конверсия воронки</div>'
-            f'<div class="funnel-steps">{"".join(fsteps)}</div>'
+            f'<div class="funnel-steps">'
+            f'<div class="fstep"><div class="fstep-val">{clicks_val}</div><div class="fstep-lbl">клики</div></div>'
+            f'<div class="fstep-arrow">›</div>'
+            f'<div class="fstep"><div class="fstep-val">{basket_val}</div><div class="fstep-lbl">корзина</div>{ctr_lbl}</div>'
+            f'<div class="fstep-arrow">›</div>'
+            f'<div class="fstep"><div class="fstep-val">{fmt_int(orders)}</div><div class="fstep-lbl">заказ</div>{cr_lbl}</div>'
+            f'<div class="fstep-arrow">›</div>'
+            f'<div class="fstep">'
+            f'<div class="fstep-val" style="color:{b_color}">{buyout_pct:.0f}%</div>'
+            f'<div class="fstep-lbl">выкуп</div>'
+            f'<div class="fconv" style="color:{b_color}">{buyout_norm[0]}–{buyout_norm[1]}%</div>'
+            f'</div>'
+            f'</div>'
         )
 
         sku_inner = f'<span class="art-sku">{_esc.escape(str(vendor or nm_id))}</span>'
