@@ -297,6 +297,10 @@ tfoot td.fcomp{background:var(--comp-bg)}
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     ⚙️ Склады
   </button>
+  <button class="btn-add" onclick="openStatusMgr()"
+    style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
+    🏷 Статусы
+  </button>
   <div class="tsep"></div>
   <span class="save-indicator" id="saveInd"></span>
 </div>
@@ -368,6 +372,26 @@ tfoot td.fcomp{background:var(--comp-bg)}
       <button onclick="addWCoefRow()" class="modal-sel-all" style="text-align:left">+ Добавить склад</button>
       <button onclick="resetWCoefs()" class="flt-rst">Сбросить</button>
       <button onclick="saveWCoefs()" class="btn-import">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Status presets modal -->
+<div class="modal-overlay" id="statusMgrOverlay" onclick="closeStatusMgr(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="width:360px">
+    <div class="modal-hdr">
+      <span class="modal-title">🏷 Статусы товаров</span>
+      <button class="modal-close" onclick="closeStatusMgr()">✕</button>
+    </div>
+    <div class="modal-search" style="padding:8px 20px 0">
+      <input type="text" id="statusMgrSearch" placeholder="Поиск статуса…" oninput="filterStatusMgr(this.value)"
+        style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px">
+    </div>
+    <div class="modal-body" id="statusMgrBody" style="padding:8px 16px;gap:4px;display:flex;flex-direction:column"></div>
+    <div class="modal-ftr">
+      <button onclick="addStatusMgrRow()" class="modal-sel-all" style="text-align:left">+ Добавить статус</button>
+      <button onclick="resetStatusMgr()" class="flt-rst">Сбросить</button>
+      <button onclick="saveStatusMgr()" class="btn-import">Сохранить</button>
     </div>
   </div>
 </div>
@@ -1466,6 +1490,50 @@ function resetWCoefs() {
   WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
   _wcoefAll = Object.entries(WAREHOUSE_COEFS).map(([name,coef])=>({name,coef}));
   renderWCoefList('');
+}
+
+let _statusAll = [];
+function openStatusMgr() {
+  _statusAll = STATUS_PRESETS.slice();
+  renderStatusMgrList('');
+  document.getElementById('statusMgrSearch').value = '';
+  document.getElementById('statusMgrOverlay').classList.add('open');
+}
+function closeStatusMgr(e) {
+  if (e && e.target !== document.getElementById('statusMgrOverlay')) return;
+  document.getElementById('statusMgrOverlay').classList.remove('open');
+}
+function filterStatusMgr(q) { renderStatusMgrList(q); }
+function renderStatusMgrList(q) {
+  const ql = q.toLowerCase();
+  const indexed = _statusAll.map((v, i) => ({v, i}));
+  const items = ql ? indexed.filter(x => x.v.toLowerCase().includes(ql)) : indexed;
+  document.getElementById('statusMgrBody').innerHTML = items.map(({v, i}) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+      <input type="text" value="${esc(v)}" data-idx="${i}"
+        onchange="_statusAll[+this.dataset.idx]=this.value"
+        style="flex:1;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px">
+      <button onclick="_statusAll.splice(${i},1);renderStatusMgrList(document.getElementById('statusMgrSearch').value)"
+        style="border:none;background:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1;padding:0 4px">✕</button>
+    </div>`).join('');
+}
+function addStatusMgrRow() {
+  _statusAll.push('Новый статус');
+  renderStatusMgrList('');
+}
+function saveStatusMgr() {
+  STATUS_PRESETS = [...new Set(_statusAll.map(s => s.trim()).filter(Boolean))];
+  saveStatusPresets(STATUS_PRESETS);
+  initBulkStatus();
+  closeStatusMgr();
+  refreshAllStatusSelects();
+}
+function resetStatusMgr() {
+  if (!confirm('Сбросить список статусов к значениям по умолчанию?')) return;
+  localStorage.removeItem('statusPresets');
+  STATUS_PRESETS = loadStatusPresets();
+  _statusAll = STATUS_PRESETS.slice();
+  renderStatusMgrList('');
 }
 
 // ─── Редактирование артикулов (click-to-edit) ────────────────────────────────
