@@ -109,7 +109,9 @@ td.ed input,td.ed select{
   text-align:right;min-width:70px}
 td.ed input[type=text],td.ed input.art{text-align:left;min-width:100px}
 td.ed select{min-width:130px;cursor:pointer}
-td.ed select.status-sel{min-width:0;text-align:left;font-size:11px}
+td.status-cell{cursor:pointer}
+td.status-cell:hover{background:var(--bg3)}
+.status-disp{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text)}
 td.ed input:focus,td.ed select:focus{
   outline:none;background:rgba(88,166,255,.1);border:1px solid var(--blue)}
 td.ed input:hover,td.ed select:hover{background:var(--bg3)}
@@ -248,6 +250,31 @@ tfoot td.fcomp{background:var(--comp-bg)}
   background:none;color:var(--text2);font-size:12px;cursor:pointer;font-family:inherit}
 .flt-rst:hover{color:var(--text)}
 
+/* ── Status inline popup ── */
+.stp-popup{position:fixed;z-index:200;background:var(--bg2);border:1px solid var(--border);
+  border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.45);width:200px;
+  display:none;flex-direction:column;max-height:320px;font-size:12px}
+.stp-popup.open{display:flex}
+.stp-list{flex:1;overflow-y:auto;padding:3px 0;min-height:0}
+.stp-item{display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;cursor:pointer}
+.stp-item:hover{background:var(--bg3)}
+.stp-item.sel .stp-lbl{font-weight:600}
+.stp-chk{width:14px;flex-shrink:0;color:var(--blue)}
+.stp-lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.stp-edit{flex:1;min-width:0;border:1px solid var(--blue);border-radius:4px;
+  padding:2px 5px;font-size:12px;background:var(--bg3);color:var(--text);font-family:inherit}
+.stp-del{border:none;background:none;color:var(--text3);cursor:pointer;font-size:13px;
+  line-height:1;padding:2px 4px;flex-shrink:0;visibility:hidden}
+.stp-item:hover .stp-del{visibility:visible}
+.stp-del:hover{color:var(--red)}
+.stp-clear{padding:5px 10px;border-top:1px solid var(--border);color:var(--text2);cursor:pointer;font-size:12px}
+.stp-clear:hover{background:var(--bg3)}
+.stp-add{display:flex;gap:4px;padding:6px 8px;border-top:1px solid var(--border)}
+.stp-add input{flex:1;min-width:0;padding:4px 6px;border-radius:5px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:12px;font-family:inherit}
+.stp-add button{border:none;background:var(--blue);color:#fff;border-radius:5px;padding:4px 9px;
+  font-size:12px;cursor:pointer;font-family:inherit}
+
 /* Empty / no-project state */
 .placeholder{display:flex;flex-direction:column;align-items:center;
   justify-content:center;padding:80px 24px;color:var(--text3);gap:14px;text-align:center}
@@ -296,10 +323,6 @@ tfoot td.fcomp{background:var(--comp-bg)}
   <button class="btn-add" onclick="openWCoef()"
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     ⚙️ Склады
-  </button>
-  <button class="btn-add" onclick="openStatusMgr()"
-    style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
-    🏷 Статусы
   </button>
   <div class="tsep"></div>
   <span class="save-indicator" id="saveInd"></span>
@@ -376,23 +399,13 @@ tfoot td.fcomp{background:var(--comp-bg)}
   </div>
 </div>
 
-<!-- Status presets modal -->
-<div class="modal-overlay" id="statusMgrOverlay" onclick="closeStatusMgr(event)">
-  <div class="modal" onclick="event.stopPropagation()" style="width:360px">
-    <div class="modal-hdr">
-      <span class="modal-title">🏷 Статусы товаров</span>
-      <button class="modal-close" onclick="closeStatusMgr()">✕</button>
-    </div>
-    <div class="modal-search" style="padding:8px 20px 0">
-      <input type="text" id="statusMgrSearch" placeholder="Поиск статуса…" oninput="filterStatusMgr(this.value)"
-        style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px">
-    </div>
-    <div class="modal-body" id="statusMgrBody" style="padding:8px 16px;gap:4px;display:flex;flex-direction:column"></div>
-    <div class="modal-ftr">
-      <button onclick="addStatusMgrRow()" class="modal-sel-all" style="text-align:left">+ Добавить статус</button>
-      <button onclick="resetStatusMgr()" class="flt-rst">Сбросить</button>
-      <button onclick="saveStatusMgr()" class="btn-import">Сохранить</button>
-    </div>
+<!-- Status inline dropdown popup -->
+<div id="statusPopup" class="stp-popup">
+  <div class="stp-list" id="stpList"></div>
+  <div class="stp-clear" onclick="selectStatusPopup('')">— Без статуса —</div>
+  <div class="stp-add">
+    <input type="text" id="stpAddInp" placeholder="+ Своя…" onkeydown="if(event.key==='Enter')addStatusPopupPreset()">
+    <button onclick="addStatusPopupPreset()">+</button>
   </div>
 </div>
 
@@ -530,39 +543,104 @@ function loadStatusPresets() {
 function saveStatusPresets(list) { localStorage.setItem('statusPresets', JSON.stringify(list)); }
 let STATUS_PRESETS = loadStatusPresets();
 
-function statusOptions(selected) {
-  const opts = STATUS_PRESETS.map(s =>
-    `<option value="${esc(s)}" ${s===selected?'selected':''}>${esc(s)}</option>`
-  ).join('');
-  return `<option value="" ${!selected?'selected':''}>—</option>` + opts + `<option value="__custom__">+ Своя…</option>`;
+function statusDisp(val) {
+  return esc(val || '') || '<em style="color:var(--text3);font-style:normal">—</em>';
 }
 
-function onStatusSelect(key, selectEl) {
-  const val = selectEl.value;
-  if (val === '__custom__') {
-    const label = prompt('Название статуса:');
-    if (!label) { selectEl.value = ''; return; }
-    if (!STATUS_PRESETS.includes(label)) {
-      STATUS_PRESETS.push(label);
-      saveStatusPresets(STATUS_PRESETS);
-      initBulkStatus();
-    }
-    onInput(key, 'status', label);
-    selectEl.outerHTML = `<select class="status-sel" onchange="onStatusSelect('${key}',this)">${statusOptions(label)}</select>`;
-    refreshAllStatusSelects(key);
+let _stpKey = null;
+function openStatusPopup(ev, key) {
+  ev.stopPropagation();
+  if (_stpKey === key && document.getElementById('statusPopup').classList.contains('open')) {
+    closeStatusPopup();
     return;
   }
-  onInput(key, 'status', val);
+  _stpKey = key;
+  renderStpList();
+  document.getElementById('stpAddInp').value = '';
+  const popup = document.getElementById('statusPopup');
+  const rect = ev.currentTarget.getBoundingClientRect();
+  popup.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+  popup.style.top  = Math.min(rect.bottom + 4, window.innerHeight - 340) + 'px';
+  popup.classList.add('open');
 }
 
-function refreshAllStatusSelects(skipKey) {
+function closeStatusPopup() {
+  document.getElementById('statusPopup').classList.remove('open');
+  _stpKey = null;
+}
+
+function renderStpList() {
+  const r = rows.find(x => x._key === _stpKey);
+  const cur = r ? (r.status || '') : '';
+  document.getElementById('stpList').innerHTML = STATUS_PRESETS.map((s, i) => `
+    <div class="stp-item${s === cur ? ' sel' : ''}">
+      <span class="stp-chk">${s === cur ? '✓' : ''}</span>
+      <span class="stp-lbl" onclick="selectStatusPopup(STATUS_PRESETS[${i}])"
+        ondblclick="editStpPreset(${i},event)" title="${esc(s)}">${esc(s)}</span>
+      <button class="stp-del" onclick="deleteStpPreset(${i},event)" title="Удалить статус">✕</button>
+    </div>`).join('');
+}
+
+function selectStatusPopup(val) {
+  if (!_stpKey) return;
+  const key = _stpKey;
+  const r = rows.find(x => x._key === key);
+  if (r) r.status = val;
+  onInput(key, 'status', val);
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  if (tr) { const disp = tr.querySelector('.status-disp'); if (disp) disp.innerHTML = statusDisp(val); }
+  closeStatusPopup();
+}
+
+function editStpPreset(i, ev) {
+  ev.stopPropagation();
+  const item = ev.target.closest('.stp-item');
+  const old = STATUS_PRESETS[i];
+  item.querySelector('.stp-lbl').outerHTML =
+    `<input type="text" class="stp-edit" value="${esc(old)}"
+      onkeydown="if(event.key==='Enter')this.blur()"
+      onblur="commitStpRename(${i},this.value)" onclick="event.stopPropagation()">`;
+  const inp = item.querySelector('.stp-edit');
+  inp.focus(); inp.select();
+}
+
+function commitStpRename(i, newVal) {
+  const v = newVal.trim();
+  const old = STATUS_PRESETS[i];
+  if (!v || v === old) { renderStpList(); return; }
+  STATUS_PRESETS[i] = v;
+  saveStatusPresets(STATUS_PRESETS);
   rows.forEach(r => {
-    if (r._key === skipKey) return;
-    const tr = document.querySelector(`tr[data-key="${r._key}"]`);
-    if (!tr) return;
-    const sel = tr.querySelector('.status-sel');
-    if (sel) sel.innerHTML = statusOptions(r.status || '');
+    if (r.status === old) {
+      r.status = v; r._dirty = true;
+      const tr = document.querySelector(`tr[data-key="${r._key}"]`);
+      if (tr) { const disp = tr.querySelector('.status-disp'); if (disp) disp.innerHTML = statusDisp(v); }
+      schedSave(r._key);
+    }
   });
+  initBulkStatus();
+  renderStpList();
+}
+
+function deleteStpPreset(i, ev) {
+  ev.stopPropagation();
+  STATUS_PRESETS.splice(i, 1);
+  saveStatusPresets(STATUS_PRESETS);
+  initBulkStatus();
+  renderStpList();
+}
+
+function addStatusPopupPreset() {
+  const inp = document.getElementById('stpAddInp');
+  const v = inp.value.trim();
+  if (!v) return;
+  if (!STATUS_PRESETS.includes(v)) {
+    STATUS_PRESETS.push(v);
+    saveStatusPresets(STATUS_PRESETS);
+    initBulkStatus();
+  }
+  inp.value = '';
+  selectStatusPopup(v);
 }
 
 let rows = [];       // [{id, _key, _dirty, project, ...fields}]
@@ -1060,8 +1138,8 @@ function rowHTML(r) {
   </td>
   <td class="art-cell sc2" onclick="editArt('${key}','seller_article',this)" title="Кликните для редактирования">${esc(r.seller_article||'')||'<em style="color:var(--text3);font-style:normal">—</em>'}</td>
   <td class="art-cell sc3 readonly" title="WB артикул нельзя изменить">${esc(String(r.wb_article||''))||'<em style="color:var(--text3);font-style:normal">—</em>'}</td>
-  <td class="ed sc4" style="padding:3px 4px">
-    <select class="status-sel" onchange="onStatusSelect('${key}',this)">${statusOptions(r.status||'')}</select>
+  <td class="ed sc4 status-cell" style="padding:3px 4px" onclick="openStatusPopup(event,'${key}')">
+    <div class="status-disp">${statusDisp(r.status||'')}</div>
   </td>
   <td class="ed">${n(r.cost_price,'cost_price')}</td>
   <td class="ed">${n(r.packaging,'packaging')}</td>
@@ -1400,7 +1478,7 @@ function applyBulk() {
         const sel = tr.querySelector('.tax-sel'); if (sel) sel.value = TAX_PRESETS.findIndex(t=>t.label===val);
         const inp = tr.querySelector('.tax-pct-inp'); if (inp && taxPreset) inp.value = taxPreset.pct;
       } else if (isStatus) {
-        const sel = tr.querySelector('.status-sel'); if (sel) sel.value = val;
+        const disp = tr.querySelector('.status-disp'); if (disp) disp.innerHTML = statusDisp(val);
       } else {
         const inp = tr.querySelector(`input[oninput*="'${field}'"]`); if (inp) inp.value = val;
       }
@@ -1492,49 +1570,6 @@ function resetWCoefs() {
   renderWCoefList('');
 }
 
-let _statusAll = [];
-function openStatusMgr() {
-  _statusAll = STATUS_PRESETS.slice();
-  renderStatusMgrList('');
-  document.getElementById('statusMgrSearch').value = '';
-  document.getElementById('statusMgrOverlay').classList.add('open');
-}
-function closeStatusMgr(e) {
-  if (e && e.target !== document.getElementById('statusMgrOverlay')) return;
-  document.getElementById('statusMgrOverlay').classList.remove('open');
-}
-function filterStatusMgr(q) { renderStatusMgrList(q); }
-function renderStatusMgrList(q) {
-  const ql = q.toLowerCase();
-  const indexed = _statusAll.map((v, i) => ({v, i}));
-  const items = ql ? indexed.filter(x => x.v.toLowerCase().includes(ql)) : indexed;
-  document.getElementById('statusMgrBody').innerHTML = items.map(({v, i}) => `
-    <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
-      <input type="text" value="${esc(v)}" data-idx="${i}"
-        onchange="_statusAll[+this.dataset.idx]=this.value"
-        style="flex:1;padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px">
-      <button onclick="_statusAll.splice(${i},1);renderStatusMgrList(document.getElementById('statusMgrSearch').value)"
-        style="border:none;background:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1;padding:0 4px">✕</button>
-    </div>`).join('');
-}
-function addStatusMgrRow() {
-  _statusAll.push('Новый статус');
-  renderStatusMgrList('');
-}
-function saveStatusMgr() {
-  STATUS_PRESETS = [...new Set(_statusAll.map(s => s.trim()).filter(Boolean))];
-  saveStatusPresets(STATUS_PRESETS);
-  initBulkStatus();
-  closeStatusMgr();
-  refreshAllStatusSelects();
-}
-function resetStatusMgr() {
-  if (!confirm('Сбросить список статусов к значениям по умолчанию?')) return;
-  localStorage.removeItem('statusPresets');
-  STATUS_PRESETS = loadStatusPresets();
-  _statusAll = STATUS_PRESETS.slice();
-  renderStatusMgrList('');
-}
 
 // ─── Редактирование артикулов (click-to-edit) ────────────────────────────────
 function editArt(key, field, td) {
@@ -1696,6 +1731,8 @@ function toggleTheme(){
 document.addEventListener('click', e => {
   const p = document.getElementById('filterPopup');
   if (p && p.classList.contains('open') && !p.contains(e.target)) closeFilter();
+  const sp = document.getElementById('statusPopup');
+  if (sp && sp.classList.contains('open') && !sp.contains(e.target)) closeStatusPopup();
 });
 
 document.body.dataset.theme = localStorage.getItem('theme') || 'dark';
