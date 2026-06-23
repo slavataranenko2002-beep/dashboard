@@ -1386,11 +1386,20 @@ function updateFooter() {
 }
 
 // ─── Обновление из WB ────────────────────────────────────────────────────────
+async function flushPendingSaves() {
+  const dirtyKeys = rows.filter(r => r._dirty).map(r => r._key);
+  for (const key of dirtyKeys) {
+    clearTimeout(saveTimers[key]);
+    await doSave(key);
+  }
+}
+
 async function refreshWB() {
   if (!currentProject) return;
   const btn = document.getElementById('btnRefresh');
   btn.disabled = true; btn.textContent = '⏳ Обновляем…';
   try {
+    await flushPendingSaves();
     const r = await fetch('/api/unit-refresh?project=' + encodeURIComponent(currentProject), {method:'POST'});
     const j = await r.json();
     if (j.error) throw new Error(j.error);
