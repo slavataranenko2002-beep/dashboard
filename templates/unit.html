@@ -44,6 +44,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .save-indicator{font-size:12px;color:var(--text3);min-width:80px}
 .save-indicator.saving{color:var(--yellow)}
 .save-indicator.saved{color:var(--green)}
+.save-indicator.error{color:var(--red);cursor:pointer}
 .tsep{width:1px;height:22px;background:var(--border)}
 
 /* ── Table container ── */
@@ -1031,20 +1032,35 @@ async function doSave(key) {
   delete body._key; delete body._dirty;
   const url  = r.id ? `/api/unit-rows/${r.id}` : '/api/unit-rows';
   const meth = r.id ? 'PUT' : 'POST';
-  const res  = await fetch(url, {method: meth, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
-  const json = await res.json();
-  if (json.id) r.id = json.id;
-  r._dirty = false;
-  // update delete button
-  const tr = document.querySelector(`tr[data-key="${key}"]`);
-  if (tr) tr.querySelector('.del-btn').dataset.id = r.id || '';
-  checkAllSaved();
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res  = await fetch(url, {method: meth, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+      if (json.id) r.id = json.id;
+      r._dirty = false;
+      // update delete button
+      const tr = document.querySelector(`tr[data-key="${key}"]`);
+      if (tr) tr.querySelector('.del-btn').dataset.id = r.id || '';
+      checkAllSaved();
+      return;
+    } catch (e) {
+      console.error(`Ошибка сохранения строки ${key} (попытка ${attempt + 1}):`, e);
+      if (attempt < 3) {
+        showInd('saving');
+        await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+      } else {
+        showInd('error');
+      }
+    }
+  }
 }
 
 function showInd(state) {
   const el = document.getElementById('saveInd');
   el.className = 'save-indicator ' + state;
-  el.textContent = state === 'saving' ? '⏳ Сохранение…' : state === 'saved' ? '✓ Сохранено' : '';
+  el.textContent = state === 'saving' ? '⏳ Сохранение…' : state === 'saved' ? '✓ Сохранено'
+    : state === 'error' ? '⚠ Ошибка сохранения — не закрывайте страницу' : '';
   if (state === 'saved') setTimeout(() => { if (el.textContent === '✓ Сохранено') el.textContent = ''; }, 2000);
 }
 
@@ -1400,6 +1416,10 @@ async function refreshWB() {
   btn.disabled = true; btn.textContent = '⏳ Обновляем…';
   try {
     await flushPendingSaves();
+    const stillDirty = rows.filter(r => r._dirty);
+    if (stillDirty.length) {
+      throw new Error(`Не удалось сохранить ${stillDirty.length} строк(и) — обновление из WB отменено, чтобы не потерять данные. Попробуйте ещё раз.`);
+    }
     const r = await fetch('/api/unit-refresh?project=' + encodeURIComponent(currentProject), {method:'POST'});
     const j = await r.json();
     if (j.error) throw new Error(j.error);
@@ -1779,6 +1799,13 @@ function toggleTheme(){
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('beforeunload', e => {
+  if (rows.some(r => r._dirty)) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
 document.addEventListener('click', e => {
   const p = document.getElementById('filterPopup');
   if (p && p.classList.contains('open') && !p.contains(e.target)) closeFilter();
