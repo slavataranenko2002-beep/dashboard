@@ -111,7 +111,10 @@ td.ed input[type=text],td.ed input.art{text-align:left;min-width:100px}
 td.ed select{min-width:130px;cursor:pointer}
 td.status-cell{cursor:pointer}
 td.status-cell:hover{background:var(--bg3)}
-.status-disp{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text)}
+.status-disp{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.status-badge{display:inline-block;max-width:100%;padding:1px 7px;border-radius:10px;
+  font-size:11px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  vertical-align:middle}
 td.ed input:focus,td.ed select:focus{
   outline:none;background:rgba(88,166,255,.1);border:1px solid var(--blue)}
 td.ed input:hover,td.ed select:hover{background:var(--bg3)}
@@ -252,14 +255,18 @@ tfoot td.fcomp{background:var(--comp-bg)}
 
 /* ── Status inline popup ── */
 .stp-popup{position:fixed;z-index:200;background:var(--bg2);border:1px solid var(--border);
-  border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.45);width:200px;
+  border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.45);width:220px;
   display:none;flex-direction:column;max-height:320px;font-size:12px}
 .stp-popup.open{display:flex}
 .stp-list{flex:1;overflow-y:auto;padding:3px 0;min-height:0}
-.stp-item{display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;cursor:pointer}
+.stp-item{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;cursor:pointer}
 .stp-item:hover{background:var(--bg3)}
 .stp-item.sel .stp-lbl{font-weight:600}
-.stp-chk{width:14px;flex-shrink:0;color:var(--blue)}
+.stp-chk{width:12px;flex-shrink:0;color:var(--blue)}
+.stp-color{width:16px;height:16px;padding:0;border:none;border-radius:50%;cursor:pointer;
+  background:none;flex-shrink:0;-webkit-appearance:none;appearance:none}
+.stp-color::-webkit-color-swatch-wrapper{padding:0}
+.stp-color::-webkit-color-swatch{border:1px solid var(--border);border-radius:50%}
 .stp-lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .stp-edit{flex:1;min-width:0;border:1px solid var(--blue);border-radius:4px;
   padding:2px 5px;font-size:12px;background:var(--bg3);color:var(--text);font-family:inherit}
@@ -535,16 +542,35 @@ function onTaxSelect(key, selectEl) {
 }
 
 // ─── Статусы ───────────────────────────────────────────────────────────────────
-const STATUS_PRESETS_DEFAULT = ['Активен', 'Приостановлен', 'Архив', 'Тест'];
+const DEFAULT_STATUS_COLOR = '#5b6b82';
+const STATUS_PRESETS_DEFAULT = [
+  {label:'Активен',       color:'#2e7d32'},
+  {label:'Приостановлен', color:'#f9a825'},
+  {label:'Архив',         color:'#757575'},
+  {label:'Тест',          color:'#1565c0'},
+];
 function loadStatusPresets() {
-  try { return JSON.parse(localStorage.getItem('statusPresets') || 'null') || STATUS_PRESETS_DEFAULT; }
-  catch { return STATUS_PRESETS_DEFAULT; }
+  let list;
+  try { list = JSON.parse(localStorage.getItem('statusPresets') || 'null'); } catch { list = null; }
+  if (!Array.isArray(list) || !list.length) return STATUS_PRESETS_DEFAULT.slice();
+  if (typeof list[0] === 'string') {
+    list = list.map(s => ({label: s, color: DEFAULT_STATUS_COLOR}));
+    saveStatusPresets(list);
+  }
+  return list;
 }
 function saveStatusPresets(list) { localStorage.setItem('statusPresets', JSON.stringify(list)); }
 let STATUS_PRESETS = loadStatusPresets();
 
+function statusColor(label) {
+  const p = STATUS_PRESETS.find(s => s.label === label);
+  return p ? p.color : null;
+}
+
 function statusDisp(val) {
-  return esc(val || '') || '<em style="color:var(--text3);font-style:normal">—</em>';
+  if (!val) return '<em style="color:var(--text3);font-style:normal">—</em>';
+  const color = statusColor(val) || DEFAULT_STATUS_COLOR;
+  return `<span class="status-badge" style="background:${color}26;color:${color};border:1px solid ${color}66">${esc(val)}</span>`;
 }
 
 let _stpKey = null;
@@ -573,10 +599,12 @@ function renderStpList() {
   const r = rows.find(x => x._key === _stpKey);
   const cur = r ? (r.status || '') : '';
   document.getElementById('stpList').innerHTML = STATUS_PRESETS.map((s, i) => `
-    <div class="stp-item${s === cur ? ' sel' : ''}">
-      <span class="stp-chk">${s === cur ? '✓' : ''}</span>
-      <span class="stp-lbl" onclick="selectStatusPopup(STATUS_PRESETS[${i}])"
-        ondblclick="editStpPreset(${i},event)" title="${esc(s)}">${esc(s)}</span>
+    <div class="stp-item${s.label === cur ? ' sel' : ''}">
+      <span class="stp-chk">${s.label === cur ? '✓' : ''}</span>
+      <input type="color" class="stp-color" value="${s.color}" data-idx="${i}"
+        onclick="event.stopPropagation()" onchange="setStpColor(${i},this.value)" title="Цвет заливки">
+      <span class="stp-lbl" onclick="selectStatusPopup(STATUS_PRESETS[${i}].label)"
+        ondblclick="editStpPreset(${i},event)" title="${esc(s.label)}">${esc(s.label)}</span>
       <button class="stp-del" onclick="deleteStpPreset(${i},event)" title="Удалить статус">✕</button>
     </div>`).join('');
 }
@@ -592,10 +620,23 @@ function selectStatusPopup(val) {
   closeStatusPopup();
 }
 
+function setStpColor(i, color) {
+  STATUS_PRESETS[i].color = color;
+  saveStatusPresets(STATUS_PRESETS);
+  const label = STATUS_PRESETS[i].label;
+  rows.forEach(r => {
+    if (r.status === label) {
+      const tr = document.querySelector(`tr[data-key="${r._key}"]`);
+      if (tr) { const disp = tr.querySelector('.status-disp'); if (disp) disp.innerHTML = statusDisp(label); }
+    }
+  });
+  renderStpList();
+}
+
 function editStpPreset(i, ev) {
   ev.stopPropagation();
   const item = ev.target.closest('.stp-item');
-  const old = STATUS_PRESETS[i];
+  const old = STATUS_PRESETS[i].label;
   item.querySelector('.stp-lbl').outerHTML =
     `<input type="text" class="stp-edit" value="${esc(old)}"
       onkeydown="if(event.key==='Enter')this.blur()"
@@ -606,9 +647,9 @@ function editStpPreset(i, ev) {
 
 function commitStpRename(i, newVal) {
   const v = newVal.trim();
-  const old = STATUS_PRESETS[i];
+  const old = STATUS_PRESETS[i].label;
   if (!v || v === old) { renderStpList(); return; }
-  STATUS_PRESETS[i] = v;
+  STATUS_PRESETS[i].label = v;
   saveStatusPresets(STATUS_PRESETS);
   rows.forEach(r => {
     if (r.status === old) {
@@ -634,8 +675,8 @@ function addStatusPopupPreset() {
   const inp = document.getElementById('stpAddInp');
   const v = inp.value.trim();
   if (!v) return;
-  if (!STATUS_PRESETS.includes(v)) {
-    STATUS_PRESETS.push(v);
+  if (!STATUS_PRESETS.some(s => s.label === v)) {
+    STATUS_PRESETS.push({label: v, color: DEFAULT_STATUS_COLOR});
     saveStatusPresets(STATUS_PRESETS);
     initBulkStatus();
   }
@@ -1501,7 +1542,7 @@ function initBulkTaxSys() {
 function initBulkStatus() {
   const sel = document.getElementById('bulkStatusVal');
   sel.innerHTML = '<option value="">—</option>' +
-    STATUS_PRESETS.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    STATUS_PRESETS.map(s => `<option value="${esc(s.label)}">${esc(s.label)}</option>`).join('');
 }
 
 // ─── Обновить все налоговые дропдауны в таблице (после добавления нового пресета) ─
