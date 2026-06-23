@@ -3062,7 +3062,13 @@ def api_unit_rows_delete(row_id):
 @app.route("/api/unit-import-articles")
 @require_unit_api
 def api_unit_import_articles():
-    """Загружает список артикулов из воронки WB за последние 30 дней."""
+    """
+    Загружает список артикулов WB для импорта.
+    Воронка продаж (30 дней) не покрывает товары без показов/продаж за период,
+    поэтому артикулы дополнительно добираются из остатков на складах и из
+    карточек с ценами — иначе товары с остатком, но без активности в воронке,
+    не попадают в список (репортилась пропажа части артикулов по проекту).
+    """
     project = request.args.get("project", "")
     if not project:
         return jsonify({"error": "project required"}), 400
@@ -3077,7 +3083,9 @@ def api_unit_import_articles():
         p_from   = fmt_date(today - timedelta(days=60))
         p_to     = fmt_date(today - timedelta(days=31))
         with WBClient(project) as wb:
-            raw = wb.raw_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to)
+            raw    = wb.raw_sales_funnel(d_from, d_to, past_from=p_from, past_to=p_to)
+            stocks = wb.get_stocks(fmt_date(today - timedelta(days=180)))
+            goods  = wb.get_goods_prices()
         status = raw.get("status")
         if status != 200:
             msg = raw.get("response_text_preview") or f"HTTP {status}"
@@ -3085,20 +3093,52 @@ def api_unit_import_articles():
             return jsonify({"error": f"WB API вернул {status}: {msg[:150]}"}), 502
         rj = raw.get("response_json") or {}
         products = (rj.get("data") or {}).get("products") or []
-        result, seen = [], set()
+
+        by_id = {}
         for p in products:
             prod  = p.get("product") or {}
             nm_id = prod.get("nmId")
-            if not nm_id or nm_id in seen:
+            if not nm_id:
                 continue
-            seen.add(nm_id)
-            result.append({
+            by_id[nm_id] = {
                 "wb_article":     nm_id,
                 "seller_article": prod.get("vendorCode", ""),
                 "name":           prod.get("name", ""),
                 "brand":          prod.get("brandName", ""),
-            })
-        return jsonify(result)
+                "stock":          0,
+            }
+
+        # Добавляем/обогащаем остатком артикулы со склада ВБ
+        for s in stocks or []:
+            nm_id = s.get("nmId")
+            if not nm_id:
+                continue
+            qty = s.get("quantityFull") or s.get("quantity") or 0
+            if nm_id in by_id:
+                by_id[nm_id]["stock"] += qty
+            else:
+                by_id[nm_id] = {
+                    "wb_article":     nm_id,
+                    "seller_article": s.get("supplierArticle", ""),
+                    "name":           "",
+                    "brand":          "",
+                    "stock":          qty,
+                }
+
+        # Добираем активные карточки без продаж и без остатка (например, новые)
+        for g in goods or []:
+            nm_id = g.get("nmID")
+            if not nm_id or nm_id in by_id:
+                continue
+            by_id[nm_id] = {
+                "wb_article":     nm_id,
+                "seller_article": g.get("vendorCode", ""),
+                "name":           "",
+                "brand":          "",
+                "stock":          0,
+            }
+
+        return jsonify(list(by_id.values()))
     except Exception as e:
         logging.error(f"unit-import-articles {project}: {e}")
         return jsonify({"error": str(e)}), 500

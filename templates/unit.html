@@ -1650,7 +1650,7 @@ async function openImport() {
   if (!currentProject) return;
   importArticles = [];
   document.getElementById('importTitle').textContent =
-    `Артикулы из WB — ${currentProject} (30 дней)`;
+    `Артикулы из WB — ${currentProject} (воронка + остатки + цены)`;
   document.getElementById('importBody').innerHTML =
     '<div class="modal-loading">⏳ Загружаю данные из WB…</div>';
   document.getElementById('importSearch').value = '';
@@ -1710,7 +1710,7 @@ function renderImportList(articles, query = '') {
       <input type="checkbox" data-id="${a.wb_article}" checked onchange="updateImportBtn()">
       <div class="import-item-info">
         <div class="import-item-name">${esc(a.seller_article || a.name || '—')}</div>
-        <div class="import-item-meta">${a.wb_article}${a.brand ? ' · ' + esc(a.brand) : ''}</div>
+        <div class="import-item-meta">${a.wb_article}${a.brand ? ' · ' + esc(a.brand) : ''}${a.stock ? ' · остаток: ' + a.stock : ''}</div>
       </div>
     </label>`
   ).join('');
@@ -1755,6 +1755,7 @@ async function doImport() {
       wb_article:     a.wb_article,
       seller_article: a.seller_article || '',
       brand:          a.brand || currentProject,
+      stock:          a.stock || 0,
     });
   }
 }
