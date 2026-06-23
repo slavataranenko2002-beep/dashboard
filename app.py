@@ -2985,7 +2985,7 @@ def api_unit_rows_create():
                          %(tax_system)s, %(tax_pct)s, %(status)s)
                     RETURNING id
                 """, p)
-                new_id = cur.fetchone()[0]
+                new_id = cur.fetchone()["id"]
             conn.commit()
         return jsonify({"id": new_id})
     except Exception as e:
