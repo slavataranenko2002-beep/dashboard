@@ -2959,10 +2959,11 @@ def api_unit_rows_get():
 @app.route("/api/unit-rows", methods=["POST"])
 @require_unit_api
 def api_unit_rows_create():
-    p = _unit_row_params(request.get_json(silent=True) or {})
-    if not _check_unit_project(_session_user(), p.get("project", "")):
-        return jsonify({"error": "forbidden"}), 403
+    raw = request.get_json(silent=True) or {}
     try:
+        p = _unit_row_params(raw)
+        if not _check_unit_project(_session_user(), p.get("project", "")):
+            return jsonify({"error": "forbidden"}), 403
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -2988,18 +2989,24 @@ def api_unit_rows_create():
             conn.commit()
         return jsonify({"id": new_id})
     except Exception as e:
+        logging.error(f"unit-rows-create {raw.get('project','')}: {e}")
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/unit-rows/<int:row_id>", methods=["PUT"])
 @require_unit_api
 def api_unit_rows_update(row_id):
-    p = _unit_row_params(request.get_json(silent=True) or {})
-    p["id"] = row_id
-    # Проверяем project как из тела запроса, так и из БД (защита от подмены)
-    u = _session_user()
-    if not _check_unit_project(u, p.get("project", "")):
-        return jsonify({"error": "forbidden"}), 403
+    raw = request.get_json(silent=True) or {}
+    try:
+        p = _unit_row_params(raw)
+        p["id"] = row_id
+        # Проверяем project как из тела запроса, так и из БД (защита от подмены)
+        u = _session_user()
+        if not _check_unit_project(u, p.get("project", "")):
+            return jsonify({"error": "forbidden"}), 403
+    except Exception as e:
+        logging.error(f"unit-rows-update {row_id} (params): {e}")
+        return jsonify({"error": str(e)}), 500
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -3033,6 +3040,7 @@ def api_unit_rows_update(row_id):
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
+        logging.error(f"unit-rows-update {row_id}: {e}")
         return jsonify({"error": str(e)}), 500
 
 
