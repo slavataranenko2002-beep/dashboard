@@ -1097,6 +1097,34 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         # 4. Расход на рекламу за период
         upd_rows = wb.get_upd(fmt_date(date_from), fmt_date(date_to))
 
+        # 5. Если запрошенный месяц — текущий или будущий, основной вызов воронки (шаг 1)
+        #    запрашивает "selected"-период с ненаступившими днями — WB по таким дням не
+        #    отдаёт данные, из-за чего товары приходят пустыми/нулевыми, а past_orders_past,
+        #    вычисленный из этого же ответа, обнуляется для ВСЕХ артикулов (а не только тех,
+        #    у кого реально нет факта). Это ломает авто-расчёт плана (на основе факта
+        #    прошлого месяца). Получаем факт прошлого месяца отдельным, гарантированно
+        #    валидным запросом, где "selected" = past_from/past_to (уже наступившие дни).
+        past_orders_by_vc: dict[str, int] = {}
+        past_rub_by_vc: dict[str, float] = {}
+        if date_from >= date.today().replace(day=1):
+            cmp_from = _prev_month(past_from)
+            cmp_to = cmp_from.replace(
+                day=_calendar.monthrange(cmp_from.year, cmp_from.month)[1]
+            )
+            try:
+                funnel_past = wb.get_sales_funnel(
+                    fmt_date(past_from), fmt_date(past_to),
+                    fmt_date(cmp_from),  fmt_date(cmp_to),
+                )
+                for pp in (funnel_past.get("data") or {}).get("products") or []:
+                    vc_pp = str(get_product_field(pp, "vendorCode") or "").strip()
+                    if not vc_pp:
+                        continue
+                    past_orders_by_vc[vc_pp] = int(_funnel_metric(pp, "orderCount", "selected"))
+                    past_rub_by_vc[vc_pp]    = float(_funnel_metric(pp, "orderSum",  "selected"))
+            except Exception:
+                pass
+
     sales_by_vc, _, _, sales_rub_by_vc = aggregate_sales_by_article(
         sales_raw, date_from, date_to
     )
@@ -1117,6 +1145,11 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         ord_rub      = float(_funnel_metric(p, "orderSum",  "selected")) if p else 0.0
         ord_rub_past = float(_funnel_metric(p, "orderSum",  "past"))     if p else 0.0
         buyout_past  = int(_funnel_metric(p, "buyoutCount", "past"))     if p else 0
+        # Надёжный факт прошлого месяца (см. шаг 5 выше) — приоритетнее данных
+        # из основного вызова, который мог вернуть пустоту за ненаступившие дни.
+        if vc in past_orders_by_vc:
+            ord_qty_past = past_orders_by_vc[vc]
+            ord_rub_past = past_rub_by_vc.get(vc, ord_rub_past)
         sal_qty  = int(sales_by_vc.get(vc, 0))
         sal_rub  = float(sales_rub_by_vc.get(vc, 0.0))
 

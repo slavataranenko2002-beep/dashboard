@@ -990,11 +990,11 @@ function onSeasonChange(sel, vc) {
 
 function autoCalcPlan() {
   if(!currentData) return;
-  let count = 0;
+  let count = 0, skippedHasPlan = 0, skippedNoPast = 0;
   currentData.articles.forEach(a => {
-    if((a.orders_qty_plan || 0) !== 0) return;
+    if((a.orders_qty_plan || 0) !== 0) { skippedHasPlan++; return; }
     const past = a.orders_qty_past || 0;
-    if(!past) return;
+    if(!past) { skippedNoPast++; return; }
     const sn    = (a.season_name || '').trim();
     const snObj = sn ? seasonList.find(s => s.name === sn) : null;
     const coeff = snObj ? snObj.coeff : 0;
@@ -1007,7 +1007,14 @@ function autoCalcPlan() {
     a.sales_rub_plan  = Math.round(a.sales_qty_plan * price);
     count++;
   });
-  if(!count) { alert('Нет артикулов без плана для авто-расчёта.'); return; }
+  if(!count) {
+    if(skippedNoPast > 0 && skippedHasPlan === 0) {
+      alert(`Не удалось рассчитать план: у ${skippedNoPast} арт. нет факта заказов за прошлый месяц (orders_qty_past = 0).`);
+    } else {
+      alert('Нет артикулов без плана для авто-расчёта (у всех уже заполнен план).');
+    }
+    return;
+  }
   const t = currentData.totals;
   t.orders_rub_plan = currentData.articles.reduce((s, a) => s + (a.orders_rub_plan || 0), 0);
   t.orders_qty_plan = currentData.articles.reduce((s, a) => s + (a.orders_qty_plan || 0), 0);
