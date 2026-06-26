@@ -90,6 +90,10 @@ thead tr.thead-sum th{top:0;background:var(--bg4);font-size:11px;font-weight:600
   border-bottom:1px solid var(--border);padding:6px 10px}
 /* Column names row (second row in thead) */
 thead tr.thead-cols th{top:32px;border-bottom:2px solid var(--border)}
+thead th.pf-sortable{cursor:pointer;user-select:none;white-space:nowrap}
+thead th.pf-sortable:hover{background:var(--bg2)}
+thead th.pf-sort-active{color:var(--blue)!important}
+thead th .pf-arr{font-size:10px}
 thead th.grp-plan{border-bottom:2px solid var(--purple);color:var(--purple)}
 thead th.grp-fact{border-bottom:2px solid var(--blue);color:var(--blue)}
 thead th.grp-exec{border-bottom:2px solid var(--green);color:var(--green)}
@@ -421,6 +425,7 @@ async function loadData(force){
     if(data.error){ showError(data.error); return; }
     currentData = data;
     buildSeasonList(data);
+    applySort();
     renderKpi(data);
     renderTable(data);
     applyColVisibility();
@@ -650,32 +655,81 @@ function buildTableHead(arts){
     ${S(pFSal!==null?pctBadge(pFSal):'—')}
   </tr>
   <tr class="thead-cols">
-    <th class="sc1">Артикул</th>
-    <th class="sc2">Название</th>
-    <th class="season-th">Сезон</th>
-    <th class="grp-plan">Заказы ₽ ПЛАН</th>
-    <th class="grp-plan">Заказы шт ПЛАН</th>
-    <th class="grp-plan">Прод. ₽ ПЛАН</th>
-    <th class="grp-plan">Прод. шт ПЛАН</th>
-    <th>Остаток</th>
-    <th class="col-ff">Остаток на ФФ</th>
-    <th class="col-exp">Ожидаем остатки</th>
-    <th>Ср.цена</th>
-    <th>% выкупа</th>
-    <th class="grp-fact">Заказы ₽ ФАКТ</th>
-    <th class="grp-fact">Заказы шт ФАКТ</th>
-    <th class="grp-fact">В день</th>
-    <th class="grp-fact">Нужно/день</th>
-    <th class="grp-fact">Прод. ₽ ФАКТ</th>
-    <th class="grp-fact">Прод. шт ФАКТ</th>
-    <th class="grp-exec">%Вып. заказы</th>
-    <th class="grp-exec">%Вып. продажи</th>
-    <th class="grp-prognoz">Прогноз заказы ₽</th>
-    <th class="grp-prognoz">Прогноз заказы шт</th>
-    <th class="grp-prognoz">%Прогноз заказы</th>
-    <th class="grp-prognoz">%Прогноз продажи</th>
+    ${TH('Артикул','vendor_code','sc1')}
+    ${TH('Название','title','sc2')}
+    ${TH('Сезон','season_name','season-th')}
+    ${TH('Заказы ₽ ПЛАН','orders_rub_plan','grp-plan')}
+    ${TH('Заказы шт ПЛАН','orders_qty_plan','grp-plan')}
+    ${TH('Прод. ₽ ПЛАН','sales_rub_plan','grp-plan')}
+    ${TH('Прод. шт ПЛАН','sales_qty_plan','grp-plan')}
+    ${TH('Остаток','stocks')}
+    ${TH('Остаток на ФФ','ff_stock','col-ff')}
+    ${TH('Ожидаем остатки','expected_stock','col-exp')}
+    ${TH('Ср.цена','avg_price')}
+    ${TH('% выкупа','buyout_pct')}
+    ${TH('Заказы ₽ ФАКТ','orders_rub_fact','grp-fact')}
+    ${TH('Заказы шт ФАКТ','orders_qty_fact','grp-fact')}
+    ${TH('В день','orders_per_day','grp-fact')}
+    ${TH('Нужно/день','needed_per_day','grp-fact')}
+    ${TH('Прод. ₽ ФАКТ','sales_rub_fact','grp-fact')}
+    ${TH('Прод. шт ФАКТ','sales_qty_fact','grp-fact')}
+    ${TH('%Вып. заказы','pct_orders','grp-exec')}
+    ${TH('%Вып. продажи','pct_sales','grp-exec')}
+    ${TH('Прогноз заказы ₽','f_ord_rub','grp-prognoz')}
+    ${TH('Прогноз заказы шт','f_ord_qty','grp-prognoz')}
+    ${TH('%Прогноз заказы','f_pord','grp-prognoz')}
+    ${TH('%Прогноз продажи','f_psal','grp-prognoz')}
   </tr>
   </thead>`;
+}
+
+// ── Сортировка по столбцам (клик: убыв. → возр.) ─────────────────────────────
+let sortState = { field: 'orders_rub_fact', dir: 'desc' };
+
+// Заголовок-столбец с индикатором сортировки
+function TH(label, field, cls){
+  const active = sortState.field === field;
+  const arrow  = active ? (sortState.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  const c = `${cls ? cls + ' ' : ''}pf-sortable${active ? ' pf-sort-active' : ''}`;
+  return `<th class="${c}" onclick="sortBy('${field}')" title="Клик — сортировка">${label}<span class="pf-arr">${arrow}</span></th>`;
+}
+
+// Значение для сортировки (включая вычисляемые столбцы прогноза)
+function sortVal(a, field){
+  switch(field){
+    case 'f_ord_rub': return calcForecast(a).fOrdRub || 0;
+    case 'f_ord_qty': return calcForecast(a).fOrdQty || 0;
+    case 'f_pord':    { const v = calcForecast(a).pFOrd; return v===null||v===undefined?-1:v; }
+    case 'f_psal':    { const v = calcForecast(a).pFSal; return v===null||v===undefined?-1:v; }
+    case 'pct_orders':{ const v = a.pct_orders; return v===null||v===undefined?-1:v; }
+    case 'pct_sales': { const v = a.pct_sales;  return v===null||v===undefined?-1:v; }
+    case 'vendor_code': return String(a.vendor_code||'').toLowerCase();
+    case 'title':       return String(a.title||'').toLowerCase();
+    case 'season_name': return String(a.season_name||'').toLowerCase();
+    default: return Number(a[field]) || 0;
+  }
+}
+
+function applySort(){
+  if(!currentData || !sortState.field) return;
+  const f = sortState.field, dir = sortState.dir === 'asc' ? 1 : -1;
+  currentData.articles.sort((a,b)=>{
+    const va = sortVal(a,f), vb = sortVal(b,f);
+    if(typeof va === 'string' || typeof vb === 'string')
+      return String(va).localeCompare(String(vb),'ru') * dir;
+    return (va - vb) * dir;
+  });
+}
+
+function sortBy(field){
+  if(!currentData) return;
+  if(sortState.field === field)
+    sortState.dir = sortState.dir === 'desc' ? 'asc' : 'desc';
+  else
+    sortState = { field, dir: 'desc' };  // новый столбец — сначала по убыванию
+  applySort();
+  currentPage = 0;
+  renderPage();
 }
 
 function calcForecast(a){
