@@ -196,6 +196,12 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
              style="accent-color:var(--blue);width:16px;height:16px">
       <span>🧩 Доступ к разделу «Контент-воронки»</span>
     </label>
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+      <input type="checkbox" id="season-access-{{ u.id }}"
+             {% if u.season_access %}checked{% endif %}
+             style="accent-color:var(--blue);width:16px;height:16px">
+      <span>📆 Доступ к разделу «Темп сезона»</span>
+    </label>
   </div>
   {% endif %}
 
@@ -306,6 +312,8 @@ async function saveUser(userId) {
   const funnel_access = funnelAccessEl ? funnelAccessEl.checked : false;
   const funnelChecks = document.querySelectorAll('#funnel-checks-' + userId + ' input[type=checkbox]');
   const funnel_projects = Array.from(funnelChecks).filter(c => c.checked).map(c => c.value);
+  const seasonAccessEl = document.getElementById('season-access-' + userId);
+  const season_access = seasonAccessEl ? seasonAccessEl.checked : false;
   const btn = document.querySelector('#card-' + userId + ' .btn-save');
   const msg = document.getElementById('msg-' + userId);
   btn.disabled = true;
@@ -313,7 +321,7 @@ async function saveUser(userId) {
     const r = await fetch('/api/admin/users/' + userId, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects, funnel_access, funnel_projects}),
+      body: JSON.stringify({role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects, funnel_access, funnel_projects, season_access}),
     });
     const data = await r.json();
     if (data.ok) {

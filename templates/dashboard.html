@@ -476,6 +476,9 @@ tr:hover td{background:rgba(128,128,255,.03)}
     {% if current_user.role in ('admin', 'employee') or current_user.funnel_access %}
     <a href="/funnels" class="hbtn" title="Контент-воронки">🧩 Контент-воронки</a>
     {% endif %}
+    {% if current_user.role in ('admin', 'employee') or current_user.season_access %}
+    <a href="/season" class="hbtn" title="Темп сезона — декомпозиция распродажи">📆 Темп сезона</a>
+    {% endif %}
     {% if current_user.role == 'admin' %}
     <a href="/admin" class="hbtn admin-btn">⚙️ Пользователи</a>
     <a href="/admin/activity" class="hbtn admin-btn">📊 Активность</a>

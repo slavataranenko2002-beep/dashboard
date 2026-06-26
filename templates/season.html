@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Темп сезона</title>
+<style>
+:root{
+  --bg:#0f1117;--bg2:#161b22;--bg3:#1c2333;--bg4:#21262d;
+  --border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;
+}
+[data-theme="light"]{
+  --bg:#f6f8fa;--bg2:#fff;--bg3:#f0f2f5;--bg4:#e8ebf0;
+  --border:#d0d7de;--text:#24292f;--text2:#656d76;--text3:#8c959f;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;min-height:100vh;display:flex;flex-direction:column}
+
+.hdr{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;z-index:20}
+.hdr-logo{font-weight:700;font-size:15px}
+.hdr-sep{flex:1}
+.hbtn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;white-space:nowrap;text-decoration:none}
+.hbtn:hover{background:var(--bg4);color:var(--text)}
+.hbtn.act{background:var(--blue);color:#fff;border-color:var(--blue)}
+.theme-btn{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
+
+.toolbar{display:flex;align-items:center;gap:10px;padding:12px 20px;
+  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.toolbar-title{font-weight:600;font-size:14px;margin-right:4px}
+.proj-select{padding:6px 12px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;min-width:180px}
+.proj-select:focus{outline:none;border-color:var(--blue)}
+.btn{padding:6px 14px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);
+  color:var(--text);font-size:13px;cursor:pointer}
+.btn:hover{background:var(--bg4)}
+.btn-primary{background:var(--blue);color:#fff;border:none;font-weight:600}
+.btn-primary:hover{opacity:.85}
+.btn:disabled{opacity:.4;cursor:default}
+.tsep{width:1px;height:22px;background:var(--border)}
+.fetched{font-size:12px;color:var(--text3)}
+
+.wrap{flex:1;padding:20px;max-width:1500px;width:100%;margin:0 auto}
+.hint{color:var(--text2);font-size:13px;padding:40px 0;text-align:center}
+
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:22px;overflow:hidden}
+.card-hd{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.card-name{font-weight:700;font-size:15px}
+.meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);flex-wrap:wrap}
+.pill{padding:3px 9px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);white-space:nowrap}
+.pill.days{color:var(--blue)}
+.pill.over{color:var(--red);border-color:var(--red)}
+.pill.buyout{color:var(--yellow)}
+.card-hd-sep{flex:1}
+.card-actions{display:flex;gap:6px}
+
+table{border-collapse:collapse;width:100%}
+thead th{background:var(--bg3);font-size:11px;font-weight:600;color:var(--text2);
+  padding:8px 10px;border-bottom:2px solid var(--border);white-space:nowrap;text-align:right}
+thead th.left{text-align:left}
+tbody td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+tbody td.left{text-align:left}
+tbody td.art{font-weight:600}
+tbody td.sub{color:var(--text3);font-size:11px}
+tbody tr:hover td{background:var(--bg3)}
+.num-strong{font-weight:700;color:var(--blue)}
+.lag-bad{color:var(--red);font-weight:600}
+.lag-ok{color:var(--green);font-weight:600}
+tfoot td{padding:9px 10px;border-top:2px solid var(--border);text-align:right;font-weight:700;background:var(--bg3)}
+tfoot td.left{text-align:left;color:var(--text2)}
+.empty-items{color:var(--text3);padding:16px 18px;font-size:12px}
+
+/* модалка */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.modal-bg.show{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:640px}
+.modal-hd{padding:16px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px}
+.modal-bd{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:12px;color:var(--text2)}
+.fld input{padding:8px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px}
+.fld input:focus{outline:none;border-color:var(--blue)}
+.row2{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.picker{border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.picker-search{padding:8px 11px;border:none;border-bottom:1px solid var(--border);background:var(--bg3);color:var(--text);width:100%;font-size:13px}
+.picker-search:focus{outline:none}
+.picker-list{max-height:280px;overflow:auto}
+.pick-item{display:flex;align-items:center;gap:10px;padding:7px 11px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12px}
+.pick-item:hover{background:var(--bg3)}
+.pick-item input{width:15px;height:15px;accent-color:var(--blue)}
+.pick-art{font-weight:600}
+.pick-stock{margin-left:auto;color:var(--text2)}
+.picker-loading{padding:18px;text-align:center;color:var(--text3);font-size:12px}
+.modal-ft{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+.modal-err{color:var(--red);font-size:12px;margin-right:auto;align-self:center}
+.pick-count{font-size:12px;color:var(--text2);margin-top:4px}
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="hdr">
+  <span class="hdr-logo">📊 Дашборд</span>
+  <div class="hdr-sep"></div>
+  <a href="/" class="hbtn">📋 Задачи</a>
+  <a href="/plan-fact" class="hbtn">📊 План-Факт</a>
+  <a href="/season" class="hbtn act">📆 Темп сезона</a>
+  {% if current_user.role == 'admin' %}
+  <a href="/admin" class="hbtn">⚙️ Пользователи</a>
+  {% endif %}
+  <button class="hbtn theme-btn" onclick="toggleTheme()">🌙</button>
+  <a href="/auth/logout" class="hbtn" style="color:var(--red)">Выйти</a>
+</div>
+
+<div class="toolbar">
+  <span class="toolbar-title">📆 Темп сезона</span>
+  <div class="tsep"></div>
+  <select class="proj-select" id="projSelect" onchange="onProjectChange()">
+    <option value="">— выберите кабинет —</option>
+    {% for p in projects %}
+    <option value="{{ p }}">{{ project_emoji[p] }} {{ p }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn" id="refreshBtn" onclick="loadDecomp()" disabled>🔄 Обновить остатки</button>
+  <button class="btn btn-primary" id="addBtn" onclick="openEditor(null)" disabled>+ Группа</button>
+  <div class="tsep"></div>
+  <span class="fetched" id="fetched"></span>
+</div>
+
+<div class="wrap">
+  <div id="content"><div class="hint">Выберите кабинет, чтобы увидеть декомпозицию по группам.</div></div>
+</div>
+
+<!-- Редактор пресета -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <div class="modal-hd" id="modalTitle">Новая группа</div>
+    <div class="modal-bd">
+      <div class="fld">
+        <label>Название группы</label>
+        <input id="fName" placeholder="например, Куртки весна" autocomplete="off">
+      </div>
+      <div class="row2">
+        <div class="fld">
+          <label>Начало сезона</label>
+          <input id="fStart" type="date">
+        </div>
+        <div class="fld">
+          <label>Конец сезона</label>
+          <input id="fEnd" type="date">
+        </div>
+        <div class="fld">
+          <label>% выкупа</label>
+          <input id="fBuyout" type="number" min="1" max="100" step="1" value="30">
+        </div>
+      </div>
+      <div class="fld">
+        <label>Артикулы группы</label>
+        <div class="picker">
+          <input class="picker-search" id="pickSearch" placeholder="поиск по артикулу…" oninput="renderPicker()" autocomplete="off">
+          <div class="picker-list" id="pickList"><div class="picker-loading">Выберите кабинет…</div></div>
+        </div>
+        <div class="pick-count" id="pickCount"></div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <span class="modal-err" id="modalErr"></span>
+      <button class="btn" onclick="closeEditor()">Отмена</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="savePreset()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let CUR = "";              // текущий кабинет
+let PRESETS = [];          // сырые пресеты (для редактирования)
+let DECOMP = {};           // preset_id -> вычисленная декомпозиция
+let ARTICLES = null;       // список артикулов кабинета (для пикера)
+let EDIT_ID = null;        // id редактируемого пресета (null = создание)
+let PICKED = new Set();    // выбранные wb_article в пикере
+
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => (n==null?'—':Number(n).toLocaleString('ru-RU'));
+const fmt1 = n => (n==null?'—':Number(n).toLocaleString('ru-RU',{maximumFractionDigits:1}));
+const ruDate = s => { if(!s) return '—'; const [y,m,d]=s.split('-'); return `${d}.${m}.${y}`; };
+
+async function onProjectChange(){
+  CUR = document.getElementById('projSelect').value;
+  ARTICLES = null;
+  document.getElementById('refreshBtn').disabled = !CUR;
+  document.getElementById('addBtn').disabled = !CUR;
+  document.getElementById('fetched').textContent = '';
+  if(!CUR){
+    document.getElementById('content').innerHTML = '<div class="hint">Выберите кабинет, чтобы увидеть декомпозицию по группам.</div>';
+    return;
+  }
+  await loadPresets();
+  loadDecomp();
+}
+
+async function loadPresets(){
+  const r = await fetch('/api/season/presets?project='+encodeURIComponent(CUR));
+  PRESETS = await r.json();
+  if(!Array.isArray(PRESETS)) PRESETS = [];
+  render();
+}
+
+async function loadDecomp(){
+  if(!CUR) return;
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true; btn.textContent = '⏳ Загрузка…';
+  document.getElementById('fetched').textContent = 'тяну остатки и темп из WB…';
+  try{
+    const r = await fetch('/api/season/decomposition?project='+encodeURIComponent(CUR));
+    const data = await r.json();
+    if(data.error){ document.getElementById('fetched').textContent = '⚠ '+data.error; return; }
+    DECOMP = {};
+    (data.presets||[]).forEach(p => DECOMP[p.id] = p);
+    const t = new Date(data.fetched_at);
+    document.getElementById('fetched').textContent =
+      `остатки на ${t.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})} · темп за ${data.pace_days} дн`;
+    render();
+  } finally {
+    btn.disabled = false; btn.textContent = '🔄 Обновить остатки';
+  }
+}
+
+function render(){
+  const box = document.getElementById('content');
+  if(!PRESETS.length){
+    box.innerHTML = '<div class="hint">В этом кабинете пока нет групп. Нажмите «+ Группа», чтобы создать первую.</div>';
+    return;
+  }
+  box.innerHTML = PRESETS.map(renderCard).join('');
+}
+
+function renderCard(p){
+  const d = DECOMP[p.id];
+  const daysPill = d
+    ? (d.season_over ? '<span class="pill over">сезон завершён</span>'
+                     : `<span class="pill days">${d.days_left==null?'без даты':d.days_left+' дн до конца'}</span>`)
+    : '<span class="pill">…</span>';
+  const window = (p.start_date||p.end_date)
+    ? `<span class="pill">${ruDate(p.start_date)} → ${ruDate(p.end_date)}</span>` : '';
+  const buyoutPill = `<span class="pill buyout">выкуп ${fmt(p.buyout_pct)}%</span>`;
+
+  let body;
+  if(!p.items.length){
+    body = '<div class="empty-items">Нет артикулов. Откройте «Изменить» и добавьте товары в группу.</div>';
+  } else if(!d){
+    body = '<div class="empty-items">Нажмите «Обновить остатки», чтобы посчитать декомпозицию.</div>';
+  } else {
+    const rows = d.rows.map(r=>{
+      const lagCls = r.lag==null ? '' : (r.lag>0 ? 'lag-bad' : 'lag-ok');
+      const lagTxt = r.lag==null ? '—' : (r.lag>0 ? '+'+fmt1(r.lag) : fmt1(r.lag));
+      return `<tr>
+        <td class="left art">${esc(r.seller_article||r.wb_article)}</td>
+        <td class="left sub">${esc(r.name||'')}</td>
+        <td>${fmt(r.stock)}</td>
+        <td>${fmt(r.need_sales)}</td>
+        <td>${fmt(r.need_orders)}</td>
+        <td class="num-strong">${r.need_per_day==null?'—':fmt(r.need_per_day)}</td>
+        <td>${fmt1(r.pace)}</td>
+        <td class="${lagCls}">${lagTxt}</td>
+      </tr>`;
+    }).join('');
+    const t = d.totals;
+    const tlagCls = t.lag>0 ? 'lag-bad' : 'lag-ok';
+    const tlagTxt = t.lag>0 ? '+'+fmt1(t.lag) : fmt1(t.lag);
+    body = `<table>
+      <thead><tr>
+        <th class="left">Артикул</th><th class="left">Название</th>
+        <th>Остаток</th><th>Нужно продать</th><th>Нужно заказов</th>
+        <th>Заказов/день</th><th>Темп сейчас</th><th>Отставание</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr>
+        <td class="left" colspan="2">Итого (${d.rows.length})</td>
+        <td>${fmt(t.stock)}</td><td>${fmt(t.stock)}</td><td>${fmt(t.need_orders)}</td>
+        <td class="num-strong">${fmt(t.need_per_day)}</td><td>${fmt1(t.pace)}</td>
+        <td class="${tlagCls}">${tlagTxt}</td>
+      </tr></tfoot>
+    </table>`;
+  }
+
+  return `<div class="card">
+    <div class="card-hd">
+      <span class="card-name">${esc(p.name)}</span>
+      <div class="meta">${daysPill}${window}${buyoutPill}</div>
+      <div class="card-hd-sep"></div>
+      <div class="card-actions">
+        <button class="btn" onclick="openEditor(${p.id})">✏️ Изменить</button>
+        <button class="btn" onclick="delPreset(${p.id},'${esc(p.name).replace(/'/g,"\\'")}')">🗑</button>
+      </div>
+    </div>
+    ${body}
+  </div>`;
+}
+
+// ── Редактор ──
+async function openEditor(id){
+  EDIT_ID = id;
+  const p = id ? PRESETS.find(x=>x.id===id) : null;
+  document.getElementById('modalTitle').textContent = id ? 'Изменить группу' : 'Новая группа';
+  document.getElementById('fName').value   = p ? p.name : '';
+  document.getElementById('fStart').value  = p && p.start_date ? p.start_date : '';
+  document.getElementById('fEnd').value    = p && p.end_date   ? p.end_date   : '';
+  document.getElementById('fBuyout').value = p ? p.buyout_pct : 30;
+  document.getElementById('pickSearch').value = '';
+  document.getElementById('modalErr').textContent = '';
+  PICKED = new Set((p ? p.items : []).map(it=>it.wb_article));
+  document.getElementById('modalBg').classList.add('show');
+  // подтянуть артикулы кабинета (с остатками) — один раз на кабинет
+  if(ARTICLES===null){
+    document.getElementById('pickList').innerHTML = '<div class="picker-loading">⏳ загружаю артикулы кабинета…</div>';
+    try{
+      const r = await fetch('/api/season/articles?project='+encodeURIComponent(CUR));
+      ARTICLES = await r.json();
+      if(!Array.isArray(ARTICLES)) ARTICLES = [];
+    }catch(e){ ARTICLES = []; }
+  }
+  renderPicker();
+}
+
+function renderPicker(){
+  const list = document.getElementById('pickList');
+  if(ARTICLES===null){ return; }
+  const q = (document.getElementById('pickSearch').value||'').toLowerCase().trim();
+  // выбранные, которых уже нет в выгрузке (например, без остатка) — добавим вручную
+  const known = new Set(ARTICLES.map(a=>a.wb_article));
+  const extra = [...PICKED].filter(nm=>!known.has(nm)).map(nm=>{
+    const it = (EDIT_ID ? (PRESETS.find(x=>x.id===EDIT_ID)?.items||[]) : []).find(i=>i.wb_article===nm);
+    return {wb_article:nm, seller_article:(it&&it.seller_article)||String(nm), stock:0};
+  });
+  const all = extra.concat(ARTICLES);
+  const shown = all.filter(a=>{
+    if(!q) return true;
+    return String(a.seller_article).toLowerCase().includes(q) || String(a.wb_article).includes(q);
+  });
+  list.innerHTML = shown.length ? shown.map(a=>`
+    <label class="pick-item">
+      <input type="checkbox" ${PICKED.has(a.wb_article)?'checked':''} onchange="togglePick(${a.wb_article},this.checked)">
+      <span class="pick-art">${esc(a.seller_article||a.wb_article)}</span>
+      <span class="pick-stock">остаток ${fmt(a.stock)}</span>
+    </label>`).join('') : '<div class="picker-loading">Ничего не найдено</div>';
+  document.getElementById('pickCount').textContent = `Выбрано: ${PICKED.size}`;
+}
+
+function togglePick(nm, on){
+  if(on) PICKED.add(nm); else PICKED.delete(nm);
+  document.getElementById('pickCount').textContent = `Выбрано: ${PICKED.size}`;
+}
+
+function closeEditor(){ document.getElementById('modalBg').classList.remove('show'); }
+
+async function savePreset(){
+  const name = document.getElementById('fName').value.trim();
+  const err = document.getElementById('modalErr');
+  if(!name){ err.textContent = 'Укажите название группы'; return; }
+  const payload = {
+    project: CUR, name,
+    start_date: document.getElementById('fStart').value || null,
+    end_date:   document.getElementById('fEnd').value || null,
+    buyout_pct: Number(document.getElementById('fBuyout').value) || 30,
+  };
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true; err.textContent = '';
+  try{
+    let pid = EDIT_ID;
+    if(EDIT_ID){
+      await fetch('/api/season/presets/'+EDIT_ID, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    } else {
+      const r = await fetch('/api/season/presets', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const data = await r.json();
+      if(data.error){ err.textContent = data.error; btn.disabled=false; return; }
+      pid = data.id;
+    }
+    // набор артикулов
+    const byId = {};
+    (ARTICLES||[]).forEach(a=>byId[a.wb_article]=a);
+    const oldItems = EDIT_ID ? (PRESETS.find(x=>x.id===EDIT_ID)?.items||[]) : [];
+    const oldById = {}; oldItems.forEach(i=>oldById[i.wb_article]=i);
+    const items = [...PICKED].map(nm=>{
+      const a = byId[nm] || oldById[nm] || {};
+      return {wb_article:nm, seller_article:a.seller_article||'', name:a.name||''};
+    });
+    await fetch('/api/season/presets/'+pid+'/items', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})});
+    closeEditor();
+    await loadPresets();
+    loadDecomp();
+  } catch(e){
+    err.textContent = 'Ошибка сохранения'; btn.disabled = false; return;
+  }
+  btn.disabled = false;
+}
+
+async function delPreset(id, name){
+  if(!confirm('Удалить группу «'+name+'»?')) return;
+  await fetch('/api/season/presets/'+id, {method:'DELETE'});
+  delete DECOMP[id];
+  await loadPresets();
+}
+
+function toggleTheme(){
+  const t = document.body.dataset.theme === 'light' ? 'dark' : 'light';
+  document.body.dataset.theme = t;
+  localStorage.setItem('theme', t);
+}
+document.body.dataset.theme = localStorage.getItem('theme') || 'dark';
+</script>
+</body>
+</html>

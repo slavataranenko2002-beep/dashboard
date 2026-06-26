@@ -9,6 +9,7 @@ Google OAuth авторизация, ролевой доступ:
 """
 import os
 import json
+import math
 import logging
 import functools
 from datetime import date, datetime, timedelta
@@ -452,6 +453,51 @@ def _ensure_funnel_tables():
 
 _ensure_funnel_tables()
 
+
+def _ensure_season_tables():
+    """Идемпотентная миграция для раздела «Темп сезона»."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                # Флаг доступа на users (как unit_access/funnel_access)
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS season_access BOOLEAN DEFAULT FALSE")
+
+                # Пресет = группа товаров со своим окном сезона
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS season_presets (
+                        id               SERIAL PRIMARY KEY,
+                        project          TEXT NOT NULL,
+                        name             TEXT NOT NULL DEFAULT '',
+                        start_date       DATE,
+                        end_date         DATE,
+                        buyout_pct       NUMERIC(5,2) NOT NULL DEFAULT 30,  -- константа выкупа (конверсии добавим позже)
+                        position         INTEGER NOT NULL DEFAULT 0,
+                        created_by_email TEXT DEFAULT '',
+                        created_at       TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at       TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_season_presets_project ON season_presets(project, position)")
+
+                # Артикулы, входящие в группу
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS season_preset_items (
+                        id              SERIAL PRIMARY KEY,
+                        preset_id       INTEGER NOT NULL REFERENCES season_presets(id) ON DELETE CASCADE,
+                        wb_article      BIGINT,
+                        seller_article  TEXT DEFAULT '',
+                        name            TEXT DEFAULT '',
+                        position        INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_season_preset_items_preset ON season_preset_items(preset_id)")
+            conn.commit()
+        logging.info("Season tables ready.")
+    except Exception as e:
+        logging.error(f"_ensure_season_tables error: {e}")
+
+_ensure_season_tables()
+
 # ─── Google OAuth ─────────────────────────────────────────────────────────────
 oauth = OAuth(app)
 oauth.register(
@@ -495,6 +541,7 @@ def _make_session_dict(user: dict) -> dict:
         "unit_projects":      list(user.get("unit_projects") or []),
         "funnel_access":      bool(user.get("funnel_access")),
         "funnel_projects":    list(user.get("funnel_projects") or []),
+        "season_access":      bool(user.get("season_access")),
     }
 
 def _all_projects() -> list:
@@ -563,6 +610,12 @@ def _check_funnel_project(u, project: str) -> bool:
     if allowed is None:
         return True  # admin/employee — все кабинеты
     return project in allowed
+
+def _season_allowed(u) -> bool:
+    """Admin и employee всегда имеют доступ к темпу сезона; seller — только если season_access=True."""
+    if u["role"] in ("admin", "employee"):
+        return True
+    return bool(u.get("season_access"))
 
 def _planfact_can_edit(u) -> bool:
     """Admin всегда может редактировать; остальные — только если planfact_edit=True."""
@@ -739,6 +792,32 @@ def require_funnel_api(f):
         return f(*args, **kwargs)
     return wrapper
 
+def require_season_page(f):
+    """Декоратор страницы /season: redirect если нет доступа."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        u = _session_user()
+        if not u:
+            return redirect("/auth/login")
+        if u["role"] == "pending":
+            return redirect("/")
+        if not _season_allowed(u):
+            return redirect("/")
+        return f(*args, **kwargs)
+    return wrapper
+
+def require_season_api(f):
+    """Декоратор API /api/season/*: 403 если нет доступа."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        u = _session_user()
+        if not u:
+            return jsonify({"error": "unauthorized"}), 401
+        if not _season_allowed(u):
+            return jsonify({"error": "forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
 def api_error(f):
     """Декоратор: ловит Exception → 500 JSON. Убирает try/except boilerplate."""
     @functools.wraps(f)
@@ -846,13 +925,14 @@ def api_admin_update_user(user_id):
     unit_projects  = d.get("unit_projects", [])
     funnel_access  = bool(d.get("funnel_access", False))
     funnel_projects = d.get("funnel_projects", [])
+    season_access  = bool(d.get("season_access", False))
     if role not in ("pending", "employee", "seller", "admin"):
         return jsonify({"error": "invalid role"}), 400
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE users SET role=%s, projects=%s, planfact_projects=%s, planfact_edit=%s, design_access=%s, unit_access=%s, unit_projects=%s, funnel_access=%s, funnel_projects=%s WHERE id=%s RETURNING id",
-                (role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects, funnel_access, funnel_projects, user_id),
+                "UPDATE users SET role=%s, projects=%s, planfact_projects=%s, planfact_edit=%s, design_access=%s, unit_access=%s, unit_projects=%s, funnel_access=%s, funnel_projects=%s, season_access=%s WHERE id=%s RETURNING id",
+                (role, projects, planfact_projects, planfact_edit, design_access, unit_access, unit_projects, funnel_access, funnel_projects, season_access, user_id),
             )
             if not cur.fetchone():
                 return jsonify({"error": "not found"}), 404
@@ -4515,6 +4595,351 @@ def api_funnel_ab_results_delete(result_id):
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Темп сезона ──────────────────────────────────────────────────────────────
+#
+# Декомпозиция распродажи сезонного стока: для каждой группы товаров (пресета) со
+# своим окном сезона считаем, сколько заказов в день нужно делать, чтобы
+# распродать остаток к концу сезона, и сравниваем с текущим темпом.
+#
+#   нужно продать  = остаток (живой, из WB get_stocks)
+#   нужно заказов  = ceil(остаток / %выкупа)        (%выкупа — пока константа на пресет, по умолчанию 30%)
+#   заказов/день   = ceil(нужно заказов / дней до конца сезона)
+#   темп сейчас    = заказы за последние 7 дней / 7  (из воронки продаж WB)
+#   отставание     = заказов/день нужно − темп сейчас
+#
+# Конверсии (CTR/CR) и расход на рекламу будут добавлены позже.
+
+SEASON_PACE_DAYS = 7   # окно для расчёта текущего темпа заказов/день
+
+
+def _season_cabinets(u) -> list:
+    """Доступные кабинеты для темпа сезона (пока — все кабинеты WB при наличии доступа)."""
+    return list(WB_CABINETS)
+
+
+def _season_serialize_preset(p: dict, items: list) -> dict:
+    return {
+        "id":         p["id"],
+        "project":    p["project"],
+        "name":       p["name"],
+        "start_date": p["start_date"].isoformat() if p.get("start_date") else None,
+        "end_date":   p["end_date"].isoformat()   if p.get("end_date")   else None,
+        "buyout_pct": float(p.get("buyout_pct") or 0),
+        "position":   p.get("position") or 0,
+        "items": [
+            {
+                "wb_article":     it["wb_article"],
+                "seller_article": it.get("seller_article") or "",
+                "name":           it.get("name") or "",
+            }
+            for it in items
+        ],
+    }
+
+
+def _season_load_presets(project: str) -> list:
+    """Все пресеты кабинета с их артикулами (без обращения к WB)."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM season_presets WHERE project=%s ORDER BY position, id",
+                (project,),
+            )
+            presets = [dict(r) for r in cur.fetchall()]
+            if not presets:
+                return []
+            ids = [p["id"] for p in presets]
+            cur.execute(
+                "SELECT * FROM season_preset_items WHERE preset_id = ANY(%s) ORDER BY position, id",
+                (ids,),
+            )
+            items_by_preset: dict = {}
+            for r in cur.fetchall():
+                items_by_preset.setdefault(r["preset_id"], []).append(dict(r))
+    return [_season_serialize_preset(p, items_by_preset.get(p["id"], [])) for p in presets]
+
+
+def _season_compute(preset: dict, stocks_map: dict, pace_map: dict, today: date) -> dict:
+    """Считает декомпозицию по одному пресету. Возвращает dict с строками и итогами."""
+    end = preset.get("end_date")
+    start = preset.get("start_date")
+    end_date   = date.fromisoformat(end)   if end   else None
+    start_date = date.fromisoformat(start) if start else None
+    # Считаем от позднейшей из дат «сегодня»/«старт сезона»: если сезон ещё не начался —
+    # берём полную длину, если идёт — оставшиеся дни до конца.
+    from_day = max(today, start_date) if start_date else today
+    days_left = (end_date - from_day).days if end_date else None
+    season_over = days_left is not None and days_left <= 0
+
+    buyout = float(preset.get("buyout_pct") or 0)
+    buyout_frac = buyout / 100 if buyout > 0 else 0
+
+    rows = []
+    tot_stock = tot_orders = tot_need_day = 0
+    tot_pace = 0.0
+    for it in preset["items"]:
+        nm = it["wb_article"]
+        stock = int(stocks_map.get(nm, 0))
+        need_sales = stock
+        need_orders = math.ceil(stock / buyout_frac) if buyout_frac > 0 else stock
+        if days_left is None:
+            need_day = None
+        elif season_over:
+            need_day = need_orders          # сезон закончился — всё «надо было вчера»
+        else:
+            need_day = math.ceil(need_orders / days_left) if days_left > 0 else need_orders
+        pace = round(pace_map.get(nm, 0.0), 1)
+        lag = (round(need_day - pace, 1) if need_day is not None else None)
+
+        rows.append({
+            "wb_article":     nm,
+            "seller_article": it.get("seller_article") or "",
+            "name":           it.get("name") or "",
+            "stock":          stock,
+            "need_sales":     need_sales,
+            "need_orders":    need_orders,
+            "need_per_day":   need_day,
+            "pace":           pace,
+            "lag":            lag,
+        })
+        tot_stock    += stock
+        tot_orders   += need_orders
+        tot_need_day += (need_day or 0)
+        tot_pace     += pace
+
+    return {
+        "id":          preset["id"],
+        "name":        preset["name"],
+        "start_date":  preset.get("start_date"),
+        "end_date":    end,
+        "buyout_pct":  buyout,
+        "days_left":   days_left,
+        "season_over": season_over,
+        "rows":        rows,
+        "totals": {
+            "stock":        tot_stock,
+            "need_orders":  tot_orders,
+            "need_per_day": tot_need_day,
+            "pace":         round(tot_pace, 1),
+            "lag":          round(tot_need_day - tot_pace, 1),
+        },
+    }
+
+
+@app.route("/season")
+@require_season_page
+def season_page():
+    u = _session_user()
+    return render_template(
+        "season.html",
+        current_user=u,
+        projects=_season_cabinets(u),
+        project_emoji=_project_emoji_dict(),
+    )
+
+
+@app.route("/api/season/articles")
+@require_season_api
+def api_season_articles():
+    """Список артикулов кабинета с текущим остатком (для добавления в пресет)."""
+    project = request.args.get("project", "").strip()
+    if not project or project not in WB_CABINETS:
+        return jsonify({"error": "project required"}), 400
+    try:
+        from wb_api import WBClient, fmt_date
+        today = date.today()
+        with WBClient(project) as wb:
+            stocks = wb.get_stocks(fmt_date(today - timedelta(days=180)))
+        by_id: dict = {}
+        for s in stocks or []:
+            nm = s.get("nmId")
+            if not nm:
+                continue
+            qty = s.get("quantityFull") or s.get("quantity") or 0
+            if nm in by_id:
+                by_id[nm]["stock"] += qty
+            else:
+                by_id[nm] = {
+                    "wb_article":     nm,
+                    "seller_article": s.get("supplierArticle", ""),
+                    "stock":          qty,
+                }
+        rows = sorted(by_id.values(), key=lambda r: r["seller_article"])
+        return jsonify(rows)
+    except Exception as e:
+        logging.error(f"season/articles {project}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/season/presets")
+@require_season_api
+def api_season_presets_get():
+    """Пресеты кабинета с артикулами (без живых остатков — для редактирования)."""
+    project = request.args.get("project", "").strip()
+    if not project or project not in WB_CABINETS:
+        return jsonify({"error": "project required"}), 400
+    return jsonify(_season_load_presets(project))
+
+
+@app.route("/api/season/presets", methods=["POST"])
+@require_season_api
+def api_season_presets_create():
+    u = _session_user()
+    d = request.json or {}
+    project = (d.get("project") or "").strip()
+    name    = (d.get("name") or "").strip()
+    if not project or project not in WB_CABINETS:
+        return jsonify({"error": "project required"}), 400
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    start_date = (d.get("start_date") or None) or None
+    end_date   = (d.get("end_date") or None) or None
+    buyout     = d.get("buyout_pct")
+    buyout     = 30 if buyout in (None, "") else buyout
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM season_presets WHERE project=%s",
+                    (project,),
+                )
+                pos = cur.fetchone()["pos"]
+                cur.execute(
+                    "INSERT INTO season_presets (project, name, start_date, end_date, buyout_pct, position, created_by_email) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                    (project, name, start_date, end_date, buyout, pos, u.get("email", "")),
+                )
+                new_id = cur.fetchone()["id"]
+            conn.commit()
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/season/presets/<int:preset_id>", methods=["PUT"])
+@require_season_api
+def api_season_presets_update(preset_id):
+    d = request.json or {}
+    fields, vals = [], []
+    if "name" in d:
+        fields.append("name=%s");       vals.append((d.get("name") or "").strip())
+    if "start_date" in d:
+        fields.append("start_date=%s"); vals.append(d.get("start_date") or None)
+    if "end_date" in d:
+        fields.append("end_date=%s");   vals.append(d.get("end_date") or None)
+    if "buyout_pct" in d:
+        b = d.get("buyout_pct")
+        fields.append("buyout_pct=%s"); vals.append(30 if b in (None, "") else b)
+    if not fields:
+        return jsonify({"error": "nothing to update"}), 400
+    fields.append("updated_at=NOW()")
+    vals.append(preset_id)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE season_presets SET {', '.join(fields)} WHERE id=%s RETURNING id",
+                    tuple(vals),
+                )
+                if not cur.fetchone():
+                    return jsonify({"error": "not found"}), 404
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/season/presets/<int:preset_id>", methods=["DELETE"])
+@require_season_api
+def api_season_presets_delete(preset_id):
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM season_presets WHERE id=%s RETURNING id", (preset_id,))
+                if not cur.fetchone():
+                    return jsonify({"error": "not found"}), 404
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/season/presets/<int:preset_id>/items", methods=["PUT"])
+@require_season_api
+def api_season_presets_set_items(preset_id):
+    """Полная замена набора артикулов в пресете."""
+    d = request.json or {}
+    items = d.get("items") or []
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM season_presets WHERE id=%s", (preset_id,))
+                if not cur.fetchone():
+                    return jsonify({"error": "not found"}), 404
+                cur.execute("DELETE FROM season_preset_items WHERE preset_id=%s", (preset_id,))
+                for pos, it in enumerate(items):
+                    nm = it.get("wb_article")
+                    if not nm:
+                        continue
+                    cur.execute(
+                        "INSERT INTO season_preset_items (preset_id, wb_article, seller_article, name, position) "
+                        "VALUES (%s,%s,%s,%s,%s)",
+                        (preset_id, nm, it.get("seller_article", ""), it.get("name", ""), pos),
+                    )
+                cur.execute("UPDATE season_presets SET updated_at=NOW() WHERE id=%s", (preset_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/season/decomposition")
+@require_season_api
+def api_season_decomposition():
+    """Живая декомпозиция по всем пресетам кабинета: тянет остатки и текущий темп из WB."""
+    project = request.args.get("project", "").strip()
+    if not project or project not in WB_CABINETS:
+        return jsonify({"error": "project required"}), 400
+    presets = _season_load_presets(project)
+    if not presets:
+        return jsonify({"presets": [], "fetched_at": datetime.now().isoformat()})
+    try:
+        from wb_api import WBClient, fmt_date, _funnel_metric, get_product_field
+        today = date.today()
+        with WBClient(project) as wb:
+            stocks = wb.get_stocks(fmt_date(today - timedelta(days=180)))
+            funnel = wb.get_sales_funnel(
+                fmt_date(today - timedelta(days=SEASON_PACE_DAYS)),
+                fmt_date(today - timedelta(days=1)),
+            )
+        # Остатки: nmId → суммарный остаток
+        stocks_map: dict = {}
+        for s in stocks or []:
+            nm = s.get("nmId")
+            if not nm:
+                continue
+            stocks_map[nm] = stocks_map.get(nm, 0) + (s.get("quantityFull") or s.get("quantity") or 0)
+        # Текущий темп: nmId → заказов/день за окно
+        pace_map: dict = {}
+        products = (funnel.get("data") or {}).get("products") or []
+        for p in products:
+            nm = get_product_field(p, "nmId")
+            if not nm:
+                continue
+            orders = _funnel_metric(p, "orderCount", "selected")
+            pace_map[nm] = pace_map.get(nm, 0.0) + orders / SEASON_PACE_DAYS
+
+        computed = [_season_compute(p, stocks_map, pace_map, today) for p in presets]
+        return jsonify({
+            "presets":    computed,
+            "pace_days":  SEASON_PACE_DAYS,
+            "fetched_at": datetime.now().isoformat(),
+        })
+    except Exception as e:
+        logging.error(f"season/decomposition {project}: {e}")
         return jsonify({"error": str(e)}), 500
 
 
