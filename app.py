@@ -221,27 +221,72 @@ def _ensure_design_tables():
                         UNIQUE (project, vendor_code)
                     )
                 """)
-                # Снимок факта план-факта по месяцам — сохраняется при каждом
-                # просмотре /api/plan-fact, чтобы для прошлых (уже завершённых)
-                # месяцев не дёргать WB API повторно при авто-расчёте плана на
-                # будущий месяц (свой rate-limit у sales-funnel эндпоинта)
+                # ── План-факт: таблицы, ранее создававшиеся вручную (риск потери
+                #    данных, если БД пересоздать). Закрепляем в коде. ──────────────
+                # Планы продаж (вводит пользователь; НЕ из WB API)
                 cur.execute("""
-                    CREATE TABLE IF NOT EXISTS planfact_snapshots (
+                    CREATE TABLE IF NOT EXISTS sales_plans (
                         id               SERIAL PRIMARY KEY,
                         project          TEXT NOT NULL,
                         month            DATE NOT NULL,
                         vendor_code      TEXT NOT NULL,
-                        nm_id            BIGINT,
-                        title            TEXT DEFAULT '',
-                        orders_qty_fact  INTEGER NOT NULL DEFAULT 0,
-                        orders_rub_fact  NUMERIC(14,2) NOT NULL DEFAULT 0,
-                        sales_qty_fact   INTEGER NOT NULL DEFAULT 0,
-                        sales_rub_fact   NUMERIC(14,2) NOT NULL DEFAULT 0,
-                        avg_price        NUMERIC(12,2) NOT NULL DEFAULT 0,
-                        buyout_pct       NUMERIC(5,2) NOT NULL DEFAULT 0,
-                        is_complete      BOOLEAN NOT NULL DEFAULT FALSE,
+                        orders_rub_plan  NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        orders_qty_plan  INTEGER NOT NULL DEFAULT 0,
+                        sales_rub_plan   NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        sales_qty_plan   INTEGER NOT NULL DEFAULT 0,
                         updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         UNIQUE (project, month, vendor_code)
+                    )
+                """)
+                # Постоянные ярлыки сезонности по артикулу
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS article_seasons (
+                        id           SERIAL PRIMARY KEY,
+                        project      TEXT NOT NULL,
+                        vendor_code  TEXT NOT NULL,
+                        season_name  TEXT NOT NULL DEFAULT '',
+                        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE (project, vendor_code)
+                    )
+                """)
+                # Коэффициенты сезонности по месяцам
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS season_coefficients (
+                        id           SERIAL PRIMARY KEY,
+                        project      TEXT NOT NULL,
+                        month        DATE NOT NULL,
+                        season_name  TEXT NOT NULL,
+                        coefficient  NUMERIC(7,2) NOT NULL DEFAULT 0,
+                        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE (project, month, season_name)
+                    )
+                """)
+                # Кэш факта план-факта по месяцам (JSONB-снимок результата
+                # collect_planfact_data). Позволяет отдавать страницу из БД мгновенно
+                # и не дёргать WB API на каждый просмотр (у sales-funnel свой rate-limit).
+                # План/ФФ/сезоны накладываются поверх при отдаче — они дёшевы и меняются
+                # независимо от API.
+                cur.execute("DROP TABLE IF EXISTS planfact_snapshots")
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS planfact_cache (
+                        project      TEXT NOT NULL,
+                        month        DATE NOT NULL,
+                        data         JSONB NOT NULL,
+                        fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        is_complete  BOOLEAN NOT NULL DEFAULT FALSE,
+                        PRIMARY KEY (project, month)
+                    )
+                """)
+                # Бэкапы планов+фактов (раз в 7 дней, по кабинету)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS planfact_backups (
+                        id           SERIAL PRIMARY KEY,
+                        backup_date  DATE NOT NULL,
+                        project      TEXT NOT NULL,
+                        plans        JSONB,
+                        facts        JSONB,
+                        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE (backup_date, project)
                     )
                 """)
                 # Подзадачи
@@ -1289,6 +1334,110 @@ def api_admin_delete_project(proj_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route("/api/admin/cabinet-purge", methods=["POST"])
+@require_admin_api
+def api_admin_cabinet_purge():
+    """ПОЛНОЕ удаление кабинета и ВСЕХ его данных из БД (необратимо).
+    WB API-ключ остаётся в env Railway — его нужно удалить отдельно."""
+    d = request.json or {}
+    name = (d.get("name") or "").strip()
+    confirm = (d.get("confirm") or "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    # Защита от случайного удаления — клиент должен прислать точное имя кабинета
+    if confirm != name:
+        return jsonify({"error": "confirm must equal cabinet name"}), 400
+    # Все таблицы с данными по кабинету (дочерние строки удалятся каскадом по FK)
+    purge = [
+        ("tasks",                "project"),
+        ("design_tasks",         "project"),
+        ("content_funnels",      "project"),
+        ("unit_economics",       "project"),
+        ("unit_economics_backup","project"),
+        ("article_ff_stocks",    "project"),
+        ("sales_plans",          "project"),
+        ("season_coefficients",  "project"),
+        ("article_seasons",      "project"),
+        ("planfact_cache",       "project"),
+        ("planfact_backups",     "project"),
+    ]
+    deleted = {}
+    try:
+        # Атомарно: либо удаляется всё, либо ничего (без частичной потери данных)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                for tbl, col in purge:
+                    cur.execute(f"DELETE FROM {tbl} WHERE {col}=%s", (name,))
+                    deleted[tbl] = cur.rowcount
+                cur.execute("DELETE FROM projects WHERE name=%s", (name,))
+                deleted["projects"] = cur.rowcount
+            conn.commit()
+        logging.warning("CABINET PURGED: %s by %s — %s", name, _session_user().get("email"), deleted)
+        return jsonify({"ok": True, "deleted": deleted,
+                        "note": "WB API-ключ в env Railway остался — удалите вручную при необходимости"})
+    except Exception as e:
+        logging.exception("cabinet purge failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/planfact-export")
+@require_admin_api
+def api_admin_planfact_export():
+    """Скачать бэкап планов+фактов кабинета отдельным Excel-файлом."""
+    cabinet = request.args.get("cabinet", "").strip()
+    if not cabinet:
+        return jsonify({"error": "cabinet required"}), 400
+    try:
+        import openpyxl, io
+        from openpyxl.styles import Font, PatternFill
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT month, vendor_code, orders_qty_plan, orders_rub_plan, "
+                    "sales_qty_plan, sales_rub_plan FROM sales_plans "
+                    "WHERE project=%s ORDER BY month, vendor_code",
+                    (cabinet,)
+                )
+                plan_rows = cur.fetchall()
+                cur.execute(
+                    "SELECT month, data FROM planfact_cache WHERE project=%s ORDER BY month",
+                    (cabinet,)
+                )
+                fact_blobs = cur.fetchall()
+        wb = openpyxl.Workbook()
+        hdr_font = Font(bold=True, color="FFFFFF")
+        hdr_fill = PatternFill("solid", fgColor="1F3A5F")
+        def _hdr(ws, cols):
+            for i, h in enumerate(cols, 1):
+                c = ws.cell(row=1, column=i, value=h)
+                c.font = hdr_font; c.fill = hdr_fill
+        # Лист «Планы»
+        ws1 = wb.active; ws1.title = "Планы"
+        _hdr(ws1, ["Месяц", "Артикул", "Заказы шт", "Заказы ₽", "Прод. шт", "Прод. ₽"])
+        for r in plan_rows:
+            ws1.append([r["month"].isoformat(), r["vendor_code"],
+                        int(r["orders_qty_plan"] or 0), float(r["orders_rub_plan"] or 0),
+                        int(r["sales_qty_plan"] or 0), float(r["sales_rub_plan"] or 0)])
+        # Лист «Факты»
+        ws2 = wb.create_sheet("Факты")
+        _hdr(ws2, ["Месяц", "Артикул", "Название", "Заказы шт", "Заказы ₽", "Прод. шт", "Прод. ₽"])
+        for fb in fact_blobs:
+            month_iso = fb["month"].isoformat()
+            for a in (fb["data"] or {}).get("articles", []):
+                ws2.append([month_iso, a.get("vendor_code", ""), a.get("title", ""),
+                            int(a.get("orders_qty_fact") or 0), float(a.get("orders_rub_fact") or 0),
+                            int(a.get("sales_qty_fact") or 0), float(a.get("sales_rub_fact") or 0)])
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+        fname = f"planfact_{cabinet}_{date.today().isoformat()}.xlsx"
+        return Response(buf.read(), headers={
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition": f'attachment; filename="{fname}"',
+        })
+    except Exception as e:
+        logging.exception("planfact export failed")
+        return jsonify({"error": str(e)}), 500
+
 # ─── Task API ─────────────────────────────────────────────────────────────────
 @app.route("/api/tasks")
 @require_auth
@@ -2074,6 +2223,91 @@ def plan_fact_page():
         can_edit=_planfact_can_edit(u),
     )
 
+def _pf_prev_month(month_date: date) -> date:
+    """Первое число предыдущего месяца."""
+    if month_date.month == 1:
+        return month_date.replace(year=month_date.year - 1, month=12, day=1)
+    return month_date.replace(month=month_date.month - 1, day=1)
+
+
+def _pf_load_cache(cabinet: str, month_date: date):
+    """Возвращает (data|None, fetched_at|None, is_complete)."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT data, fetched_at, is_complete FROM planfact_cache "
+                    "WHERE project=%s AND month=%s",
+                    (cabinet, month_date)
+                )
+                row = cur.fetchone()
+        if not row:
+            return None, None, False
+        return row["data"], row["fetched_at"], bool(row["is_complete"])
+    except Exception:
+        logging.exception("planfact_cache load failed")
+        return None, None, False
+
+
+def _pf_store_cache(cabinet: str, month_date: date, data: dict, is_complete: bool):
+    """Сохраняет сырой факт (articles+totals из collect_planfact_data) как JSONB."""
+    try:
+        blob = json.dumps({"articles": data["articles"], "totals": data["totals"]})
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO planfact_cache (project, month, data, fetched_at, is_complete)
+                    VALUES (%s, %s, %s::jsonb, NOW(), %s)
+                    ON CONFLICT (project, month) DO UPDATE SET
+                        data=EXCLUDED.data, fetched_at=NOW(), is_complete=EXCLUDED.is_complete
+                """, (cabinet, month_date, blob, is_complete))
+            conn.commit()
+    except Exception:
+        logging.exception("planfact_cache store failed")
+
+
+def _pf_maybe_backup(cabinet: str):
+    """Раз в 7 дней сохраняет снимок планов+фактов кабинета (на случай потери данных)."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT MAX(backup_date) AS last FROM planfact_backups WHERE project=%s",
+                    (cabinet,)
+                )
+                last = cur.fetchone()["last"]
+                if last and (date.today() - last).days < 7:
+                    return
+                cur.execute(
+                    "SELECT month, vendor_code, orders_rub_plan, orders_qty_plan, "
+                    "sales_rub_plan, sales_qty_plan FROM sales_plans WHERE project=%s",
+                    (cabinet,)
+                )
+                plans = [
+                    {"month": r["month"].isoformat(), "vendor_code": r["vendor_code"],
+                     "orders_rub_plan": float(r["orders_rub_plan"] or 0),
+                     "orders_qty_plan": int(r["orders_qty_plan"] or 0),
+                     "sales_rub_plan": float(r["sales_rub_plan"] or 0),
+                     "sales_qty_plan": int(r["sales_qty_plan"] or 0)}
+                    for r in cur.fetchall()
+                ]
+                cur.execute(
+                    "SELECT month, data FROM planfact_cache WHERE project=%s",
+                    (cabinet,)
+                )
+                facts = [{"month": r["month"].isoformat(), "data": r["data"]} for r in cur.fetchall()]
+                if not plans and not facts:
+                    return
+                cur.execute("""
+                    INSERT INTO planfact_backups (backup_date, project, plans, facts)
+                    VALUES (CURRENT_DATE, %s, %s::jsonb, %s::jsonb)
+                    ON CONFLICT (backup_date, project) DO NOTHING
+                """, (cabinet, json.dumps(plans), json.dumps(facts)))
+            conn.commit()
+    except Exception:
+        logging.exception("planfact backup failed")
+
+
 @app.route("/api/plan-fact")
 @require_auth
 def api_plan_fact_get():
@@ -2083,6 +2317,7 @@ def api_plan_fact_get():
         return jsonify({"error": "forbidden"}), 403
     cabinet    = request.args.get("cabinet", "").strip()
     month_str  = request.args.get("month", "").strip()   # "2026-05"
+    force      = request.args.get("refresh", "") in ("1", "true", "yes")
     if not cabinet or not month_str:
         return jsonify({"error": "cabinet and month required"}), 400
     if allowed is not None and cabinet not in allowed:
@@ -2093,73 +2328,70 @@ def api_plan_fact_get():
     except ValueError:
         return jsonify({"error": "invalid month format"}), 400
     last_day = calendar.monthrange(month_date.year, month_date.month)[1]
+    month_end = month_date.replace(day=last_day)
     d_from   = month_date
-    d_to     = min(date.today() - timedelta(days=1), month_date.replace(day=last_day))
+    d_to     = min(date.today() - timedelta(days=1), month_end)
     if d_to < d_from:
         d_to = d_from
     try:
         from wb_api import collect_planfact_data
-        data = collect_planfact_data(cabinet, d_from, d_to)
 
-        # Снимок факта месяца — сохраняем свежие данные в БД (is_complete=True,
-        # только если запрошенный период покрывает месяц целиком, т.е. месяц уже
-        # завершился), чтобы при планировании следующего месяца не дёргать WB API
-        # повторно (у sales-funnel свой строгий rate-limit).
-        is_complete_now = (d_to == month_date.replace(day=last_day))
-        try:
-            with get_conn() as conn:
-                with conn.cursor() as cur:
-                    for a in data["articles"]:
-                        cur.execute("""
-                            INSERT INTO planfact_snapshots
-                                (project, month, vendor_code, nm_id, title,
-                                 orders_qty_fact, orders_rub_fact, sales_qty_fact, sales_rub_fact,
-                                 avg_price, buyout_pct, is_complete, updated_at)
-                            VALUES (%s,%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, NOW())
-                            ON CONFLICT (project, month, vendor_code) DO UPDATE SET
-                                nm_id=EXCLUDED.nm_id, title=EXCLUDED.title,
-                                orders_qty_fact=EXCLUDED.orders_qty_fact,
-                                orders_rub_fact=EXCLUDED.orders_rub_fact,
-                                sales_qty_fact=EXCLUDED.sales_qty_fact,
-                                sales_rub_fact=EXCLUDED.sales_rub_fact,
-                                avg_price=EXCLUDED.avg_price,
-                                buyout_pct=EXCLUDED.buyout_pct,
-                                is_complete=EXCLUDED.is_complete,
-                                updated_at=NOW()
-                        """, (
-                            cabinet, month_date, a["vendor_code"], a.get("nm_id"), a.get("title", ""),
-                            int(a["orders_qty_fact"]), float(a["orders_rub_fact"]),
-                            int(a["sales_qty_fact"]), float(a["sales_rub_fact"]),
-                            float(a.get("avg_price") or 0), float(a.get("buyout_pct") or 0),
-                            is_complete_now,
-                        ))
-                conn.commit()
-        except Exception:
-            logging.exception("planfact_snapshots upsert failed")
+        today = date.today()
+        is_past_month    = month_end < today.replace(day=1)
+        is_current_month = (month_date.year == today.year and month_date.month == today.month)
 
-        # Если для прошлого месяца есть завершённый снимок в БД — используем его
-        # как факт прошлого месяца (надёжнее и быстрее повторного запроса к WB API,
-        # особенно для текущего/будущего месяца, где WB не отдаёт ненаступившие дни).
-        past_month_date = (
-            month_date.replace(year=month_date.year - 1, month=12)
-            if month_date.month == 1 else
-            month_date.replace(month=month_date.month - 1)
-        )
-        try:
-            with get_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT vendor_code, orders_qty_fact FROM planfact_snapshots "
-                        "WHERE project=%s AND month=%s AND is_complete=TRUE",
-                        (cabinet, past_month_date)
-                    )
-                    snap_past = {r["vendor_code"]: int(r["orders_qty_fact"] or 0) for r in cur.fetchall()}
-            if snap_past:
-                for a in data["articles"]:
-                    if a["vendor_code"] in snap_past:
-                        a["orders_qty_past"] = snap_past[a["vendor_code"]]
-        except Exception:
-            logging.exception("planfact_snapshots lookup failed")
+        # ── Решаем: брать из кэша БД или дёргать WB API ──
+        cached, fetched_at, cache_complete = _pf_load_cache(cabinet, month_date)
+        stale = False
+        if cached and fetched_at:
+            age_h = (datetime.now(fetched_at.tzinfo) - fetched_at).total_seconds() / 3600
+            # Прошлый завершённый месяц с полным кэшем — данные финальные, не обновляем.
+            # Текущий месяц — обновляем раз в сутки. Будущий — по требованию.
+            if is_past_month and cache_complete:
+                stale = False
+            elif is_current_month:
+                stale = age_h >= 24
+            else:
+                stale = age_h >= 24
+
+        need_fetch = force or (cached is None) or stale
+        from_cache = False
+        if need_fetch:
+            data = collect_planfact_data(cabinet, d_from, d_to)
+            is_complete_now = (d_to == month_end and month_end < today)
+            _pf_store_cache(cabinet, month_date, data, is_complete_now)
+            fetched_at = datetime.now()
+        else:
+            data = {"articles": cached.get("articles", []), "totals": cached.get("totals", {})}
+            from_cache = True
+
+        # ── Раз в 7 дней — бэкап планов+фактов кабинета ──
+        _pf_maybe_backup(cabinet)
+
+        # ── Req #5: факт прошлого месяца + откат ср.цены/выкупа берём из кэша БД ──
+        # orders_qty_past = факт заказов прошлого месяца (для авто-расчёта плана).
+        # avg_price/buyout: берём прошлый месяц ТОЛЬКО если за выбранный месяц их нет.
+        past_month_date = _pf_prev_month(month_date)
+        past_cached, _, _ = _pf_load_cache(cabinet, past_month_date)
+        if past_cached:
+            past_by_vc = {}
+            for pa in past_cached.get("articles", []):
+                past_by_vc[pa["vendor_code"]] = {
+                    "orders_qty": int(pa.get("orders_qty_fact") or 0),
+                    "avg_price":  float(pa.get("avg_price") or 0),
+                    "buyout":     float(pa.get("buyout_pct") or 0),
+                }
+            for a in data["articles"]:
+                pv = past_by_vc.get(a["vendor_code"])
+                if not pv:
+                    continue
+                a["orders_qty_past"] = pv["orders_qty"]
+                if (not a.get("avg_price")) and pv["avg_price"] > 0:
+                    a["avg_price"] = pv["avg_price"]
+                    a["avg_price_is_prev"] = True
+                if (not a.get("buyout_pct")) and pv["buyout"] > 0:
+                    a["buyout_pct"] = pv["buyout"]
+                    a["buyout_pct_is_prev"] = True
 
         # Загружаем план + ярлыки сезонности из БД
         plans: dict = {}
@@ -2255,6 +2487,8 @@ def api_plan_fact_get():
             "adv_spend":       t.get("adv_spend", 0),
             "drr_orders":      t.get("drr_orders"),
             "drr_sales":       t.get("drr_sales"),
+            "from_cache":      from_cache,
+            "fetched_at":      fetched_at.isoformat() if fetched_at else None,
         }
         data["season_coefficients"] = season_coefficients
         data["season_names"]        = all_season_names

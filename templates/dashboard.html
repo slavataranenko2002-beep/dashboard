@@ -2462,9 +2462,11 @@ function renderProjList(){
       <input class="proj-name-in" value="${esc(p.name)}" onchange="markProjDirty(${p.id},'name',this.value)" onblur="saveProjField(${p.id})">
       <input type="color" value="${esc(p.color)}" class="proj-color-dot" style="background:${esc(p.color)}" oninput="markProjDirty(${p.id},'color',this.value);this.style.background=this.value" onchange="saveProjField(${p.id})" title="Цвет">
       <div class="proj-item-acts">
+        <a class="ab" href="/api/admin/planfact-export?cabinet=${encodeURIComponent(p.name)}" title="Скачать бэкап планов+фактов (Excel)">💾</a>
         ${p.active
-          ? `<button class="ab dl" onclick="deleteProject(${p.id})" title="Удалить / скрыть">🗑</button>`
+          ? `<button class="ab dl" onclick="deleteProject(${p.id})" title="Скрыть / удалить (мягко)">🗑</button>`
           : `<button class="ab" onclick="restoreProject(${p.id})" title="Восстановить">↩</button>`}
+        <button class="ab dl" onclick="purgeCabinet('${esc(p.name)}')" title="Удалить ПОЛНОСТЬЮ со всеми данными (необратимо)">💥</button>
       </div>
     </div>`).join('');
 }
@@ -2540,6 +2542,28 @@ async function deleteProject(id){
     _allProjectsData = await r2.json();
     renderProjList();
     setTimeout(()=>location.reload(), 400);
+  }catch(e){ alert('Ошибка: '+e.message); }
+}
+
+async function purgeCabinet(name){
+  const warn = `⚠️ ПОЛНОЕ удаление кабинета «${name}».\n\n`
+    + `Будут НЕОБРАТИМО удалены ВСЕ данные кабинета из БД:\n`
+    + `• задачи и подзадачи\n• дизайн-задачи\n• контент-воронки\n`
+    + `• юнит-экономика\n• планы и факты план-факта, сезонность, ФФ-остатки\n• бэкапы план-факта\n\n`
+    + `WB API-ключ в Railway останется (удалить отдельно при необходимости).\n\n`
+    + `Чтобы подтвердить — введите точное имя кабинета:`;
+  const typed = prompt(warn, '');
+  if(typed === null) return;
+  if(typed.trim() !== name){ alert('Имя не совпало — удаление отменено.'); return; }
+  try{
+    const r = await fetch('/api/admin/cabinet-purge',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, confirm: typed.trim()})
+    });
+    const d = await r.json();
+    if(d.error){ alert('Ошибка: '+d.error); return; }
+    alert(`✅ Кабинет «${name}» полностью удалён.\n${d.note||''}`);
+    location.reload();
   }catch(e){ alert('Ошибка: '+e.message); }
 }
 

@@ -208,7 +208,8 @@ table.hide-exp .col-exp{display:none}
   </select>
   <span class="ctrl-label">Месяц:</span>
   <input type="month" class="ctrl-input" id="month-inp" value="">
-  <button class="load-btn" id="load-btn" onclick="loadData()">Загрузить</button>
+  <button class="load-btn" id="load-btn" onclick="loadData(true)" title="Принудительно перезапросить данные из WB API">🔄 Обновить из WB</button>
+  <span id="freshness" style="font-size:11px;margin-left:4px"></span>
   <div class="ctrl-sep"></div>
   <button class="save-btn" id="save-btn" onclick="savePlan()">💾 Сохранить план</button>
   <button class="xl-btn" id="xl-down-btn" onclick="downloadTemplate()" title="Скачать шаблон Excel с текущими значениями плана">📥 Excel шаблон</button>
@@ -309,10 +310,13 @@ function toggleCol(col){
   applyColVisibility();
 }
 
-// Инициализация тогглов при смене кабинета
+// Смена кабинета → автозагрузка из кэша БД + тоггл столбцов
 document.getElementById('cabinet-sel').addEventListener('change', ()=>{
   applyColVisibility();
+  autoLoad();
 });
+// Смена месяца → автозагрузка из кэша БД
+document.getElementById('month-inp').addEventListener('change', autoLoad);
 
 // ── Загрузка ФФ-остатков из Excel ────────────────────────────────────────────
 async function uploadFfStocks(event){
@@ -352,11 +356,13 @@ async function uploadFfStocks(event){
   footer.addEventListener('scroll', () => sync(footer, box));
 })();
 
-// ── Init month picker ────────────────────────────────────────────────────────
+// ── Init month picker + автозагрузка текущего кабинета из кэша ────────────────
 (function(){
   const d = new Date();
   document.getElementById('month-inp').value =
     d.getFullYear()+'-'+(String(d.getMonth()+1).padStart(2,'0'));
+  // Сразу подтягиваем данные выбранного по умолчанию кабинета (из БД, мгновенно)
+  window.addEventListener('DOMContentLoaded', autoLoad);
 })();
 
 // ── Formatting ───────────────────────────────────────────────────────────────
@@ -384,7 +390,10 @@ let currentPage = 0;
 let seasonList = []; // [{name, coeff}]
 
 // ── Load data ─────────────────────────────────────────────────────────────────
-async function loadData(){
+// force=false → отдать из кэша БД мгновенно (сервер сам сходит в WB, если кэша
+//               нет или он устарел > суток для текущего месяца).
+// force=true  → кнопка «Обновить»: принудительно перезапросить данные из WB API.
+async function loadData(force){
   const cabinet = document.getElementById('cabinet-sel').value;
   const month   = document.getElementById('month-inp').value;
   if(!month){ alert('Выберите месяц'); return; }
@@ -396,16 +405,18 @@ async function loadData(){
   seasonList     = [];
 
   const btn = document.getElementById('load-btn');
-  btn.disabled = true; btn.textContent = 'Загрузка...';
+  btn.disabled = true; btn.textContent = force ? 'Обновляю из WB...' : 'Загрузка...';
   document.getElementById('error-msg').style.display='none';
   document.getElementById('kpi-bar').style.display='none';
   document.getElementById('save-btn').style.display='none';
   document.getElementById('season-btn').style.display='none';
   document.getElementById('content').innerHTML =
-    '<div class="empty-state"><div class="spinner"></div><br>Загружаем данные из WB...</div>';
+    `<div class="empty-state"><div class="spinner"></div><br>${force?'Обновляем из WB...':'Загружаем данные...'}</div>`;
 
   try {
-    const r = await fetch(`/api/plan-fact?cabinet=${encodeURIComponent(cabinet)}&month=${month}`);
+    const url = `/api/plan-fact?cabinet=${encodeURIComponent(cabinet)}&month=${month}`
+              + (force ? '&refresh=1' : '');
+    const r = await fetch(url);
     const data = await r.json();
     if(data.error){ showError(data.error); return; }
     currentData = data;
@@ -413,6 +424,7 @@ async function loadData(){
     renderKpi(data);
     renderTable(data);
     applyColVisibility();
+    updateFreshness(data.meta);
     if(CAN_EDIT) document.getElementById('save-btn').style.display='inline-block';
     document.getElementById('xl-down-btn').style.display='inline-block';
     if(CAN_EDIT) document.getElementById('xl-up-btn').style.display='inline-flex';
@@ -421,8 +433,27 @@ async function loadData(){
   } catch(e){
     showError('Ошибка соединения: '+e.message);
   } finally {
-    btn.disabled=false; btn.textContent='Загрузить';
+    btn.disabled=false; btn.textContent='🔄 Обновить из WB';
   }
+}
+
+// Показывает, когда факт был получен из WB (источник: кэш БД или свежий запрос)
+function updateFreshness(meta){
+  const el = document.getElementById('freshness');
+  if(!el || !meta) return;
+  if(!meta.fetched_at){ el.textContent=''; return; }
+  const dt = new Date(meta.fetched_at);
+  const ageH = (Date.now() - dt.getTime()) / 3600000;
+  const when = dt.toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const src  = meta.from_cache ? 'из БД' : 'свежее из WB';
+  const warn = ageH >= 24 ? ' ⚠️' : '';
+  el.innerHTML = `<span style="color:var(--text3)">обновлено: ${when} (${src})${warn}</span>`;
+}
+
+// Автозагрузка из кэша при смене кабинета/месяца
+function autoLoad(){
+  const month = document.getElementById('month-inp').value;
+  if(month) loadData(false);
 }
 
 function showError(msg){
@@ -615,8 +646,6 @@ function buildTableHead(arts){
     ${S(pctSal!==null?pctBadge(pctSal):'—')}
     ${S(fmt(fOrdRub),true)}
     ${S(fmt(fOrdQty),true)}
-    ${S(fmt(fSalRub),true)}
-    ${S(fmt(fSalQty),true)}
     ${S(pFOrd!==null?pctBadge(pFOrd):'—')}
     ${S(pFSal!==null?pctBadge(pFSal):'—')}
   </tr>
@@ -643,8 +672,6 @@ function buildTableHead(arts){
     <th class="grp-exec">%Вып. продажи</th>
     <th class="grp-prognoz">Прогноз заказы ₽</th>
     <th class="grp-prognoz">Прогноз заказы шт</th>
-    <th class="grp-prognoz">Прогноз прод. ₽</th>
-    <th class="grp-prognoz">Прогноз прод. шт</th>
     <th class="grp-prognoz">%Прогноз заказы</th>
     <th class="grp-prognoz">%Прогноз продажи</th>
   </tr>
@@ -697,8 +724,6 @@ function makeRow(a){
     <td>${pctBadge(a.pct_sales)}</td>
     <td style="color:var(--orange);font-weight:600">${fmt(f.fOrdRub)}</td>
     <td style="color:var(--orange)">${fmt(f.fOrdQty)}</td>
-    <td style="color:var(--orange);font-weight:600">${fmt(f.fSalRub)}</td>
-    <td style="color:var(--orange)">${fmt(f.fSalQty)}</td>
     <td>${pctBadge(f.pFOrd)}</td>
     <td>${pctBadge(f.pFSal)}</td>
   </tr>`;
