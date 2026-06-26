@@ -221,6 +221,29 @@ def _ensure_design_tables():
                         UNIQUE (project, vendor_code)
                     )
                 """)
+                # Снимок факта план-факта по месяцам — сохраняется при каждом
+                # просмотре /api/plan-fact, чтобы для прошлых (уже завершённых)
+                # месяцев не дёргать WB API повторно при авто-расчёте плана на
+                # будущий месяц (свой rate-limit у sales-funnel эндпоинта)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS planfact_snapshots (
+                        id               SERIAL PRIMARY KEY,
+                        project          TEXT NOT NULL,
+                        month            DATE NOT NULL,
+                        vendor_code      TEXT NOT NULL,
+                        nm_id            BIGINT,
+                        title            TEXT DEFAULT '',
+                        orders_qty_fact  INTEGER NOT NULL DEFAULT 0,
+                        orders_rub_fact  NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        sales_qty_fact   INTEGER NOT NULL DEFAULT 0,
+                        sales_rub_fact   NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        avg_price        NUMERIC(12,2) NOT NULL DEFAULT 0,
+                        buyout_pct       NUMERIC(5,2) NOT NULL DEFAULT 0,
+                        is_complete      BOOLEAN NOT NULL DEFAULT FALSE,
+                        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE (project, month, vendor_code)
+                    )
+                """)
                 # Подзадачи
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS subtasks (
@@ -2077,6 +2100,67 @@ def api_plan_fact_get():
     try:
         from wb_api import collect_planfact_data
         data = collect_planfact_data(cabinet, d_from, d_to)
+
+        # Снимок факта месяца — сохраняем свежие данные в БД (is_complete=True,
+        # только если запрошенный период покрывает месяц целиком, т.е. месяц уже
+        # завершился), чтобы при планировании следующего месяца не дёргать WB API
+        # повторно (у sales-funnel свой строгий rate-limit).
+        is_complete_now = (d_to == month_date.replace(day=last_day))
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    for a in data["articles"]:
+                        cur.execute("""
+                            INSERT INTO planfact_snapshots
+                                (project, month, vendor_code, nm_id, title,
+                                 orders_qty_fact, orders_rub_fact, sales_qty_fact, sales_rub_fact,
+                                 avg_price, buyout_pct, is_complete, updated_at)
+                            VALUES (%s,%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, NOW())
+                            ON CONFLICT (project, month, vendor_code) DO UPDATE SET
+                                nm_id=EXCLUDED.nm_id, title=EXCLUDED.title,
+                                orders_qty_fact=EXCLUDED.orders_qty_fact,
+                                orders_rub_fact=EXCLUDED.orders_rub_fact,
+                                sales_qty_fact=EXCLUDED.sales_qty_fact,
+                                sales_rub_fact=EXCLUDED.sales_rub_fact,
+                                avg_price=EXCLUDED.avg_price,
+                                buyout_pct=EXCLUDED.buyout_pct,
+                                is_complete=EXCLUDED.is_complete,
+                                updated_at=NOW()
+                        """, (
+                            cabinet, month_date, a["vendor_code"], a.get("nm_id"), a.get("title", ""),
+                            int(a["orders_qty_fact"]), float(a["orders_rub_fact"]),
+                            int(a["sales_qty_fact"]), float(a["sales_rub_fact"]),
+                            float(a.get("avg_price") or 0), float(a.get("buyout_pct") or 0),
+                            is_complete_now,
+                        ))
+                conn.commit()
+        except Exception:
+            logging.exception("planfact_snapshots upsert failed")
+
+        # Если для прошлого месяца есть завершённый снимок в БД — используем его
+        # как факт прошлого месяца (надёжнее и быстрее повторного запроса к WB API,
+        # особенно для текущего/будущего месяца, где WB не отдаёт ненаступившие дни).
+        past_month_date = (
+            month_date.replace(year=month_date.year - 1, month=12)
+            if month_date.month == 1 else
+            month_date.replace(month=month_date.month - 1)
+        )
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT vendor_code, orders_qty_fact FROM planfact_snapshots "
+                        "WHERE project=%s AND month=%s AND is_complete=TRUE",
+                        (cabinet, past_month_date)
+                    )
+                    snap_past = {r["vendor_code"]: int(r["orders_qty_fact"] or 0) for r in cur.fetchall()}
+            if snap_past:
+                for a in data["articles"]:
+                    if a["vendor_code"] in snap_past:
+                        a["orders_qty_past"] = snap_past[a["vendor_code"]]
+        except Exception:
+            logging.exception("planfact_snapshots lookup failed")
+
         # Загружаем план + ярлыки сезонности из БД
         plans: dict = {}
         with get_conn() as conn:
