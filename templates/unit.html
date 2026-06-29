@@ -328,6 +328,11 @@ tfoot td.fcomp{background:var(--comp-bg)}
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     📊 Excel
   </button>
+  <button class="btn-add" id="btnPriceImport" disabled onclick="openPriceImportPicker()"
+    style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
+    📥 Импорт цен (Excel)
+  </button>
+  <input type="file" id="priceImportInput" accept=".xlsx" style="display:none" onchange="onPriceImportFile(event)">
   <button class="btn-add" onclick="openWCoef()"
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     ⚙️ Склады
@@ -414,6 +419,20 @@ tfoot td.fcomp{background:var(--comp-bg)}
   <div class="stp-add">
     <input type="text" id="stpAddInp" placeholder="+ Своя…" onkeydown="if(event.key==='Enter')addStatusPopupPreset()">
     <button onclick="addStatusPopupPreset()">+</button>
+  </div>
+</div>
+
+<!-- Price import (Excel) result modal -->
+<div class="modal-overlay" id="priceImportOverlay" onclick="closePriceImport(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="width:540px">
+    <div class="modal-hdr">
+      <span class="modal-title">📥 Импорт себестоимости и упаковки</span>
+      <button class="modal-close" onclick="closePriceImport()">✕</button>
+    </div>
+    <div class="modal-body" id="priceImportBody" style="padding:14px 20px;max-height:440px"></div>
+    <div class="modal-ftr">
+      <button class="btn-import" onclick="closePriceImport()">Закрыть</button>
+    </div>
   </div>
 </div>
 
@@ -986,6 +1005,7 @@ async function onProjectChange() {
   document.getElementById('btnImport').disabled  = !active;
   document.getElementById('btnRefresh').disabled = !active;
   document.getElementById('btnExcel').disabled   = !active;
+  document.getElementById('btnPriceImport').disabled = !active;
   if (!currentProject) { rows = []; renderContent(); return; }
 
   // Загружаем из БД
@@ -1440,6 +1460,78 @@ async function refreshWB() {
 function exportExcel() {
   if (!currentProject) return;
   window.location.href = '/api/unit-export-excel?project=' + encodeURIComponent(currentProject);
+}
+
+// ─── Импорт себестоимости/упаковки из Excel поставщика ───────────────────────
+function openPriceImportPicker() {
+  if (!currentProject) return;
+  document.getElementById('priceImportInput').value = '';
+  document.getElementById('priceImportInput').click();
+}
+
+async function onPriceImportFile(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  document.getElementById('priceImportBody').innerHTML =
+    '<div class="modal-loading">⏳ Загружаю и сверяю артикулы…</div>';
+  document.getElementById('priceImportOverlay').classList.add('open');
+  try {
+    await flushPendingSaves();
+    const stillDirty = rows.filter(r => r._dirty);
+    if (stillDirty.length) {
+      throw new Error(`Не удалось сохранить ${stillDirty.length} строк(и) — импорт отменён, чтобы не потерять данные. Попробуйте ещё раз.`);
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    const resp = await fetch('/api/unit-import-excel?project=' + encodeURIComponent(currentProject),
+      {method: 'POST', body: fd});
+    const j = await resp.json();
+    if (j.error) throw new Error(j.error);
+    await reloadRowsFromServer();
+    renderPriceImportResult(j);
+  } catch (e) {
+    document.getElementById('priceImportBody').innerHTML =
+      `<div class="modal-loading" style="color:var(--red)">❌ Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderPriceImportResult(j) {
+  let html = `<div style="margin-bottom:12px;font-size:14px">✅ Обновлено строк: <b>${j.updated}</b></div>`;
+  if (j.mismatched && j.mismatched.length) {
+    html += `<div style="color:var(--red);font-weight:600;margin:10px 0 6px">
+      ⚠ Конфликт артикулов (${j.mismatched.length}) — не обновлено, проверьте вручную:</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:10px">
+        <tr style="color:var(--text2)">
+          <th style="text-align:left;padding:2px 6px">Из файла (артикул прод. / ВБ)</th>
+          <th style="text-align:left;padding:2px 6px">В таблице (артикул прод. / ВБ)</th>
+        </tr>` +
+      j.mismatched.map(m => `<tr>
+        <td style="padding:2px 6px">${esc(m.seller_article)} / ${m.wb_article}</td>
+        <td style="padding:2px 6px">${m.found_seller_article ? esc(m.found_seller_article) : '—'} / ${m.found_wb_article || '—'}</td>
+      </tr>`).join('') +
+      '</table>';
+  }
+  if (j.not_found && j.not_found.length) {
+    html += `<div style="color:var(--text2);font-weight:600;margin:10px 0 6px">
+      Не найдено в Юнит (${j.not_found.length}):</div>
+      <div style="font-size:12px;color:var(--text2)">` +
+      j.not_found.map(n => `${esc(n.seller_article)} (${n.wb_article})`).join(', ') +
+      '</div>';
+  }
+  document.getElementById('priceImportBody').innerHTML = html;
+}
+
+function closePriceImport(e) {
+  if (e && e.target !== document.getElementById('priceImportOverlay')) return;
+  document.getElementById('priceImportOverlay').classList.remove('open');
+}
+
+async function reloadRowsFromServer() {
+  const resp = await fetch('/api/unit-rows?project=' + encodeURIComponent(currentProject));
+  const data = await resp.json();
+  rows = Array.isArray(data) ? data : [];
+  rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+  renderContent();
 }
 
 // ─── Массовое редактирование ─────────────────────────────────────────────────

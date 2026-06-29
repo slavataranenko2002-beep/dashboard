@@ -3550,6 +3550,127 @@ def api_unit_import_articles():
         return jsonify({"error": str(e)}), 500
 
 
+def _parse_price_import_excel(file_bytes):
+    """
+    Парсит Excel с колонками типа "Артикул продавца" / "Артикул ВБ" /
+    "Цена прихода" / "ФФ". Названия колонок ищутся по заголовку (первая
+    строка), порядок столбцов не важен.
+    """
+    import io
+    import re
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws = wb.active
+    header = [str(c.value or "").strip().lower() for c in next(ws.iter_rows(min_row=1, max_row=1))]
+
+    def find_col(*variants):
+        for i, h in enumerate(header):
+            if any(v in h for v in variants):
+                return i
+        return None
+
+    i_seller = find_col("артикул продавца")
+    i_wb     = find_col("артикул вб", "артикул wb")
+    i_cost   = find_col("цена прихода")
+    i_pack   = find_col("фф")
+    if i_seller is None or i_wb is None or i_cost is None or i_pack is None:
+        raise ValueError(
+            "Не найдены нужные столбцы (Артикул продавца / Артикул ВБ / Цена прихода / ФФ)"
+        )
+
+    items = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if i_seller >= len(row) or i_wb >= len(row):
+            continue
+        seller_raw = row[i_seller]
+        wb_raw     = row[i_wb]
+        if seller_raw is None or wb_raw is None:
+            continue
+        seller = str(seller_raw).strip()
+        m = re.search(r"(\d+)", str(wb_raw))
+        if not seller or not m:
+            continue
+        cost = row[i_cost] if i_cost < len(row) else None
+        pack = row[i_pack] if i_pack < len(row) else None
+        items.append({
+            "seller_article": seller,
+            "wb_article":     int(m.group(1)),
+            "cost_price":     float(cost) if cost is not None else None,
+            "packaging":      float(pack) if pack is not None else None,
+        })
+    return items
+
+
+@app.route("/api/unit-import-excel", methods=["POST"])
+@require_unit_api
+def api_unit_import_excel():
+    """
+    Импортирует себестоимость и упаковку из Excel-таблицы поставщика,
+    сверяя ОБА артикула (продавца и ВБ) — обновляет только полные совпадения.
+    """
+    project = request.args.get("project", "")
+    if not project:
+        return jsonify({"error": "project required"}), 400
+    if not _check_unit_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "файл не получен"}), 400
+    try:
+        items = _parse_price_import_excel(f.read())
+    except Exception as e:
+        return jsonify({"error": f"Не удалось прочитать файл: {e}"}), 400
+
+    updated, mismatched, not_found = [], [], []
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, wb_article, seller_article FROM unit_economics WHERE project=%s",
+                    (project,)
+                )
+                db_rows = cur.fetchall()
+
+            by_key, by_wb, by_seller = {}, {}, {}
+            for r in db_rows:
+                sa = (r["seller_article"] or "").strip().lower()
+                by_key[(r["wb_article"], sa)] = r["id"]
+                by_wb.setdefault(r["wb_article"], []).append(r)
+                by_seller.setdefault(sa, []).append(r)
+
+            with conn.cursor() as cur:
+                for it in items:
+                    sa_l = it["seller_article"].lower()
+                    row_id = by_key.get((it["wb_article"], sa_l))
+                    if row_id:
+                        cur.execute(
+                            "UPDATE unit_economics SET cost_price=%s, packaging=%s, updated_at=NOW() WHERE id=%s",
+                            (it["cost_price"], it["packaging"], row_id)
+                        )
+                        updated.append(it)
+                        continue
+                    wb_cand     = by_wb.get(it["wb_article"])
+                    seller_cand = by_seller.get(sa_l)
+                    if wb_cand or seller_cand:
+                        mismatched.append({
+                            **it,
+                            "found_seller_article": wb_cand[0]["seller_article"] if wb_cand else None,
+                            "found_wb_article":     seller_cand[0]["wb_article"] if seller_cand else None,
+                        })
+                    else:
+                        not_found.append(it)
+            conn.commit()
+    except Exception as e:
+        logging.error(f"unit-import-excel {project}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({
+        "updated":   len(updated),
+        "mismatched": mismatched,
+        "not_found": not_found,
+    })
+
+
 @app.route("/api/unit-export-excel")
 @require_unit_api
 def api_unit_export_excel():
