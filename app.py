@@ -3671,77 +3671,97 @@ def api_unit_import_excel():
     })
 
 
-@app.route("/api/unit-export-excel")
+def _build_unit_xlsx(project, columns, data_rows, footer=None):
+    """Строит xlsx из уже посчитанных на клиенте значений (columns + rows)."""
+    import io
+    import urllib.parse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    fmt_map = {
+        "money": '#,##0" ₽"',
+        "pct":   '0.0"%"',
+        "int":   '#,##0',
+        "num":   '0.0',
+        "text":  None,
+    }
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = (project or "Юнит")[:31]
+
+    hdr_font = Font(bold=True, color="FFFFFF")
+    hdr_fill = PatternFill("solid", fgColor="1F3A5F")
+    center   = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for ci, col in enumerate(columns, 1):
+        cell = ws.cell(row=1, column=ci, value=col.get("label", ""))
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        cell.alignment = center
+
+    for ri, row in enumerate(data_rows, 2):
+        for ci, col in enumerate(columns, 1):
+            v = row[ci - 1] if ci - 1 < len(row) else None
+            cell = ws.cell(row=ri, column=ci, value=v)
+            nf = fmt_map.get(col.get("fmt", "text"))
+            if nf and isinstance(v, (int, float)) and not isinstance(v, bool):
+                cell.number_format = nf
+
+    if footer:
+        fr = len(data_rows) + 2
+        foot_font = Font(bold=True)
+        foot_fill = PatternFill("solid", fgColor="E8EDF4")
+        for ci, col in enumerate(columns, 1):
+            v = footer[ci - 1] if ci - 1 < len(footer) else None
+            cell = ws.cell(row=fr, column=ci, value=v)
+            cell.font = foot_font
+            cell.fill = foot_fill
+            nf = fmt_map.get(col.get("fmt", "text"))
+            if nf and isinstance(v, (int, float)) and not isinstance(v, bool):
+                cell.number_format = nf
+
+    for ci, col in enumerate(columns, 1):
+        label = str(col.get("label", ""))
+        ws.column_dimensions[get_column_letter(ci)].width = max(11, min(20, len(label) + 3))
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    safe = urllib.parse.quote(f"unit_{project}.xlsx")
+    return Response(
+        buf.read(),
+        headers={
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition": f"attachment; filename=\"unit.xlsx\"; filename*=UTF-8''{safe}",
+        }
+    )
+
+
+@app.route("/api/unit-export-excel", methods=["POST"])
 @require_unit_api
 def api_unit_export_excel():
-    """Выгрузка таблицы юнит-экономики в Excel."""
-    project = request.args.get("project", "")
+    """
+    Выгрузка юнит-экономики в Excel со ВСЕМИ расчётными метриками.
+    Клиент присылает уже посчитанные значения (columns + rows + footer),
+    чтобы выгрузка 1:1 совпадала с тем, что видно в таблице (включая
+    прибыль, маржу, ROI, налог, хранение, капитал и т.д.).
+    """
+    payload = request.get_json(silent=True) or {}
+    project = payload.get("project", "")
     if not project:
         return jsonify({"error": "project required"}), 400
     if not _check_unit_project(_session_user(), project):
         return jsonify({"error": "forbidden"}), 403
+    columns = payload.get("columns") or []
+    data_rows = payload.get("rows") or []
+    footer = payload.get("footer")
+    if not columns:
+        return jsonify({"error": "no columns"}), 400
     try:
-        import io
-        from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT wb_article, seller_article, brand,
-                           cost_price, packaging, logistics_to_wb, overhead, defect_pct,
-                           liters, redemption_pct, warehouse, irp, logistics_ktr,
-                           commission_pct, wb_price, spp_pct,
-                           drr_pct, drr_external_rub, stock
-                    FROM unit_economics WHERE project=%s ORDER BY id ASC
-                """, (project,))
-                rows = [dict(r) for r in cur.fetchall()]
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = project
-
-        headers = [
-            "WB артикул", "Арт. продавца", "Бренд",
-            "Себест.₽", "Упак.₽", "Лог.ВБ₽", "Накл.₽", "Брак%",
-            "Литраж", "%выкупа", "Склад", "ИРП", "Лог+КТР",
-            "Комис.%", "Цена ВБ₽", "СПП%",
-            "ДРР%", "ДРР₽", "Остаток"
-        ]
-        keys = [
-            "wb_article", "seller_article", "brand",
-            "cost_price", "packaging", "logistics_to_wb", "overhead", "defect_pct",
-            "liters", "redemption_pct", "warehouse", "irp", "logistics_ktr",
-            "commission_pct", "wb_price", "spp_pct",
-            "drr_pct", "drr_external_rub", "stock"
-        ]
-
-        hdr_font = Font(bold=True, color="FFFFFF")
-        hdr_fill = PatternFill("solid", fgColor="1F3A5F")
-        for col, h in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=h)
-            cell.font = hdr_font
-            cell.fill = hdr_fill
-            cell.alignment = Alignment(horizontal="center")
-
-        for ri, row in enumerate(rows, 2):
-            for ci, key in enumerate(keys, 1):
-                v = row.get(key)
-                ws.cell(row=ri, column=ci, value=float(v) if hasattr(v, '__float__') and not isinstance(v, (int, bool)) else v)
-
-        for col in ws.columns:
-            ws.column_dimensions[col[0].column_letter].width = 14
-
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        fname = f"unit_{project}.xlsx"
-        return Response(
-            buf.read(),
-            headers={
-                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "Content-Disposition": f'attachment; filename="{fname}"',
-            }
-        )
+        return _build_unit_xlsx(project, columns, data_rows, footer)
     except Exception as e:
         logging.error(f"unit-export-excel {project}: {e}")
         return jsonify({"error": str(e)}), 500

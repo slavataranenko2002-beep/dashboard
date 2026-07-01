@@ -1457,9 +1457,139 @@ async function refreshWB() {
   }
 }
 
-function exportExcel() {
+// Полный набор столбцов выгрузки (порядок = как в таблице) с расчётными метриками.
+// fmt: text | money | pct | int | num ; foot: sum | avg | null
+const EXPORT_COLS = [
+  {k:'seller_article',   label:'Арт. продавца',       fmt:'text'},
+  {k:'wb_article',       label:'WB арт.',             fmt:'text'},
+  {k:'status',           label:'Статус',              fmt:'text'},
+  {k:'brand',            label:'Бренд',               fmt:'text'},
+  {k:'cost_price',       label:'Себест., ₽',          fmt:'money'},
+  {k:'packaging',        label:'Упаковка, ₽',         fmt:'money'},
+  {k:'logistics_to_wb',  label:'Лог. до ВБ, ₽',       fmt:'money'},
+  {k:'overhead',         label:'Накладные, ₽',        fmt:'money'},
+  {k:'defect_pct',       label:'Брак, %',             fmt:'pct'},
+  {k:'totalCost',        label:'Итог. себест., ₽',    fmt:'money', foot:'sum'},
+  {k:'liters',           label:'Литраж',              fmt:'num'},
+  {k:'redemption_pct',   label:'Выкуп, %',            fmt:'pct',   foot:'avg'},
+  {k:'warehouse',        label:'Склад',               fmt:'text'},
+  {k:'irp',              label:'ИРП',                 fmt:'num'},
+  {k:'il',               label:'ИЛ',                  fmt:'num'},
+  {k:'logKtr',           label:'Лог+КТР, ₽',          fmt:'money', foot:'avg'},
+  {k:'storage30',        label:'Хранение/30д, ₽',     fmt:'money'},
+  {k:'storTotal',        label:'Хран.×Ост., ₽',       fmt:'money', foot:'sum'},
+  {k:'commission_pct',   label:'Комиссия, %',         fmt:'pct'},
+  {k:'wb_price',         label:'Цена ВБ, ₽',          fmt:'money'},
+  {k:'spp_pct',          label:'СПП, %',              fmt:'pct'},
+  {k:'clientPrice',      label:'Цена клиенту, ₽',     fmt:'money', foot:'avg'},
+  {k:'tax_system',       label:'Система налог.',      fmt:'text'},
+  {k:'usn',              label:'Налог, ₽',            fmt:'money', foot:'sum'},
+  {k:'drr_pct',          label:'ДРР, %',              fmt:'pct'},
+  {k:'drrRub',           label:'ДРР, ₽',              fmt:'money', foot:'sum'},
+  {k:'stock',            label:'Остаток',             fmt:'int',   foot:'sum'},
+  {k:'capital',          label:'Капитал (ост.), ₽',   fmt:'money', foot:'sum'},
+  {k:'capitalCost',      label:'Капитал (себес.), ₽', fmt:'money', foot:'sum'},
+  {k:'commission',       label:'Комиссия, ₽',         fmt:'money'},
+  {k:'profit',           label:'Прибыль, ₽',          fmt:'money', foot:'sum'},
+  {k:'margin',           label:'Маржа, %',            fmt:'pct',   foot:'avg'},
+  {k:'roi',              label:'ROI, %',              fmt:'pct',   foot:'avg'},
+  {k:'batchMargin',      label:'Маржа партии, %',     fmt:'pct',   foot:'avg'},
+];
+
+function exportRound0(v){ return Math.round(v || 0); }
+function exportRound1(v){ return Math.round((v || 0) * 10) / 10; }
+
+function exportVal(r, k, c) {
+  switch (k) {
+    case 'seller_article':  return r.seller_article || '';
+    case 'wb_article':      return String(r.wb_article || '');
+    case 'status':          return r.status || '';
+    case 'brand':           return r.brand || '';
+    case 'cost_price':      return +r.cost_price || 0;
+    case 'packaging':       return +r.packaging || 0;
+    case 'logistics_to_wb': return +r.logistics_to_wb || 0;
+    case 'overhead':        return +r.overhead || 0;
+    case 'defect_pct':      return +r.defect_pct || 0;
+    case 'totalCost':       return exportRound0(c.totalCost);
+    case 'liters':          return +r.liters || exportRound1(c.liters);
+    case 'redemption_pct':  return +r.redemption_pct || 100;
+    case 'warehouse':       return r.warehouse || '';
+    case 'irp':             return +r.irp || 1;
+    case 'il':              return +r.il || 1;
+    case 'logKtr':          return exportRound0(c.logKtr);
+    case 'storage30':       return exportRound0(c.storage30);
+    case 'storTotal':       return exportRound0(c.storTotal);
+    case 'commission_pct':  return +r.commission_pct || 36;
+    case 'wb_price':        return +r.wb_price || 0;
+    case 'spp_pct':         return +r.spp_pct || 0;
+    case 'clientPrice':     return exportRound0(c.clientPrice);
+    case 'tax_system':      return r.tax_system || '';
+    case 'usn':             return exportRound0(c.usn);
+    case 'drr_pct':         return +r.drr_pct || 0;
+    case 'drrRub':          return exportRound0((+r.wb_price || 0) * (+r.drr_pct || 0) / 100);
+    case 'stock':           return +r.stock || 0;
+    case 'capital':         return exportRound0((+r.wb_price || 0) * (+r.stock || 0));
+    case 'capitalCost':     return exportRound0((+r.cost_price || 0) * (+r.stock || 0));
+    case 'commission':      return exportRound0(c.commission);
+    case 'profit':          return exportRound0(c.profit);
+    case 'margin':          return exportRound1(c.margin);
+    case 'roi':             return exportRound1(c.roi);
+    case 'batchMargin':     return exportRound1(c.batchMargin);
+    default:                return '';
+  }
+}
+
+function buildExportFooter(dr) {
+  if (!dr.length) return null;
+  const n = dr.length;
+  const acc = {};
+  EXPORT_COLS.forEach(col => { if (col.foot) acc[col.k] = 0; });
+  dr.forEach(r => {
+    const c = compute(r);
+    EXPORT_COLS.forEach(col => {
+      if (!col.foot) return;
+      acc[col.k] += Number(exportVal(r, col.k, c)) || 0;
+    });
+  });
+  return EXPORT_COLS.map((col, i) => {
+    if (i === 0) return `Итого (${n})`;
+    if (!col.foot) return '';
+    return col.foot === 'avg' ? exportRound1(acc[col.k] / n) : exportRound0(acc[col.k]);
+  });
+}
+
+async function exportExcel() {
   if (!currentProject) return;
-  window.location.href = '/api/unit-export-excel?project=' + encodeURIComponent(currentProject);
+  const dr = filteredSortedRows();
+  if (!dr.length) { alert('Нет строк для выгрузки'); return; }
+  const payload = {
+    project: currentProject,
+    columns: EXPORT_COLS.map(c => ({label: c.label, fmt: c.fmt})),
+    rows:    dr.map(r => { const c = compute(r); return EXPORT_COLS.map(col => exportVal(r, col.k, c)); }),
+    footer:  buildExportFooter(dr),
+  };
+  try {
+    const resp = await fetch('/api/unit-export-excel', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const j = await resp.json().catch(() => ({}));
+      throw new Error(j.error || ('HTTP ' + resp.status));
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `unit_${currentProject}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Ошибка выгрузки Excel: ' + e.message);
+  }
 }
 
 // ─── Импорт себестоимости/упаковки из Excel поставщика ───────────────────────
