@@ -126,7 +126,7 @@ tfoot td.left{text-align:left;color:var(--text2)}
     <option value="{{ p }}">{{ project_emoji[p] }} {{ p }}</option>
     {% endfor %}
   </select>
-  <button class="btn" id="refreshBtn" onclick="loadDecomp()" disabled>🔄 Обновить остатки</button>
+  <button class="btn" id="refreshBtn" onclick="loadDecomp(true)" disabled>🔄 Обновить из WB</button>
   <button class="btn btn-primary" id="addBtn" onclick="openEditor(null)" disabled>+ Группа</button>
   <div class="tsep"></div>
   <span class="fetched" id="fetched"></span>
@@ -197,7 +197,7 @@ async function onProjectChange(){
     return;
   }
   await loadPresets();
-  loadDecomp();
+  loadDecomp(false);
 }
 
 async function loadPresets(){
@@ -207,22 +207,33 @@ async function loadPresets(){
   render();
 }
 
-async function loadDecomp(){
+function fmtStamp(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2,'0');
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// force=false — быстро из БД (снапшот); force=true — «Обновить из WB»
+async function loadDecomp(force){
   if(!CUR) return;
   const btn = document.getElementById('refreshBtn');
-  btn.disabled = true; btn.textContent = '⏳ Загрузка…';
-  document.getElementById('fetched').textContent = 'считаю по данным План-факта…';
+  btn.disabled = true;
+  btn.textContent = force ? '⏳ Тяну из WB…' : '⏳ Загрузка…';
+  if(force) document.getElementById('fetched').textContent = 'обновляю данные из WB (может занять до минуты)…';
   try{
-    const r = await fetch('/api/season/decomposition?project='+encodeURIComponent(CUR));
+    const url = '/api/season/decomposition?project='+encodeURIComponent(CUR)+(force?'&refresh=1':'');
+    const r = await fetch(url);
     const data = await r.json();
     if(data.error){ document.getElementById('fetched').textContent = '⚠ '+data.error; return; }
     DECOMP = {};
     (data.presets||[]).forEach(p => DECOMP[p.id] = p);
+    const stamp = fmtStamp(data.fetched_at);
     document.getElementById('fetched').textContent =
-      `из План-факта · ${data.pace_month||''} · темп за ${data.pace_days} дн`;
+      `обновлено ${stamp} · ${data.pace_month||''} · темп за ${data.pace_days} дн`;
     render();
   } finally {
-    btn.disabled = false; btn.textContent = '🔄 Обновить остатки';
+    btn.disabled = false; btn.textContent = '🔄 Обновить из WB';
   }
 }
 
@@ -248,7 +259,7 @@ function renderCard(p){
   if(!p.items.length){
     body = '<div class="empty-items">Нет артикулов. Откройте «Изменить» и добавьте товары в группу.</div>';
   } else if(!d){
-    body = '<div class="empty-items">Нажмите «Обновить остатки», чтобы посчитать декомпозицию.</div>';
+    body = '<div class="empty-items">Нет данных по кабинету. Нажмите «Обновить из WB».</div>';
   } else {
     const signLag  = (v,f)=> v==null ? '—' : (v>0 ? '+'+f(v) : f(v));
     const lagClass = v => v==null ? '' : (v>0 ? 'lag-bad' : 'lag-ok');
@@ -394,7 +405,7 @@ async function savePreset(){
     await fetch('/api/season/presets/'+pid+'/items', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})});
     closeEditor();
     await loadPresets();
-    loadDecomp();
+    loadDecomp(false);
   } catch(e){
     err.textContent = 'Ошибка сохранения'; btn.disabled = false; return;
   }

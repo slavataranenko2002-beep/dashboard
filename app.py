@@ -491,6 +491,20 @@ def _ensure_season_tables():
                     )
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_season_preset_items_preset ON season_preset_items(preset_id)")
+
+                # Снапшот метрик из План-факта по кабинету (обновляется утренним кроном/кнопкой).
+                # articles = список {nm_id, vendor_code, stock, buyout_pct, avg_price, pace, name}.
+                # При обычном открытии данные берём отсюда (без обращения к WB) и мгновенно
+                # пересчитываем декомпозицию поверх текущих групп.
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS season_cache (
+                        project      TEXT PRIMARY KEY,
+                        articles     JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        days_elapsed INTEGER NOT NULL DEFAULT 1,
+                        pace_month   TEXT DEFAULT '',
+                        fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
             conn.commit()
         logging.info("Season tables ready.")
     except Exception as e:
@@ -4806,21 +4820,26 @@ def _season_load_presets(project: str) -> list:
     return [_season_serialize_preset(p, items_by_preset.get(p["id"], [])) for p in presets]
 
 
-def _season_pf_index(cabinet: str, today: date):
+def _season_build_snapshot(cabinet: str, today: date, force: bool = False) -> dict:
     """
-    Данные из План-факта за ТЕКУЩИЙ месяц по артикулам кабинета (источник правды для
-    темпа сезона): %выкупа, темп заказов/день, средняя цена, остаток (= quantityFull =
-    склад + в пути к клиенту + в пути от клиента). Сначала пробуем кэш План-факта
-    (обычно уже прогрет), иначе тянем из WB и кладём в тот же кэш.
+    Собирает снапшот метрик кабинета из План-факта за ТЕКУЩИЙ месяц (источник правды):
+    %выкупа, темп заказов/день, средняя цена, остаток (= quantityFull = склад + в пути
+    к клиенту + в пути от клиента). Обращается к WB и кладёт результат в `season_cache`.
 
-    Возвращает (by_nm, by_vc, days_elapsed): индексы по nmId и по vendor_code.
+    force=False — можно переиспользовать прогретый кэш План-факта (для первого
+    открытия). force=True (кнопка/крон) — всегда тянет свежие данные из WB.
+
+    Возвращает снапшот {articles, days_elapsed, pace_month, fetched_at}.
     """
     import calendar
     month_start = today.replace(day=1)
-    cached, _fetched_at, _complete = _pf_load_cache(cabinet, month_start)
-    if cached:
-        pf_articles = cached.get("articles", []) or []
-    else:
+
+    pf_articles = None
+    if not force:
+        cached, _fetched_at, _complete = _pf_load_cache(cabinet, month_start)
+        if cached:
+            pf_articles = cached.get("articles", []) or []
+    if pf_articles is None:
         from wb_api import collect_planfact_data
         last_day  = calendar.monthrange(month_start.year, month_start.month)[1]
         month_end = month_start.replace(day=last_day)
@@ -4834,22 +4853,87 @@ def _season_pf_index(cabinet: str, today: date):
     # Дней с фактическими данными в текущем месяце (факт идёт по вчерашний день включ.)
     days_elapsed = max(1, today.day - 1)
 
+    articles = []
+    for a in pf_articles:
+        articles.append({
+            "nm_id":          a.get("nm_id"),
+            "vendor_code":    a.get("vendor_code") or "",
+            "name":           a.get("title") or "",
+            "stock":          int(a.get("stocks") or 0),
+            "buyout_pct":     round(float(a.get("buyout_pct") or 0), 1),
+            "avg_price":      round(float(a.get("avg_price") or 0)),
+            "orders_qty":     int(a.get("orders_qty_fact") or 0),
+        })
+
+    snapshot = {
+        "articles":     articles,
+        "days_elapsed": days_elapsed,
+        "pace_month":   today.strftime("%Y-%m"),
+        "fetched_at":   datetime.now().isoformat(),
+    }
+    _season_store_snapshot(cabinet, snapshot)
+    return snapshot
+
+
+def _season_store_snapshot(cabinet: str, snapshot: dict):
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO season_cache (project, articles, days_elapsed, pace_month, fetched_at)
+                    VALUES (%s, %s::jsonb, %s, %s, NOW())
+                    ON CONFLICT (project) DO UPDATE SET
+                        articles=EXCLUDED.articles, days_elapsed=EXCLUDED.days_elapsed,
+                        pace_month=EXCLUDED.pace_month, fetched_at=NOW()
+                """, (cabinet, json.dumps(snapshot["articles"]),
+                      snapshot["days_elapsed"], snapshot["pace_month"]))
+            conn.commit()
+    except Exception:
+        logging.exception("season_cache store failed")
+
+
+def _season_load_snapshot(cabinet: str) -> dict | None:
+    """Читает снапшот метрик кабинета из season_cache (без обращения к WB)."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT articles, days_elapsed, pace_month, fetched_at "
+                    "FROM season_cache WHERE project=%s", (cabinet,)
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "articles":     row["articles"] or [],
+            "days_elapsed": row["days_elapsed"] or 1,
+            "pace_month":   row["pace_month"] or "",
+            "fetched_at":   row["fetched_at"].isoformat() if row["fetched_at"] else None,
+        }
+    except Exception:
+        logging.exception("season_cache load failed")
+        return None
+
+
+def _season_index_from_snapshot(snapshot: dict):
+    """Строит индексы (by_nm, by_vc) из снапшота для быстрого расчёта декомпозиции."""
+    days_elapsed = max(1, int(snapshot.get("days_elapsed") or 1))
     by_nm: dict = {}
     by_vc: dict = {}
-    for a in pf_articles:
+    for a in snapshot.get("articles", []):
         rec = {
-            "stock":          int(a.get("stocks") or 0),
+            "stock":          int(a.get("stock") or 0),
             "buyout_pct":     float(a.get("buyout_pct") or 0),
             "avg_price":      float(a.get("avg_price") or 0),
-            "pace":           (int(a.get("orders_qty_fact") or 0) / days_elapsed),
+            "pace":           (int(a.get("orders_qty") or 0) / days_elapsed),
             "seller_article": a.get("vendor_code") or "",
-            "name":           a.get("title") or "",
+            "name":           a.get("name") or "",
         }
         if a.get("nm_id"):
             by_nm[a["nm_id"]] = rec
         if a.get("vendor_code"):
             by_vc[str(a["vendor_code"])] = rec
-    return by_nm, by_vc, days_elapsed
+    return by_nm, by_vc
 
 
 def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date) -> dict:
@@ -4953,30 +5037,23 @@ def season_page():
 @app.route("/api/season/articles")
 @require_season_api
 def api_season_articles():
-    """Список артикулов кабинета с текущим остатком (для добавления в пресет)."""
+    """
+    Список артикулов кабинета с остатком для пикера пресета. Берём из снапшота метрик
+    (season_cache) — быстро и совпадает с таблицей. Если снапшота нет — соберём его.
+    """
     project = request.args.get("project", "").strip()
     if not project or project not in WB_CABINETS:
         return jsonify({"error": "project required"}), 400
     try:
-        from wb_api import WBClient, fmt_date
-        today = date.today()
-        with WBClient(project) as wb:
-            stocks = wb.get_stocks(fmt_date(today - timedelta(days=180)))
-        by_id: dict = {}
-        for s in stocks or []:
-            nm = s.get("nmId")
-            if not nm:
-                continue
-            qty = s.get("quantityFull") or s.get("quantity") or 0
-            if nm in by_id:
-                by_id[nm]["stock"] += qty
-            else:
-                by_id[nm] = {
-                    "wb_article":     nm,
-                    "seller_article": s.get("supplierArticle", ""),
-                    "stock":          qty,
-                }
-        rows = sorted(by_id.values(), key=lambda r: r["seller_article"])
+        snapshot = _season_load_snapshot(project)
+        if snapshot is None:
+            snapshot = _season_build_snapshot(project, date.today(), force=False)
+        rows = [
+            {"wb_article": a["nm_id"], "seller_article": a.get("vendor_code") or "",
+             "stock": int(a.get("stock") or 0)}
+            for a in snapshot.get("articles", []) if a.get("nm_id")
+        ]
+        rows.sort(key=lambda r: r["seller_article"])
         return jsonify(rows)
     except Exception as e:
         logging.error(f"season/articles {project}: {e}")
@@ -5105,33 +5182,75 @@ def api_season_presets_set_items(preset_id):
         return jsonify({"error": str(e)}), 500
 
 
+def _season_decomp_payload(project: str, snapshot: dict, today: date) -> dict:
+    """Считает декомпозицию по всем группам кабинета поверх снапшота метрик."""
+    presets = _season_load_presets(project)
+    by_nm, by_vc = _season_index_from_snapshot(snapshot)
+    computed = [_season_compute(p, by_nm, by_vc, today) for p in presets]
+    return {
+        "presets":    computed,
+        "pace_days":  snapshot.get("days_elapsed", 1),
+        "pace_month": snapshot.get("pace_month", ""),
+        "fetched_at": snapshot.get("fetched_at"),
+    }
+
+
 @app.route("/api/season/decomposition")
 @require_season_api
 def api_season_decomposition():
     """
-    Живая декомпозиция по всем пресетам кабинета. Все показатели (остаток, %выкупа,
-    средняя цена, текущий темп заказов/день) берутся из План-факта за текущий месяц —
-    один источник правды, совпадает с вкладкой «План-Факт».
+    Декомпозиция по всем группам кабинета. При обычном открытии — мгновенно из снапшота
+    метрик в БД (`season_cache`), без обращения к WB. С ?refresh=1 (кнопка «Обновить из
+    WB») — тянет свежие данные из План-факта и обновляет снапшот. Если снапшота ещё нет
+    — собирает его один раз.
     """
     project = request.args.get("project", "").strip()
     if not project or project not in WB_CABINETS:
         return jsonify({"error": "project required"}), 400
-    presets = _season_load_presets(project)
-    if not presets:
-        return jsonify({"presets": [], "fetched_at": datetime.now().isoformat()})
+    force = request.args.get("refresh", "") in ("1", "true", "yes")
     try:
         today = date.today()
-        by_nm, by_vc, days_elapsed = _season_pf_index(project, today)
-        computed = [_season_compute(p, by_nm, by_vc, today) for p in presets]
-        return jsonify({
-            "presets":       computed,
-            "pace_days":     days_elapsed,   # дней текущего месяца, по которым считается темп
-            "pace_month":    today.strftime("%Y-%m"),
-            "fetched_at":    datetime.now().isoformat(),
-        })
+        snapshot = None if force else _season_load_snapshot(project)
+        if snapshot is None:
+            snapshot = _season_build_snapshot(project, today, force=force)
+        payload = _season_decomp_payload(project, snapshot, today)
+        payload["from_cache"] = not force
+        return jsonify(payload)
     except Exception as e:
         logging.error(f"season/decomposition {project}: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/season/cron-refresh", methods=["GET", "POST"])
+def api_season_cron_refresh():
+    """
+    Утреннее обновление снапшотов по ВСЕМ кабинетам (для Railway cron). Защита — токен
+    в env `SEASON_CRON_TOKEN` (передаётся как ?token= или заголовок X-Cron-Token).
+    Если токен не задан в окружении — endpoint выключен (503).
+    """
+    expected = os.environ.get("SEASON_CRON_TOKEN", "")
+    if not expected:
+        return jsonify({"error": "cron disabled (no SEASON_CRON_TOKEN)"}), 503
+    got = request.args.get("token", "") or request.headers.get("X-Cron-Token", "")
+    if got != expected:
+        return jsonify({"error": "forbidden"}), 403
+    # Опционально можно обновлять по одному кабинету (?cabinet=), чтобы не упереться в
+    # timeout gunicorn при большом числе кабинетов — крон дёргает их по очереди.
+    one = request.args.get("cabinet", "").strip()
+    cabinets = [one] if one else list(WB_CABINETS)
+    if one and one not in WB_CABINETS:
+        return jsonify({"error": "unknown cabinet"}), 400
+    today = date.today()
+    refreshed, errors = [], {}
+    for cabinet in cabinets:
+        try:
+            snap = _season_build_snapshot(cabinet, today, force=True)
+            refreshed.append({"cabinet": cabinet, "articles": len(snap["articles"])})
+        except Exception as e:
+            logging.error(f"season cron-refresh {cabinet}: {e}")
+            errors[cabinet] = str(e)
+    return jsonify({"ok": True, "refreshed": refreshed, "errors": errors,
+                    "at": datetime.now().isoformat()})
 
 
 if __name__ == "__main__":
