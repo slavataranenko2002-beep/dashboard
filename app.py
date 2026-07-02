@@ -2490,10 +2490,23 @@ def api_plan_fact_get():
         _pf_maybe_backup(cabinet)
 
         # ── Req #5: факт прошлого месяца + откат ср.цены/выкупа берём из кэша БД ──
-        # orders_qty_past = факт заказов прошлого месяца (для авто-расчёта плана).
+        # orders_qty_past = ФИНАЛЬНЫЙ факт заказов прошлого месяца (для авто-расчёта плана).
         # avg_price/buyout: берём прошлый месяц ТОЛЬКО если за выбранный месяц их нет.
+        # Важно: WB-воронка за «past»-период отдаёт заниженные/нестабильные числа,
+        # поэтому источник истины — сохранённый факт прошлого месяца (selected=тот месяц).
+        # Если полного снимка прошлого месяца нет (или он неполный, снят до конца месяца),
+        # дозапрашиваем один раз из WB — месяц уже закрыт, данные финальны.
         past_month_date = _pf_prev_month(month_date)
-        past_cached, _, _ = _pf_load_cache(cabinet, past_month_date)
+        past_last = calendar.monthrange(past_month_date.year, past_month_date.month)[1]
+        past_end  = past_month_date.replace(day=past_last)
+        past_cached, _pf_ts, past_complete = _pf_load_cache(cabinet, past_month_date)
+        if past_end < today and not past_complete:
+            try:
+                pdata = collect_planfact_data(cabinet, past_month_date, past_end)
+                _pf_store_cache(cabinet, past_month_date, pdata, True)
+                past_cached = {"articles": pdata["articles"], "totals": pdata["totals"]}
+            except Exception:
+                logging.exception("prev-month final fetch failed")
         if past_cached:
             past_by_vc = {}
             for pa in past_cached.get("articles", []):
