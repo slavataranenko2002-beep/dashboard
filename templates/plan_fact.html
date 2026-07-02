@@ -49,6 +49,16 @@ a{color:var(--blue);text-decoration:none}
   background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;transition:all .15s;display:none}
 .xl-btn:hover{border-color:var(--green);color:var(--green)}
 .xl-upload{display:none}
+/* Excel dropdown */
+.xl-menu-wrap{position:relative;display:inline-block}
+#xl-menu-btn{display:inline-block}
+.xl-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:60;min-width:180px;
+  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.28);padding:4px;display:none}
+.xl-menu.open{display:block}
+.xl-menu button{display:block;width:100%;text-align:left;background:transparent;border:none;
+  color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;cursor:pointer}
+.xl-menu button:hover{background:var(--bg3);color:var(--green)}
 .ctrl-sep{width:1px;height:24px;background:var(--border);margin:0 4px}
 
 /* KPI cards */
@@ -216,11 +226,15 @@ table.hide-exp .col-exp{display:none}
   <span id="freshness" style="font-size:11px;margin-left:4px"></span>
   <div class="ctrl-sep"></div>
   <button class="save-btn" id="save-btn" onclick="savePlan()">💾 Сохранить план</button>
-  <button class="xl-btn" id="xl-down-btn" onclick="downloadTemplate()" title="Скачать шаблон Excel с текущими значениями плана">📥 Excel шаблон</button>
-  <label class="xl-btn" id="xl-up-btn" title="Загрузить заполненный Excel с планом">
-    📤 Загрузить план
+  <button class="xl-btn" id="clear-plan-btn" onclick="clearPlan()" title="Удалить все плановые значения за выбранный месяц" style="display:none">🧹 Очистить план</button>
+  <div class="xl-menu-wrap" id="xl-menu-wrap" style="display:none">
+    <button class="xl-btn" id="xl-menu-btn" onclick="toggleXlMenu(event)" title="Excel: скачать / загрузить план">📊 Excel ▾</button>
+    <div class="xl-menu" id="xl-menu">
+      <button onclick="downloadTemplate();closeXlMenu()">📥 Скачать Excel</button>
+      <button id="xl-up-item" onclick="document.getElementById('xl-upload').click();closeXlMenu()">📤 Загрузить Excel</button>
+    </div>
     <input type="file" class="xl-upload" id="xl-upload" accept=".xlsx,.xls" onchange="uploadTemplate(event)">
-  </label>
+  </div>
   <button class="xl-btn" id="season-btn" onclick="openSeasonModal()" style="display:none">🌸 Сезонность</button>
   <div class="ctrl-sep"></div>
   <button class="col-toggle" id="tog-ff"  onclick="toggleCol('ff')"  title="Показать/скрыть столбец «Остаток на ФФ»">📦 ФФ</button>
@@ -430,9 +444,13 @@ async function loadData(force){
     renderTable(data);
     applyColVisibility();
     updateFreshness(data.meta);
-    if(CAN_EDIT) document.getElementById('save-btn').style.display='inline-block';
-    document.getElementById('xl-down-btn').style.display='inline-block';
-    if(CAN_EDIT) document.getElementById('xl-up-btn').style.display='inline-flex';
+    if(CAN_EDIT){
+      document.getElementById('save-btn').style.display='inline-block';
+      document.getElementById('clear-plan-btn').style.display='inline-block';
+    } else {
+      const ui=document.getElementById('xl-up-item'); if(ui) ui.style.display='none';
+    }
+    document.getElementById('xl-menu-wrap').style.display='inline-block';
     document.getElementById('season-btn').style.display='inline-block';
     document.getElementById('ff-up-btn').style.display='inline-flex';
   } catch(e){
@@ -469,8 +487,8 @@ function showError(msg){
   document.getElementById('table-footer').style.display='none';
   document.getElementById('pagination').style.display='none';
   document.getElementById('season-btn').style.display='none';
-  document.getElementById('xl-down-btn').style.display='none';
-  document.getElementById('xl-up-btn').style.display='none';
+  document.getElementById('xl-menu-wrap').style.display='none';
+  document.getElementById('clear-plan-btn').style.display='none';
   document.getElementById('ff-up-btn').style.display='none';
 }
 
@@ -1166,6 +1184,38 @@ async function savePlan(){
   } catch(e){
     alert('Ошибка соединения');
     btn.disabled=false; btn.textContent='💾 Сохранить план';
+  }
+}
+
+// ── Excel-меню (скачать / загрузить) ──────────────────────────────────────────
+function toggleXlMenu(e){ e.stopPropagation(); document.getElementById('xl-menu').classList.toggle('open'); }
+function closeXlMenu(){ const m=document.getElementById('xl-menu'); if(m) m.classList.remove('open'); }
+document.addEventListener('click', e=>{ if(!e.target.closest('#xl-menu-wrap')) closeXlMenu(); });
+
+// ── Очистка плана за выбранный месяц ──────────────────────────────────────────
+async function clearPlan(){
+  if(!currentData || !currentCabinet || !currentMonth) return;
+  if(!confirm(`Очистить план за ${currentMonth} для «${currentCabinet}»?\n\nВсе плановые значения этого месяца будут удалены. Факт не затрагивается.`)) return;
+  const btn=document.getElementById('clear-plan-btn');
+  btn.disabled=true; btn.textContent='Очищаю...';
+  try{
+    const r=await fetch(`/api/plan-fact/clear?cabinet=${encodeURIComponent(currentCabinet)}&month=${currentMonth}`, {method:'POST'});
+    const d=await r.json();
+    if(d.error){ alert('Ошибка: '+d.error); btn.disabled=false; btn.textContent='🧹 Очистить план'; return; }
+    // Обнуляем план локально и перерисовываем
+    planEdits={};
+    currentData.articles.forEach(a=>{
+      a.orders_rub_plan=0; a.orders_qty_plan=0; a.sales_rub_plan=0; a.sales_qty_plan=0;
+    });
+    applySort();
+    renderKpi(currentData);
+    renderTable(currentData);
+    applyColVisibility();
+    btn.textContent='✅ Очищено';
+    setTimeout(()=>{ btn.disabled=false; btn.textContent='🧹 Очистить план'; }, 1800);
+  } catch(e){
+    alert('Ошибка соединения: '+e.message);
+    btn.disabled=false; btn.textContent='🧹 Очистить план';
   }
 }
 </script>

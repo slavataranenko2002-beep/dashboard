@@ -2670,6 +2670,41 @@ def api_plan_fact_save():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/plan-fact/clear", methods=["POST"])
+@require_auth
+def api_plan_fact_clear():
+    """Удаляет все плановые значения кабинета за месяц (факт не трогает)."""
+    u = _session_user()
+    if not _planfact_can_edit(u):
+        return jsonify({"error": "forbidden"}), 403
+    allowed = _planfact_allowed(u)
+    if allowed is not None and not allowed:
+        return jsonify({"error": "forbidden"}), 403
+    cabinet   = request.args.get("cabinet", "").strip()
+    month_str = request.args.get("month", "").strip()
+    if not cabinet or not month_str:
+        return jsonify({"error": "cabinet and month required"}), 400
+    if allowed is not None and cabinet not in allowed:
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        month_date = datetime.strptime(month_str, "%Y-%m").date()
+    except ValueError:
+        return jsonify({"error": "invalid month"}), 400
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM sales_plans WHERE project=%s AND month=%s",
+                    (cabinet, month_date)
+                )
+                n = cur.rowcount
+            conn.commit()
+        return jsonify({"ok": True, "deleted": n})
+    except Exception as e:
+        logging.exception("plan clear failed")
+        return jsonify({"error": str(e)}), 500
+
+
 # ─── Коэффициенты сезонности ──────────────────────────────────────────────────
 
 @app.route("/api/season-coefficients", methods=["POST"])
