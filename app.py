@@ -4951,7 +4951,7 @@ def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date) -> dict
     rows = []
     tot = {"stock": 0, "need_orders": 0, "need_per_day": 0, "pace": 0.0,
            "need_sales_rub": 0.0, "need_orders_rub": 0.0, "pace_rub": 0.0,
-           "need_day_rub": 0.0}
+           "need_day_rub": 0.0, "buyout_sum": 0.0, "buyout_cnt": 0}
     for it in preset["items"]:
         nm = it["wb_article"]
         sa = it.get("seller_article") or ""
@@ -4998,8 +4998,12 @@ def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date) -> dict
         tot["need_orders_rub"] += need_orders * price
         tot["pace_rub"]        += pace * price
         tot["need_day_rub"]    += (need_day or 0) * price
+        if buyout > 0:
+            tot["buyout_sum"]  += buyout
+            tot["buyout_cnt"]  += 1
 
     lag_total = tot["need_per_day"] - tot["pace"]
+    avg_buyout = (tot["buyout_sum"] / tot["buyout_cnt"]) if tot["buyout_cnt"] else 0
     return {
         "id":          preset["id"],
         "name":        preset["name"],
@@ -5010,6 +5014,7 @@ def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date) -> dict
         "rows":        rows,
         "totals": {
             "stock":           tot["stock"],
+            "buyout_pct":      round(avg_buyout, 1),
             "need_orders":     tot["need_orders"],
             "need_per_day":    tot["need_per_day"],
             "pace":            round(tot["pace"], 1),
@@ -5045,9 +5050,11 @@ def api_season_articles():
     if not project or project not in WB_CABINETS:
         return jsonify({"error": "project required"}), 400
     try:
+        # Только из снапшота, без обращения к WB. Если снапшота ещё нет — вернём пусто
+        # (пользователь сначала жмёт «Обновить из WB»).
         snapshot = _season_load_snapshot(project)
         if snapshot is None:
-            snapshot = _season_build_snapshot(project, date.today(), force=False)
+            return jsonify([])
         rows = [
             {"wb_article": a["nm_id"], "seller_article": a.get("vendor_code") or "",
              "stock": int(a.get("stock") or 0)}
@@ -5210,9 +5217,21 @@ def api_season_decomposition():
     force = request.args.get("refresh", "") in ("1", "true", "yes")
     try:
         today = date.today()
-        snapshot = None if force else _season_load_snapshot(project)
+        if force:
+            # Явное обновление (кнопка) — единственный путь, который ходит в WB.
+            snapshot = _season_build_snapshot(project, today, force=True)
+        else:
+            # Обычное открытие — ТОЛЬКО из БД, без обращения к WB (иначе медленный
+            # запрос блокирует воркеры gunicorn и роняет весь дашборд).
+            snapshot = _season_load_snapshot(project)
         if snapshot is None:
-            snapshot = _season_build_snapshot(project, today, force=force)
+            # Снапшота ещё нет — отдаём структуру групп с нулевыми метриками и флагом,
+            # чтобы фронт показал «нажмите Обновить из WB». WB не трогаем.
+            snapshot = {"articles": [], "days_elapsed": 1, "pace_month": "", "fetched_at": None}
+            payload = _season_decomp_payload(project, snapshot, today)
+            payload["no_snapshot"] = True
+            payload["from_cache"]  = True
+            return jsonify(payload)
         payload = _season_decomp_payload(project, snapshot, today)
         payload["from_cache"] = not force
         return jsonify(payload)

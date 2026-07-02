@@ -44,6 +44,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 
 .wrap{flex:1;padding:20px;max-width:1500px;width:100%;margin:0 auto}
 .hint{color:var(--text2);font-size:13px;padding:40px 0;text-align:center}
+.banner{background:var(--bg3);border:1px solid var(--yellow);border-radius:10px;
+  padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--text)}
 
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:22px;overflow:hidden}
 .card-hd{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -179,6 +181,8 @@ let DECOMP = {};           // preset_id -> вычисленная декомпо
 let ARTICLES = null;       // список артикулов кабинета (для пикера)
 let EDIT_ID = null;        // id редактируемого пресета (null = создание)
 let PICKED = new Set();    // выбранные wb_article в пикере
+let NO_SNAPSHOT = false;   // снапшот метрик кабинета ещё не собран
+let REQ_SEQ = 0;           // защита от гонок при быстром переключении кабинета
 
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => (n==null?'—':Number(n).toLocaleString('ru-RU'));
@@ -188,7 +192,9 @@ const ruDate = s => { if(!s) return '—'; const [y,m,d]=s.split('-'); return `$
 
 async function onProjectChange(){
   CUR = document.getElementById('projSelect').value;
-  ARTICLES = null;
+  // Сбрасываем состояние прошлого кабинета СРАЗУ, чтобы его группы не оставались на экране.
+  ARTICLES = null; PRESETS = []; DECOMP = {}; NO_SNAPSHOT = false;
+  const seq = ++REQ_SEQ;
   document.getElementById('refreshBtn').disabled = !CUR;
   document.getElementById('addBtn').disabled = !CUR;
   document.getElementById('fetched').textContent = '';
@@ -196,14 +202,22 @@ async function onProjectChange(){
     document.getElementById('content').innerHTML = '<div class="hint">Выберите кабинет, чтобы увидеть декомпозицию по группам.</div>';
     return;
   }
-  await loadPresets();
-  loadDecomp(false);
+  document.getElementById('content').innerHTML = '<div class="hint">Загрузка групп кабинета…</div>';
+  await loadPresets(seq);
+  if(seq === REQ_SEQ) loadDecomp(false);
 }
 
-async function loadPresets(){
-  const r = await fetch('/api/season/presets?project='+encodeURIComponent(CUR));
-  PRESETS = await r.json();
-  if(!Array.isArray(PRESETS)) PRESETS = [];
+async function loadPresets(seq){
+  try{
+    const r = await fetch('/api/season/presets?project='+encodeURIComponent(CUR));
+    const data = await r.json();
+    if(seq !== undefined && seq !== REQ_SEQ) return;   // пришёл ответ для старого кабинета — игнор
+    PRESETS = Array.isArray(data) ? data : [];
+  }catch(e){
+    if(seq !== undefined && seq !== REQ_SEQ) return;
+    PRESETS = [];
+    document.getElementById('fetched').textContent = '⚠ не удалось загрузить группы';
+  }
   render();
 }
 
@@ -217,6 +231,7 @@ function fmtStamp(iso){
 // force=false — быстро из БД (снапшот); force=true — «Обновить из WB»
 async function loadDecomp(force){
   if(!CUR) return;
+  const seq = REQ_SEQ;
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
   btn.textContent = force ? '⏳ Тяну из WB…' : '⏳ Загрузка…';
@@ -225,15 +240,22 @@ async function loadDecomp(force){
     const url = '/api/season/decomposition?project='+encodeURIComponent(CUR)+(force?'&refresh=1':'');
     const r = await fetch(url);
     const data = await r.json();
+    if(seq !== REQ_SEQ) return;   // кабинет переключили, пока грузили — игнорируем
     if(data.error){ document.getElementById('fetched').textContent = '⚠ '+data.error; return; }
     DECOMP = {};
     (data.presets||[]).forEach(p => DECOMP[p.id] = p);
-    const stamp = fmtStamp(data.fetched_at);
-    document.getElementById('fetched').textContent =
-      `обновлено ${stamp} · ${data.pace_month||''} · темп за ${data.pace_days} дн`;
+    NO_SNAPSHOT = !!data.no_snapshot;
+    if(NO_SNAPSHOT){
+      document.getElementById('fetched').textContent = 'нет данных из WB — нажмите «Обновить из WB»';
+    } else {
+      document.getElementById('fetched').textContent =
+        `обновлено ${fmtStamp(data.fetched_at)} · ${data.pace_month||''} · темп за ${data.pace_days} дн`;
+    }
     render();
+  }catch(e){
+    if(seq === REQ_SEQ) document.getElementById('fetched').textContent = '⚠ ошибка загрузки данных';
   } finally {
-    btn.disabled = false; btn.textContent = '🔄 Обновить из WB';
+    if(seq === REQ_SEQ){ btn.disabled = false; btn.textContent = '🔄 Обновить из WB'; }
   }
 }
 
@@ -243,7 +265,10 @@ function render(){
     box.innerHTML = '<div class="hint">В этом кабинете пока нет групп. Нажмите «+ Группа», чтобы создать первую.</div>';
     return;
   }
-  box.innerHTML = PRESETS.map(renderCard).join('');
+  const banner = NO_SNAPSHOT
+    ? '<div class="banner">Данные по кабинету ещё не загружены из WB. Нажмите «🔄 Обновить из WB» — дальше будут браться быстро из базы.</div>'
+    : '';
+  box.innerHTML = banner + PRESETS.map(renderCard).join('');
 }
 
 function renderCard(p){
@@ -292,7 +317,7 @@ function renderCard(p){
       <tbody>${rows}</tbody>
       <tfoot><tr>
         <td class="left" colspan="2">Итого (${d.rows.length})</td>
-        <td>${fmt(t.stock)}</td><td>—</td>
+        <td>${fmt(t.stock)}</td><td title="средний по группе">${t.buyout_pct ? fmt1(t.buyout_pct)+'%' : '—'}</td>
         <td>${fmt(t.stock)}</td><td class="rub">${fmtR(t.need_sales_rub)}</td>
         <td>${fmt(t.need_orders)}</td><td class="rub">${fmtR(t.need_orders_rub)}</td>
         <td class="num-strong">${fmt(t.need_per_day)}</td>
