@@ -358,7 +358,9 @@ def _ensure_design_tables():
     except Exception as e:
         logging.error(f"_ensure_design_tables error: {e}")
 
-_ensure_design_tables()
+# Вызовы миграций перенесены в _run_startup_migrations() (под advisory-lock),
+# чтобы воркеры gunicorn не выполняли ALTER/UPDATE конкурентно и не копили
+# подвисшие на локах соединения (это роняло всю БД по числу коннектов).
 
 # ─── Создаём таблицы контентных воронок ──────────────────────────────────────
 def _ensure_funnel_tables():
@@ -451,8 +453,6 @@ def _ensure_funnel_tables():
     except Exception as e:
         logging.error(f"_ensure_funnel_tables error: {e}")
 
-_ensure_funnel_tables()
-
 
 def _ensure_season_tables():
     """Идемпотентная миграция для раздела «Темп сезона»."""
@@ -510,7 +510,34 @@ def _ensure_season_tables():
     except Exception as e:
         logging.error(f"_ensure_season_tables error: {e}")
 
-_ensure_season_tables()
+
+def _run_startup_migrations():
+    """
+    Выполняет все стартовые миграции под Postgres advisory-lock, чтобы разные воркеры
+    gunicorn не запускали ALTER/UPDATE одновременно. Раньше два воркера конфликтовали
+    (ALTER TABLE ждал AccessExclusiveLock, заблокированный тяжёлым UPDATE соседа), что
+    копило подвисшие соединения и упирало БД в лимит коннектов — весь дашборд падал.
+    Ключ фиксированный; второй воркер ждёт освобождения и затем прогоняет миграции как
+    no-op (все CREATE/ALTER — IF NOT EXISTS).
+    """
+    LOCK_KEY = 918273645
+    try:
+        with get_conn() as lock_conn:
+            with lock_conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_lock(%s)", (LOCK_KEY,))
+            lock_conn.commit()
+            try:
+                _ensure_design_tables()
+                _ensure_funnel_tables()
+                _ensure_season_tables()
+            finally:
+                with lock_conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_unlock(%s)", (LOCK_KEY,))
+                lock_conn.commit()
+    except Exception as e:
+        logging.error(f"_run_startup_migrations error: {e}")
+
+_run_startup_migrations()
 
 # ─── Google OAuth ─────────────────────────────────────────────────────────────
 oauth = OAuth(app)

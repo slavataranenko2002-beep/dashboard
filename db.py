@@ -19,8 +19,10 @@ def _get_pool() -> ConnectionPool:
         _db_pool = ConnectionPool(
             DATABASE_URL,
             min_size=1,
-            max_size=8,
-            kwargs={"row_factory": dict_row},
+            max_size=5,          # 2 воркера × 5 < лимита Postgres (+ бот на той же БД)
+            timeout=15,          # не ждать соединение 30 сек — быстрее отдавать ошибку
+            max_idle=300,        # закрывать простаивающие соединения, освобождать слоты
+            kwargs={"row_factory": dict_row, "connect_timeout": 10},
         )
     return _db_pool
 
