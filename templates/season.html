@@ -56,10 +56,14 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .card-hd-sep{flex:1}
 .card-actions{display:flex;gap:6px}
 
+.tbl-scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%}
 thead th{background:var(--bg3);font-size:11px;font-weight:600;color:var(--text2);
   padding:8px 10px;border-bottom:2px solid var(--border);white-space:nowrap;text-align:right}
 thead th.left{text-align:left}
+thead th.rub{color:var(--yellow)}
+tbody td.rub{color:var(--text2)}
+tfoot td.rub{color:var(--text2)}
 tbody td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
 tbody td.left{text-align:left}
 tbody td.art{font-weight:600}
@@ -82,7 +86,7 @@ tfoot td.left{text-align:left;color:var(--text2)}
 .fld label{font-size:12px;color:var(--text2)}
 .fld input{padding:8px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px}
 .fld input:focus{outline:none;border-color:var(--blue)}
-.row2{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .picker{border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .picker-search{padding:8px 11px;border:none;border-bottom:1px solid var(--border);background:var(--bg3);color:var(--text);width:100%;font-size:13px}
 .picker-search:focus{outline:none}
@@ -150,10 +154,6 @@ tfoot td.left{text-align:left;color:var(--text2)}
           <label>Конец сезона</label>
           <input id="fEnd" type="date">
         </div>
-        <div class="fld">
-          <label>% выкупа</label>
-          <input id="fBuyout" type="number" min="1" max="100" step="1" value="30">
-        </div>
       </div>
       <div class="fld">
         <label>Артикулы группы</label>
@@ -183,6 +183,7 @@ let PICKED = new Set();    // выбранные wb_article в пикере
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => (n==null?'—':Number(n).toLocaleString('ru-RU'));
 const fmt1 = n => (n==null?'—':Number(n).toLocaleString('ru-RU',{maximumFractionDigits:1}));
+const fmtR = n => (n==null?'—':Math.round(Number(n)).toLocaleString('ru-RU')+' ₽');
 const ruDate = s => { if(!s) return '—'; const [y,m,d]=s.split('-'); return `${d}.${m}.${y}`; };
 
 async function onProjectChange(){
@@ -210,16 +211,15 @@ async function loadDecomp(){
   if(!CUR) return;
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true; btn.textContent = '⏳ Загрузка…';
-  document.getElementById('fetched').textContent = 'тяну остатки и темп из WB…';
+  document.getElementById('fetched').textContent = 'считаю по данным План-факта…';
   try{
     const r = await fetch('/api/season/decomposition?project='+encodeURIComponent(CUR));
     const data = await r.json();
     if(data.error){ document.getElementById('fetched').textContent = '⚠ '+data.error; return; }
     DECOMP = {};
     (data.presets||[]).forEach(p => DECOMP[p.id] = p);
-    const t = new Date(data.fetched_at);
     document.getElementById('fetched').textContent =
-      `остатки на ${t.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})} · темп за ${data.pace_days} дн`;
+      `из План-факта · ${data.pace_month||''} · темп за ${data.pace_days} дн`;
     render();
   } finally {
     btn.disabled = false; btn.textContent = '🔄 Обновить остатки';
@@ -243,7 +243,6 @@ function renderCard(p){
     : '<span class="pill">…</span>';
   const window = (p.start_date||p.end_date)
     ? `<span class="pill">${ruDate(p.start_date)} → ${ruDate(p.end_date)}</span>` : '';
-  const buyoutPill = `<span class="pill buyout">выкуп ${fmt(p.buyout_pct)}%</span>`;
 
   let body;
   if(!p.items.length){
@@ -251,43 +250,52 @@ function renderCard(p){
   } else if(!d){
     body = '<div class="empty-items">Нажмите «Обновить остатки», чтобы посчитать декомпозицию.</div>';
   } else {
-    const rows = d.rows.map(r=>{
-      const lagCls = r.lag==null ? '' : (r.lag>0 ? 'lag-bad' : 'lag-ok');
-      const lagTxt = r.lag==null ? '—' : (r.lag>0 ? '+'+fmt1(r.lag) : fmt1(r.lag));
-      return `<tr>
+    const signLag  = (v,f)=> v==null ? '—' : (v>0 ? '+'+f(v) : f(v));
+    const lagClass = v => v==null ? '' : (v>0 ? 'lag-bad' : 'lag-ok');
+    const rows = d.rows.map(r=>`<tr>
         <td class="left art">${esc(r.seller_article||r.wb_article)}</td>
         <td class="left sub">${esc(r.name||'')}</td>
         <td>${fmt(r.stock)}</td>
+        <td>${r.buyout_pct ? fmt1(r.buyout_pct)+'%' : '—'}</td>
         <td>${fmt(r.need_sales)}</td>
+        <td class="rub">${fmtR(r.need_sales_rub)}</td>
         <td>${fmt(r.need_orders)}</td>
+        <td class="rub">${fmtR(r.need_orders_rub)}</td>
         <td class="num-strong">${r.need_per_day==null?'—':fmt(r.need_per_day)}</td>
         <td>${fmt1(r.pace)}</td>
-        <td class="${lagCls}">${lagTxt}</td>
-      </tr>`;
-    }).join('');
+        <td class="rub">${fmtR(r.pace_rub)}</td>
+        <td class="${lagClass(r.lag)}">${signLag(r.lag,fmt1)}</td>
+        <td class="rub ${lagClass(r.lag_rub)}">${signLag(r.lag_rub,fmtR)}</td>
+      </tr>`).join('');
     const t = d.totals;
-    const tlagCls = t.lag>0 ? 'lag-bad' : 'lag-ok';
-    const tlagTxt = t.lag>0 ? '+'+fmt1(t.lag) : fmt1(t.lag);
-    body = `<table>
+    body = `<div class="tbl-scroll"><table>
       <thead><tr>
         <th class="left">Артикул</th><th class="left">Название</th>
-        <th>Остаток</th><th>Нужно продать</th><th>Нужно заказов</th>
-        <th>Заказов/день</th><th>Темп сейчас</th><th>Отставание</th>
+        <th>Остаток</th><th title="из План-факта, по артикулу">%Выкупа</th>
+        <th>Нужно продать</th><th class="rub">Продать, ₽</th>
+        <th>Нужно заказов</th><th class="rub">Заказов, ₽</th>
+        <th>Заказов/день</th>
+        <th title="из План-факта за текущий месяц">Темп сейчас</th><th class="rub">Темп, ₽/дн</th>
+        <th>Отставание</th><th class="rub">Отстав., ₽</th>
       </tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr>
         <td class="left" colspan="2">Итого (${d.rows.length})</td>
-        <td>${fmt(t.stock)}</td><td>${fmt(t.stock)}</td><td>${fmt(t.need_orders)}</td>
-        <td class="num-strong">${fmt(t.need_per_day)}</td><td>${fmt1(t.pace)}</td>
-        <td class="${tlagCls}">${tlagTxt}</td>
+        <td>${fmt(t.stock)}</td><td>—</td>
+        <td>${fmt(t.stock)}</td><td class="rub">${fmtR(t.need_sales_rub)}</td>
+        <td>${fmt(t.need_orders)}</td><td class="rub">${fmtR(t.need_orders_rub)}</td>
+        <td class="num-strong">${fmt(t.need_per_day)}</td>
+        <td>${fmt1(t.pace)}</td><td class="rub">${fmtR(t.pace_rub)}</td>
+        <td class="${lagClass(t.lag)}">${signLag(t.lag,fmt1)}</td>
+        <td class="rub ${lagClass(t.lag_rub)}">${signLag(t.lag_rub,fmtR)}</td>
       </tr></tfoot>
-    </table>`;
+    </table></div>`;
   }
 
   return `<div class="card">
     <div class="card-hd">
       <span class="card-name">${esc(p.name)}</span>
-      <div class="meta">${daysPill}${window}${buyoutPill}</div>
+      <div class="meta">${daysPill}${window}</div>
       <div class="card-hd-sep"></div>
       <div class="card-actions">
         <button class="btn" onclick="openEditor(${p.id})">✏️ Изменить</button>
@@ -306,7 +314,6 @@ async function openEditor(id){
   document.getElementById('fName').value   = p ? p.name : '';
   document.getElementById('fStart').value  = p && p.start_date ? p.start_date : '';
   document.getElementById('fEnd').value    = p && p.end_date   ? p.end_date   : '';
-  document.getElementById('fBuyout').value = p ? p.buyout_pct : 30;
   document.getElementById('pickSearch').value = '';
   document.getElementById('modalErr').textContent = '';
   PICKED = new Set((p ? p.items : []).map(it=>it.wb_article));
@@ -362,7 +369,6 @@ async function savePreset(){
     project: CUR, name,
     start_date: document.getElementById('fStart').value || null,
     end_date:   document.getElementById('fEnd').value || null,
-    buyout_pct: Number(document.getElementById('fBuyout').value) || 30,
   };
   const btn = document.getElementById('saveBtn');
   btn.disabled = true; err.textContent = '';

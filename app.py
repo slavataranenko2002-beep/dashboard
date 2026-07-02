@@ -4745,15 +4745,18 @@ def api_funnel_ab_results_delete(result_id):
 # своим окном сезона считаем, сколько заказов в день нужно делать, чтобы
 # распродать остаток к концу сезона, и сравниваем с текущим темпом.
 #
-#   нужно продать  = остаток (живой, из WB get_stocks)
-#   нужно заказов  = ceil(остаток / %выкупа)        (%выкупа — пока константа на пресет, по умолчанию 30%)
+# Все показатели берём из План-факта за ТЕКУЩИЙ месяц (тот же источник, что и вкладка
+# «План-Факт»): остаток (= quantityFull = склад + в пути к клиенту + в пути от клиента),
+# %выкупа по артикулу, средняя цена, факт заказов за месяц.
+#
+#   нужно продать  = остаток
+#   нужно заказов  = ceil(остаток / %выкупа_из_планфакта)
 #   заказов/день   = ceil(нужно заказов / дней до конца сезона)
-#   темп сейчас    = заказы за последние 7 дней / 7  (из воронки продаж WB)
+#   темп сейчас    = заказы за текущий месяц / дней прошло  (из План-факта)
 #   отставание     = заказов/день нужно − темп сейчас
+#   рублёвые       = соответствующий показатель × средняя цена артикула
 #
 # Конверсии (CTR/CR) и расход на рекламу будут добавлены позже.
-
-SEASON_PACE_DAYS = 7   # окно для расчёта текущего темпа заказов/день
 
 
 def _season_cabinets(u) -> list:
@@ -4803,8 +4806,54 @@ def _season_load_presets(project: str) -> list:
     return [_season_serialize_preset(p, items_by_preset.get(p["id"], [])) for p in presets]
 
 
-def _season_compute(preset: dict, stocks_map: dict, pace_map: dict, today: date) -> dict:
-    """Считает декомпозицию по одному пресету. Возвращает dict с строками и итогами."""
+def _season_pf_index(cabinet: str, today: date):
+    """
+    Данные из План-факта за ТЕКУЩИЙ месяц по артикулам кабинета (источник правды для
+    темпа сезона): %выкупа, темп заказов/день, средняя цена, остаток (= quantityFull =
+    склад + в пути к клиенту + в пути от клиента). Сначала пробуем кэш План-факта
+    (обычно уже прогрет), иначе тянем из WB и кладём в тот же кэш.
+
+    Возвращает (by_nm, by_vc, days_elapsed): индексы по nmId и по vendor_code.
+    """
+    import calendar
+    month_start = today.replace(day=1)
+    cached, _fetched_at, _complete = _pf_load_cache(cabinet, month_start)
+    if cached:
+        pf_articles = cached.get("articles", []) or []
+    else:
+        from wb_api import collect_planfact_data
+        last_day  = calendar.monthrange(month_start.year, month_start.month)[1]
+        month_end = month_start.replace(day=last_day)
+        d_to = min(today - timedelta(days=1), month_end)
+        if d_to < month_start:
+            d_to = month_start
+        data = collect_planfact_data(cabinet, month_start, d_to)
+        _pf_store_cache(cabinet, month_start, data, False)
+        pf_articles = data.get("articles", []) or []
+
+    # Дней с фактическими данными в текущем месяце (факт идёт по вчерашний день включ.)
+    days_elapsed = max(1, today.day - 1)
+
+    by_nm: dict = {}
+    by_vc: dict = {}
+    for a in pf_articles:
+        rec = {
+            "stock":          int(a.get("stocks") or 0),
+            "buyout_pct":     float(a.get("buyout_pct") or 0),
+            "avg_price":      float(a.get("avg_price") or 0),
+            "pace":           (int(a.get("orders_qty_fact") or 0) / days_elapsed),
+            "seller_article": a.get("vendor_code") or "",
+            "name":           a.get("title") or "",
+        }
+        if a.get("nm_id"):
+            by_nm[a["nm_id"]] = rec
+        if a.get("vendor_code"):
+            by_vc[str(a["vendor_code"])] = rec
+    return by_nm, by_vc, days_elapsed
+
+
+def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date) -> dict:
+    """Считает декомпозицию по одному пресету на данных План-факта. Возвращает строки и итоги."""
     end = preset.get("end_date")
     start = preset.get("start_date")
     end_date   = date.fromisoformat(end)   if end   else None
@@ -4815,16 +4864,21 @@ def _season_compute(preset: dict, stocks_map: dict, pace_map: dict, today: date)
     days_left = (end_date - from_day).days if end_date else None
     season_over = days_left is not None and days_left <= 0
 
-    buyout = float(preset.get("buyout_pct") or 0)
-    buyout_frac = buyout / 100 if buyout > 0 else 0
-
     rows = []
-    tot_stock = tot_orders = tot_need_day = 0
-    tot_pace = 0.0
+    tot = {"stock": 0, "need_orders": 0, "need_per_day": 0, "pace": 0.0,
+           "need_sales_rub": 0.0, "need_orders_rub": 0.0, "pace_rub": 0.0,
+           "need_day_rub": 0.0}
     for it in preset["items"]:
         nm = it["wb_article"]
-        stock = int(stocks_map.get(nm, 0))
-        need_sales = stock
+        sa = it.get("seller_article") or ""
+        rec = by_nm.get(nm) or (by_vc.get(sa) if sa else None) or {}
+        stock  = int(rec.get("stock", 0))
+        buyout = float(rec.get("buyout_pct", 0) or 0)
+        price  = float(rec.get("avg_price", 0) or 0)
+        pace   = float(rec.get("pace", 0.0) or 0.0)
+
+        buyout_frac = buyout / 100 if buyout > 0 else 0
+        need_sales  = stock
         need_orders = math.ceil(stock / buyout_frac) if buyout_frac > 0 else stock
         if days_left is None:
             need_day = None
@@ -4832,40 +4886,54 @@ def _season_compute(preset: dict, stocks_map: dict, pace_map: dict, today: date)
             need_day = need_orders          # сезон закончился — всё «надо было вчера»
         else:
             need_day = math.ceil(need_orders / days_left) if days_left > 0 else need_orders
-        pace = round(pace_map.get(nm, 0.0), 1)
         lag = (round(need_day - pace, 1) if need_day is not None else None)
 
         rows.append({
-            "wb_article":     nm,
-            "seller_article": it.get("seller_article") or "",
-            "name":           it.get("name") or "",
-            "stock":          stock,
-            "need_sales":     need_sales,
-            "need_orders":    need_orders,
-            "need_per_day":   need_day,
-            "pace":           pace,
-            "lag":            lag,
+            "wb_article":      nm,
+            "seller_article":  sa or rec.get("seller_article") or str(nm),
+            "name":            it.get("name") or rec.get("name") or "",
+            "buyout_pct":      round(buyout, 1),
+            "avg_price":       round(price),
+            "stock":           stock,
+            "need_sales":      need_sales,
+            "need_orders":     need_orders,
+            "need_per_day":    need_day,
+            "pace":            round(pace, 1),
+            "lag":             lag,
+            # рублёвые
+            "need_sales_rub":  round(need_sales * price),
+            "need_orders_rub": round(need_orders * price),
+            "pace_rub":        round(pace * price),
+            "lag_rub":         (round(lag * price) if lag is not None else None),
         })
-        tot_stock    += stock
-        tot_orders   += need_orders
-        tot_need_day += (need_day or 0)
-        tot_pace     += pace
+        tot["stock"]           += stock
+        tot["need_orders"]     += need_orders
+        tot["need_per_day"]    += (need_day or 0)
+        tot["pace"]            += pace
+        tot["need_sales_rub"]  += need_sales * price
+        tot["need_orders_rub"] += need_orders * price
+        tot["pace_rub"]        += pace * price
+        tot["need_day_rub"]    += (need_day or 0) * price
 
+    lag_total = tot["need_per_day"] - tot["pace"]
     return {
         "id":          preset["id"],
         "name":        preset["name"],
         "start_date":  preset.get("start_date"),
         "end_date":    end,
-        "buyout_pct":  buyout,
         "days_left":   days_left,
         "season_over": season_over,
         "rows":        rows,
         "totals": {
-            "stock":        tot_stock,
-            "need_orders":  tot_orders,
-            "need_per_day": tot_need_day,
-            "pace":         round(tot_pace, 1),
-            "lag":          round(tot_need_day - tot_pace, 1),
+            "stock":           tot["stock"],
+            "need_orders":     tot["need_orders"],
+            "need_per_day":    tot["need_per_day"],
+            "pace":            round(tot["pace"], 1),
+            "lag":             round(lag_total, 1),
+            "need_sales_rub":  round(tot["need_sales_rub"]),
+            "need_orders_rub": round(tot["need_orders_rub"]),
+            "pace_rub":        round(tot["pace_rub"]),
+            "lag_rub":         round(tot["need_day_rub"] - tot["pace_rub"]),
         },
     }
 
@@ -5040,7 +5108,11 @@ def api_season_presets_set_items(preset_id):
 @app.route("/api/season/decomposition")
 @require_season_api
 def api_season_decomposition():
-    """Живая декомпозиция по всем пресетам кабинета: тянет остатки и текущий темп из WB."""
+    """
+    Живая декомпозиция по всем пресетам кабинета. Все показатели (остаток, %выкупа,
+    средняя цена, текущий темп заказов/день) берутся из План-факта за текущий месяц —
+    один источник правды, совпадает с вкладкой «План-Факт».
+    """
     project = request.args.get("project", "").strip()
     if not project or project not in WB_CABINETS:
         return jsonify({"error": "project required"}), 400
@@ -5048,36 +5120,14 @@ def api_season_decomposition():
     if not presets:
         return jsonify({"presets": [], "fetched_at": datetime.now().isoformat()})
     try:
-        from wb_api import WBClient, fmt_date, _funnel_metric, get_product_field
         today = date.today()
-        with WBClient(project) as wb:
-            stocks = wb.get_stocks(fmt_date(today - timedelta(days=180)))
-            funnel = wb.get_sales_funnel(
-                fmt_date(today - timedelta(days=SEASON_PACE_DAYS)),
-                fmt_date(today - timedelta(days=1)),
-            )
-        # Остатки: nmId → суммарный остаток
-        stocks_map: dict = {}
-        for s in stocks or []:
-            nm = s.get("nmId")
-            if not nm:
-                continue
-            stocks_map[nm] = stocks_map.get(nm, 0) + (s.get("quantityFull") or s.get("quantity") or 0)
-        # Текущий темп: nmId → заказов/день за окно
-        pace_map: dict = {}
-        products = (funnel.get("data") or {}).get("products") or []
-        for p in products:
-            nm = get_product_field(p, "nmId")
-            if not nm:
-                continue
-            orders = _funnel_metric(p, "orderCount", "selected")
-            pace_map[nm] = pace_map.get(nm, 0.0) + orders / SEASON_PACE_DAYS
-
-        computed = [_season_compute(p, stocks_map, pace_map, today) for p in presets]
+        by_nm, by_vc, days_elapsed = _season_pf_index(project, today)
+        computed = [_season_compute(p, by_nm, by_vc, today) for p in presets]
         return jsonify({
-            "presets":    computed,
-            "pace_days":  SEASON_PACE_DAYS,
-            "fetched_at": datetime.now().isoformat(),
+            "presets":       computed,
+            "pace_days":     days_elapsed,   # дней текущего месяца, по которым считается темп
+            "pace_month":    today.strftime("%Y-%m"),
+            "fetched_at":    datetime.now().isoformat(),
         })
     except Exception as e:
         logging.error(f"season/decomposition {project}: {e}")
