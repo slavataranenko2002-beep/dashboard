@@ -745,7 +745,6 @@ const COL_DEFS = [
   {k:'profit',           get:r=>Math.round(compute(r).profit),                type:'num'},
   {k:'margin',           get:r=>Math.round(compute(r).margin*10)/10,          type:'num'},
   {k:'roi',              get:r=>Math.round(compute(r).roi*10)/10,             type:'num'},
-  {k:'batchMargin',      get:r=>Math.round(compute(r).batchMargin*10)/10,     type:'num'},
   {k:'batchProfit',      get:r=>Math.round(compute(r).batchProfit),           type:'num'},
   {k:'capital',          get:r=>Math.round((+r.wb_price||0)*(+r.stock||0)),  type:'num'},
   {k:'capitalCost',      get:r=>Math.round((+r.cost_price||0)*(+r.stock||0)),type:'num'},
@@ -1128,8 +1127,6 @@ function updateComputedCells(key) {
   if (mm) { mm.innerHTML = `<span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span>`; }
   const rm = tr.querySelector('.cv-roi');
   if (rm) { rm.textContent = fmtP(c.roi); rm.className = 'comp cv-roi ' + profitCls(c.roi); }
-  const bm = tr.querySelector('.cv-bmargin');
-  if (bm) { bm.innerHTML = `<span class="mbadge ${mClass(c.batchMargin)}">${fmtP(c.batchMargin)}</span>`; }
   const bp = tr.querySelector('.cv-bprofit');
   if (bp) { bp.textContent = fmtR(c.batchProfit); bp.className = 'comp cv-bprofit ' + profitCls(c.batchProfit); }
   updateFooter();
@@ -1258,7 +1255,6 @@ function rowHTML(r) {
   <td class="comp cv-profit ${profitCls(c.profit)}">${fmtR(c.profit)}</td>
   <td class="comp cv-margin"><span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span></td>
   <td class="comp cv-roi ${profitCls(c.roi)}">${fmtP(c.roi)}</td>
-  <td class="comp cv-bmargin"><span class="mbadge ${mClass(c.batchMargin)}">${fmtP(c.batchMargin)}</span></td>
   <td class="comp cv-bprofit ${profitCls(c.batchProfit)}" title="Прибыль × Остаток">${fmtR(c.batchProfit)}</td>`;
 }
 
@@ -1337,7 +1333,6 @@ function renderContent(state) {
       ${thSF('profit','Прибыль','comp')}
       ${thSF('margin','Маржа','comp')}
       ${thSF('roi','ROI','comp')}
-      ${thSF('batchMargin','Маржа пар.','comp')}
       ${thSF('batchProfit','Прибыль пар.','comp','Прибыль партии = Прибыль × Остаток')}
     </tr>
   </thead>
@@ -1361,7 +1356,7 @@ function updateFooter() {
   let sumStock = 0, sumCapital = 0, sumCapitalCost = 0, sumProfit = 0, sumBatchProfit = 0;
   // Средние (накопитель)
   let sumRed = 0, sumLogKtr = 0, sumClientPrice = 0, sumWbPrice = 0;
-  let sumMargin = 0, sumRoi = 0, sumBatchMargin = 0;
+  let sumMargin = 0, sumRoi = 0;
 
   dr.forEach(r => {
     const c = compute(r);
@@ -1380,7 +1375,6 @@ function updateFooter() {
     sumWbPrice     += (+r.wb_price || 0);
     sumMargin      += c.margin;
     sumRoi         += c.roi;
-    sumBatchMargin += c.batchMargin;
   });
 
   const avg = (s) => s / n;
@@ -1390,12 +1384,11 @@ function updateFooter() {
   const avgWbP    = avg(sumWbPrice);
   const avgM      = avg(sumMargin);
   const avgRoi    = avg(sumRoi);
-  const avgBM     = avg(sumBatchMargin);
 
   // Колонки: sc0 sc1 sc2+sc3+sc4(colspan=3) | cp pkg ltwb ovh def | totalCost
   //          | lit red wh irp il | logKtr | stor30 storTotal
   //          | com% wbp spp | clientPrice | tax | usn | drr% | drrRub
-  //          | stock | capital | capitalCost | commission | profit | margin | roi | batchMargin
+  //          | stock | capital | capitalCost | commission | profit | margin | roi | batchProfit
   tfoot.innerHTML = `<tr>
     <td class="sc0"></td>
     <td class="sc1"></td>
@@ -1423,7 +1416,6 @@ function updateFooter() {
     <td class="fcomp ${profitCls(sumProfit)}" title="Σ Прибыль">${fmtR(sumProfit)}</td>
     <td class="fcomp" title="Ø Маржа"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
     <td class="fcomp" title="Ø ROI">${fmtP(avgRoi)}</td>
-    <td class="fcomp" title="Ø Маржа пар."><span class="mbadge ${mClass(avgBM)}">${fmtP(avgBM)}</span></td>
     <td class="fcomp ${profitCls(sumBatchProfit)}" title="Σ Прибыль партии">${fmtR(sumBatchProfit)}</td>
   </tr>`;
 }
@@ -1500,7 +1492,6 @@ const EXPORT_COLS = [
   {k:'profit',           label:'Прибыль, ₽',          fmt:'money', foot:'sum'},
   {k:'margin',           label:'Маржа, %',            fmt:'pct',   foot:'avg'},
   {k:'roi',              label:'ROI, %',              fmt:'pct',   foot:'avg'},
-  {k:'batchMargin',      label:'Маржа партии, %',     fmt:'pct',   foot:'avg'},
   {k:'batchProfit',      label:'Прибыль партии, ₽',   fmt:'money', foot:'sum'},
 ];
 
@@ -1542,7 +1533,6 @@ function exportVal(r, k, c) {
     case 'profit':          return exportRound0(c.profit);
     case 'margin':          return exportRound1(c.margin);
     case 'roi':             return exportRound1(c.roi);
-    case 'batchMargin':     return exportRound1(c.batchMargin);
     case 'batchProfit':     return exportRound0(c.batchProfit);
     default:                return '';
   }
