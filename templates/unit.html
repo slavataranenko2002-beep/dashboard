@@ -362,21 +362,17 @@ tfoot td.fcomp{background:var(--comp-bg)}
       <option value="redemption_pct">% выкупа</option>
       <option value="warehouse">Склад</option>
       <option value="irp">ИРП</option>
-      <option value="logistics_ktr">Лог+КТР (ручное)</option>
+      <option value="il">ИЛ</option>
     </optgroup>
     <optgroup label="Цена и реклама">
       <option value="commission_pct">Комиссия %</option>
       <option value="wb_price">Цена ВБ ₽</option>
       <option value="spp_pct">СПП %</option>
       <option value="drr_pct">ДРР %</option>
-      <option value="drr_external_rub">ДРР ₽</option>
     </optgroup>
     <optgroup label="Налог">
       <option value="tax_system">Система налогообложения</option>
       <option value="tax_pct">Налог %</option>
-    </optgroup>
-    <optgroup label="Прочее">
-      <option value="stock">Остаток</option>
     </optgroup>
   </select>
   <select class="bulk-val" id="bulkWarehouseVal" style="display:none">
@@ -750,6 +746,7 @@ const COL_DEFS = [
   {k:'margin',           get:r=>Math.round(compute(r).margin*10)/10,          type:'num'},
   {k:'roi',              get:r=>Math.round(compute(r).roi*10)/10,             type:'num'},
   {k:'batchMargin',      get:r=>Math.round(compute(r).batchMargin*10)/10,     type:'num'},
+  {k:'batchProfit',      get:r=>Math.round(compute(r).batchProfit),           type:'num'},
   {k:'capital',          get:r=>Math.round((+r.wb_price||0)*(+r.stock||0)),  type:'num'},
   {k:'capitalCost',      get:r=>Math.round((+r.cost_price||0)*(+r.stock||0)),type:'num'},
 ];
@@ -1133,6 +1130,8 @@ function updateComputedCells(key) {
   if (rm) { rm.textContent = fmtP(c.roi); rm.className = 'comp cv-roi ' + profitCls(c.roi); }
   const bm = tr.querySelector('.cv-bmargin');
   if (bm) { bm.innerHTML = `<span class="mbadge ${mClass(c.batchMargin)}">${fmtP(c.batchMargin)}</span>`; }
+  const bp = tr.querySelector('.cv-bprofit');
+  if (bp) { bp.textContent = fmtR(c.batchProfit); bp.className = 'comp cv-bprofit ' + profitCls(c.batchProfit); }
   updateFooter();
 }
 
@@ -1259,7 +1258,8 @@ function rowHTML(r) {
   <td class="comp cv-profit ${profitCls(c.profit)}">${fmtR(c.profit)}</td>
   <td class="comp cv-margin"><span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span></td>
   <td class="comp cv-roi ${profitCls(c.roi)}">${fmtP(c.roi)}</td>
-  <td class="comp cv-bmargin"><span class="mbadge ${mClass(c.batchMargin)}">${fmtP(c.batchMargin)}</span></td>`;
+  <td class="comp cv-bmargin"><span class="mbadge ${mClass(c.batchMargin)}">${fmtP(c.batchMargin)}</span></td>
+  <td class="comp cv-bprofit ${profitCls(c.batchProfit)}" title="Прибыль × Остаток">${fmtR(c.batchProfit)}</td>`;
 }
 
 function renderContent(state) {
@@ -1338,6 +1338,7 @@ function renderContent(state) {
       ${thSF('margin','Маржа','comp')}
       ${thSF('roi','ROI','comp')}
       ${thSF('batchMargin','Маржа пар.','comp')}
+      ${thSF('batchProfit','Прибыль пар.','comp','Прибыль партии = Прибыль × Остаток')}
     </tr>
   </thead>
   <tbody id="unit-tbody">
@@ -1357,7 +1358,7 @@ function updateFooter() {
 
   // Суммы
   let sumTotalCost = 0, sumStorTotal = 0, sumUsn = 0, sumDrrRub = 0;
-  let sumStock = 0, sumCapital = 0, sumCapitalCost = 0, sumProfit = 0;
+  let sumStock = 0, sumCapital = 0, sumCapitalCost = 0, sumProfit = 0, sumBatchProfit = 0;
   // Средние (накопитель)
   let sumRed = 0, sumLogKtr = 0, sumClientPrice = 0;
   let sumMargin = 0, sumRoi = 0, sumBatchMargin = 0;
@@ -1372,6 +1373,7 @@ function updateFooter() {
     sumCapital     += (+r.wb_price || 0) * (+r.stock || 0);
     sumCapitalCost += (+r.cost_price || 0) * (+r.stock || 0);
     sumProfit      += c.profit;
+    sumBatchProfit += c.batchProfit;
     sumRed         += (+r.redemption_pct || 100);
     sumLogKtr      += c.logKtr;
     sumClientPrice += c.clientPrice;
@@ -1418,6 +1420,7 @@ function updateFooter() {
     <td class="fcomp" title="Ø Маржа"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
     <td class="fcomp" title="Ø ROI">${fmtP(avgRoi)}</td>
     <td class="fcomp" title="Ø Маржа пар."><span class="mbadge ${mClass(avgBM)}">${fmtP(avgBM)}</span></td>
+    <td class="fcomp ${profitCls(sumBatchProfit)}" title="Σ Прибыль партии">${fmtR(sumBatchProfit)}</td>
   </tr>`;
 }
 
@@ -1494,6 +1497,7 @@ const EXPORT_COLS = [
   {k:'margin',           label:'Маржа, %',            fmt:'pct',   foot:'avg'},
   {k:'roi',              label:'ROI, %',              fmt:'pct',   foot:'avg'},
   {k:'batchMargin',      label:'Маржа партии, %',     fmt:'pct',   foot:'avg'},
+  {k:'batchProfit',      label:'Прибыль партии, ₽',   fmt:'money', foot:'sum'},
 ];
 
 function exportRound0(v){ return Math.round(v || 0); }
@@ -1535,6 +1539,7 @@ function exportVal(r, k, c) {
     case 'margin':          return exportRound1(c.margin);
     case 'roi':             return exportRound1(c.roi);
     case 'batchMargin':     return exportRound1(c.batchMargin);
+    case 'batchProfit':     return exportRound0(c.batchProfit);
     default:                return '';
   }
 }
@@ -1666,7 +1671,7 @@ async function reloadRowsFromServer() {
 
 // ─── Массовое редактирование ─────────────────────────────────────────────────
 const BULK_NUM_FIELDS = new Set([
-  'commission_pct','redemption_pct','irp','drr_pct','drr_external_rub',
+  'commission_pct','redemption_pct','irp','il','drr_pct','drr_external_rub',
   'logistics_to_wb','overhead','packaging','defect_pct','wb_price','cost_price',
   'spp_pct','liters','logistics_ktr','stock','tax_pct'
 ]);
