@@ -748,6 +748,7 @@ function sortBy(field){
   applySort();
   currentPage = 0;
   renderPage();
+  scrollTableTop();
 }
 
 function calcForecast(a){
@@ -826,6 +827,11 @@ function renderTable(data){
 
 function renderPage(){
   if(!currentData) return;
+  const box = document.getElementById('table-box');
+  // Сохраняем позицию прокрутки — правка плана не должна «прыгать» наверх
+  const savedTop  = box ? box.scrollTop  : 0;
+  const savedLeft = box ? box.scrollLeft : 0;
+
   const arts = currentData.articles;
   const start = currentPage * PAGE_SIZE;
   const pageArts = arts.slice(start, start + PAGE_SIZE);
@@ -834,9 +840,15 @@ function renderPage(){
   document.getElementById('content').innerHTML =
     `<table>${buildTableHead(currentData.articles)}<tbody>${rows}</tbody></table>`;
 
-  // Scroll table box to top on page change
-  document.getElementById('table-box').scrollTop = 0;
+  // Восстанавливаем прокрутку (и вертикаль, и горизонталь — план-столбцы справа)
+  if(box){ box.scrollTop = savedTop; box.scrollLeft = savedLeft; }
   updatePagination(arts.length);
+}
+
+// Прокрутить таблицу наверх (при смене страницы/сортировки)
+function scrollTableTop(){
+  const box = document.getElementById('table-box');
+  if(box) box.scrollTop = 0;
 }
 
 function renderTotals(data){
@@ -860,6 +872,7 @@ function changePage(dir){
   const totalPages = Math.ceil(total / PAGE_SIZE);
   currentPage = Math.max(0, Math.min(totalPages - 1, currentPage + dir));
   renderPage();
+  scrollTableTop();
 }
 
 // ── Inline editing ────────────────────────────────────────────────────────────
