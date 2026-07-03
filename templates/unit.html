@@ -1360,7 +1360,7 @@ function updateFooter() {
   let sumTotalCost = 0, sumStorTotal = 0, sumUsn = 0, sumDrrRub = 0;
   let sumStock = 0, sumCapital = 0, sumCapitalCost = 0, sumProfit = 0, sumBatchProfit = 0;
   // Средние (накопитель)
-  let sumRed = 0, sumLogKtr = 0, sumClientPrice = 0;
+  let sumRed = 0, sumLogKtr = 0, sumClientPrice = 0, sumWbPrice = 0;
   let sumMargin = 0, sumRoi = 0, sumBatchMargin = 0;
 
   dr.forEach(r => {
@@ -1377,6 +1377,7 @@ function updateFooter() {
     sumRed         += (+r.redemption_pct || 100);
     sumLogKtr      += c.logKtr;
     sumClientPrice += c.clientPrice;
+    sumWbPrice     += (+r.wb_price || 0);
     sumMargin      += c.margin;
     sumRoi         += c.roi;
     sumBatchMargin += c.batchMargin;
@@ -1386,6 +1387,7 @@ function updateFooter() {
   const avgRed    = avg(sumRed);
   const avgLogKtr = avg(sumLogKtr);
   const avgCl     = avg(sumClientPrice);
+  const avgWbP    = avg(sumWbPrice);
   const avgM      = avg(sumMargin);
   const avgRoi    = avg(sumRoi);
   const avgBM     = avg(sumBatchMargin);
@@ -1406,7 +1408,9 @@ function updateFooter() {
     <td class="fcomp" title="Ø Лог+КТР">${fmtR(avgLogKtr)}</td>
     <td></td>
     <td class="fcomp" title="Σ Хран×Ост">${fmtR(sumStorTotal)}</td>
-    <td></td><td></td><td></td>
+    <td></td>
+    <td class="fcomp" title="Ø Цена ВБ">${fmtR(avgWbP)}</td>
+    <td></td>
     <td class="fcomp" title="Ø Цена клиенту">${fmtR(avgCl)}</td>
     <td></td>
     <td class="fcomp" title="Σ Налог₽">${fmtR(sumUsn)}</td>
