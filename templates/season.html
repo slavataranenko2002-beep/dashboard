@@ -72,6 +72,12 @@ tbody td.art{font-weight:600}
 tbody td.sub{color:var(--text3);font-size:11px}
 tbody tr:hover td{background:var(--bg3)}
 .num-strong{font-weight:700;color:var(--blue)}
+.buyout-cell{padding:3px 6px}
+.buyout-inp{width:56px;text-align:right;padding:4px 6px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg);color:var(--text);font-size:12px}
+.buyout-inp:hover{border-color:var(--blue)}
+.buyout-inp:focus{outline:none;border-color:var(--blue)}
+.buyout-inp.ov{border-color:var(--yellow);color:var(--yellow);font-weight:600}
 .lag-bad{color:var(--red);font-weight:600}
 .lag-ok{color:var(--green);font-weight:600}
 tfoot td{padding:9px 10px;border-top:2px solid var(--border);text-align:right;font-weight:700;background:var(--bg3)}
@@ -293,7 +299,9 @@ function renderCard(p){
         <td class="left art">${esc(r.seller_article||r.wb_article)}</td>
         <td class="left sub">${esc(r.name||'')}</td>
         <td>${fmt(r.stock)}</td>
-        <td>${r.buyout_pct ? fmt1(r.buyout_pct)+'%' : '—'}</td>
+        <td class="buyout-cell"><input class="buyout-inp${r.buyout_override?' ov':''}" type="number" min="0" max="100" step="1"
+             value="${r.buyout_pct||''}" title="${r.buyout_override?'ручное значение (очистите — вернётся из План-факта)':'из План-факта'}"
+             onchange="saveBuyout(${r.wb_article}, this.value)"></td>
         <td>${fmt(r.need_sales)}</td>
         <td class="rub">${fmtR(r.need_sales_rub)}</td>
         <td>${fmt(r.need_orders)}</td>
@@ -308,7 +316,7 @@ function renderCard(p){
     body = `<div class="tbl-scroll"><table>
       <thead><tr>
         <th class="left">Артикул</th><th class="left">Название</th>
-        <th>Остаток</th><th title="из План-факта, по артикулу">%Выкупа</th>
+        <th>Остаток</th><th title="из План-факта; можно исправить вручную">%Выкупа ✎</th>
         <th>Нужно продать</th><th class="rub">Продать, ₽</th>
         <th>Нужно заказов</th><th class="rub">Заказов, ₽</th>
         <th>Заказов/день</th>
@@ -472,6 +480,18 @@ async function delPreset(id, name){
   await fetch('/api/season/presets/'+id, {method:'DELETE'});
   delete DECOMP[id];
   await loadPresets();
+}
+
+// Ручное переопределение %выкупа по артикулу. Пустое значение — сброс к План-факту.
+async function saveBuyout(wbArticle, value){
+  const v = String(value).trim();
+  try{
+    await fetch('/api/season/buyout', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({project: CUR, wb_article: wbArticle, buyout_pct: v===''? null : Number(v)}),
+    });
+  }catch(e){ document.getElementById('fetched').textContent = '⚠ не удалось сохранить %выкупа'; return; }
+  loadDecomp(false);   // пересчитать зависимые столбцы из кэша (без обращения к WB)
 }
 
 function toggleTheme(){

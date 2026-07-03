@@ -505,6 +505,19 @@ def _ensure_season_tables():
                         fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                 """)
+
+                # Ручные переопределения %выкупа по артикулу (перекрывают значение из
+                # План-факта). Живут отдельно от групп, чтобы не сбрасываться при смене
+                # состава группы. NULL/удаление строки = вернуться к План-факту.
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS season_buyout_overrides (
+                        project     TEXT NOT NULL,
+                        wb_article  BIGINT NOT NULL,
+                        buyout_pct  NUMERIC(5,2) NOT NULL,
+                        updated_at  TIMESTAMPTZ DEFAULT NOW(),
+                        PRIMARY KEY (project, wb_article)
+                    )
+                """)
             conn.commit()
         logging.info("Season tables ready.")
     except Exception as e:
@@ -5011,8 +5024,10 @@ def _season_index_from_snapshot(snapshot: dict):
     return by_nm, by_vc
 
 
-def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date) -> dict:
-    """Считает декомпозицию по одному пресету на данных План-факта. Возвращает строки и итоги."""
+def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date, overrides: dict | None = None) -> dict:
+    """Считает декомпозицию по одному пресету на данных План-факта. Возвращает строки и итоги.
+    overrides: {wb_article: buyout_pct} — ручные переопределения %выкупа (перекрывают План-факт)."""
+    overrides = overrides or {}
     end = preset.get("end_date")
     start = preset.get("start_date")
     end_date   = date.fromisoformat(end)   if end   else None
@@ -5032,9 +5047,12 @@ def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date) -> dict
         sa = it.get("seller_article") or ""
         rec = by_nm.get(nm) or (by_vc.get(sa) if sa else None) or {}
         stock  = int(rec.get("stock", 0))
-        buyout = float(rec.get("buyout_pct", 0) or 0)
         price  = float(rec.get("avg_price", 0) or 0)
         pace   = float(rec.get("pace", 0.0) or 0.0)
+        # %выкупа: ручное переопределение перекрывает значение из План-факта
+        ov = overrides.get(nm)
+        is_override = ov is not None
+        buyout = float(ov) if is_override else float(rec.get("buyout_pct", 0) or 0)
 
         buyout_frac = buyout / 100 if buyout > 0 else 0
         need_sales  = stock
@@ -5052,6 +5070,7 @@ def _season_compute(preset: dict, by_nm: dict, by_vc: dict, today: date) -> dict
             "seller_article":  sa or rec.get("seller_article") or str(nm),
             "name":            it.get("name") or rec.get("name") or "",
             "buyout_pct":      round(buyout, 1),
+            "buyout_override": is_override,
             "avg_price":       round(price),
             "stock":           stock,
             "need_sales":      need_sales,
@@ -5264,11 +5283,63 @@ def api_season_presets_set_items(preset_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/season/buyout", methods=["POST"])
+@require_season_api
+def api_season_set_buyout():
+    """Ручное переопределение %выкупа по артикулу. Пустое/None значение — сбросить (вернуть из План-факта)."""
+    d = request.json or {}
+    project = (d.get("project") or "").strip()
+    nm = d.get("wb_article")
+    if not project or project not in WB_CABINETS or not nm:
+        return jsonify({"error": "project and wb_article required"}), 400
+    raw = d.get("buyout_pct")
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                if raw in (None, "", False):
+                    cur.execute(
+                        "DELETE FROM season_buyout_overrides WHERE project=%s AND wb_article=%s",
+                        (project, nm),
+                    )
+                    cleared = True
+                else:
+                    val = max(0, min(100, float(raw)))
+                    cur.execute("""
+                        INSERT INTO season_buyout_overrides (project, wb_article, buyout_pct, updated_at)
+                        VALUES (%s, %s, %s, NOW())
+                        ON CONFLICT (project, wb_article) DO UPDATE SET
+                            buyout_pct=EXCLUDED.buyout_pct, updated_at=NOW()
+                    """, (project, nm, val))
+                    cleared = False
+            conn.commit()
+        return jsonify({"ok": True, "cleared": cleared})
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid buyout_pct"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _season_load_overrides(project: str) -> dict:
+    """Ручные переопределения %выкупа кабинета: {wb_article: buyout_pct}."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT wb_article, buyout_pct FROM season_buyout_overrides WHERE project=%s",
+                    (project,),
+                )
+                return {r["wb_article"]: float(r["buyout_pct"]) for r in cur.fetchall()}
+    except Exception:
+        logging.exception("season overrides load failed")
+        return {}
+
+
 def _season_decomp_payload(project: str, snapshot: dict, today: date) -> dict:
     """Считает декомпозицию по всем группам кабинета поверх снапшота метрик."""
     presets = _season_load_presets(project)
     by_nm, by_vc = _season_index_from_snapshot(snapshot)
-    computed = [_season_compute(p, by_nm, by_vc, today) for p in presets]
+    overrides = _season_load_overrides(project)
+    computed = [_season_compute(p, by_nm, by_vc, today, overrides) for p in presets]
     return {
         "presets":    computed,
         "pace_days":  snapshot.get("days_elapsed", 1),
