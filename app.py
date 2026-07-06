@@ -13,6 +13,7 @@ import math
 import logging
 import functools
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from flask import (
     Flask, jsonify, request, Response,
@@ -596,6 +597,14 @@ def _ensure_cockpit_tables():
                         note        TEXT NOT NULL DEFAULT '',
                         position    INTEGER NOT NULL DEFAULT 0,
                         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
+                # Еженедельный снимок финданных кокпита (защита от потери данных)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS cockpit_backups (
+                        backup_date  DATE PRIMARY KEY,
+                        payload      JSONB NOT NULL,
+                        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                 """)
             conn.commit()
@@ -5612,6 +5621,41 @@ def _cockpit_task_stats(month_date: date) -> dict:
     return stats
 
 
+def _cockpit_maybe_backup():
+    """Раз в 7 дней — снимок всех финтаблиц кокпита в cockpit_backups (JSONB)."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT MAX(backup_date) AS last FROM cockpit_backups")
+                last = cur.fetchone()["last"]
+                if last and (date.today() - last).days < 7:
+                    return
+                snap = {}
+                for tbl in ("agency_kpi", "cashflow", "clients", "team_members", "team_cabinets"):
+                    cur.execute(f"SELECT * FROM {tbl}")
+                    rows = []
+                    for r in cur.fetchall():
+                        d = {}
+                        for k, v in dict(r).items():
+                            if isinstance(v, (date, datetime)):
+                                d[k] = v.isoformat()
+                            elif isinstance(v, Decimal):
+                                d[k] = float(v)
+                            else:
+                                d[k] = v
+                        rows.append(d)
+                    snap[tbl] = rows
+                cur.execute(
+                    "INSERT INTO cockpit_backups (backup_date, payload) "
+                    "VALUES (CURRENT_DATE, %s::jsonb) ON CONFLICT (backup_date) DO NOTHING",
+                    (json.dumps(snap),),
+                )
+            conn.commit()
+        logging.info("Cockpit weekly backup saved.")
+    except Exception:
+        logging.exception("cockpit backup failed")
+
+
 @app.route("/cockpit")
 @require_admin
 def cockpit_page():
@@ -5624,6 +5668,7 @@ def cockpit_page():
 def api_cockpit_overview():
     month_date = _cockpit_month(request.args.get("month"))
     _cockpit_seed_kpi(month_date)
+    _cockpit_maybe_backup()
     dim, elapsed, remaining = _cockpit_days(month_date)
 
     # ── Воронка агентства (KPI) ─────────────────────────────────────────────
@@ -5756,36 +5801,34 @@ def api_cockpit_overview():
         else:
             expense_by_cat[cat] = expense_by_cat.get(cat, 0.0) + amt
 
-    revenue = recurring_rev + income
+    # Итоги считаем ТОЛЬКО по факту операций (нарастающий итог за месяц).
+    # Клиентский доход (recurring) и ФОТ (payroll) НЕ подставляем автоматически —
+    # они справочные (план ведения / плановый ФОТ). Всё фактическое движение денег
+    # владелец пишет вручную в операциях.
+    revenue = income
+    costs_total = expense
+    profit = revenue - costs_total
     avg_check = round(recurring_rev / n_active) if n_active else 0
 
-    revenue_lines = []
-    if recurring_rev:
-        revenue_lines.append({"category": "Ведение (клиенты)", "amount": round(recurring_rev),
-                              "pct": round(recurring_rev / revenue * 100, 1) if revenue else None,
-                              "count": n_active})
-    for cat, amt in sorted(income_by_cat.items(), key=lambda x: -x[1]):
-        revenue_lines.append({"category": cat, "amount": round(amt),
-                              "pct": round(amt / revenue * 100, 1) if revenue else None, "count": None})
-
-    # Затраты: ФОТ (авто из раздела Команда) + расходы cashflow по категориям
-    cost_lines = []
-    if payroll:
-        cost_lines.append({"category": "ФОТ (команда)", "amount": round(payroll),
-                           "pct": round(payroll / revenue * 100, 1) if revenue else None, "auto": True})
-    for cat, amt in sorted(expense_by_cat.items(), key=lambda x: -x[1]):
-        cost_lines.append({"category": cat, "amount": round(amt),
-                           "pct": round(amt / revenue * 100, 1) if revenue else None, "auto": False})
-    costs_total = payroll + expense
-    profit = revenue - costs_total
+    revenue_lines = [
+        {"category": cat, "amount": round(amt),
+         "pct": round(amt / revenue * 100, 1) if revenue else None, "count": None}
+        for cat, amt in sorted(income_by_cat.items(), key=lambda x: -x[1])
+    ]
+    cost_lines = [
+        {"category": cat, "amount": round(amt),
+         "pct": round(amt / revenue * 100, 1) if revenue else None, "auto": False}
+        for cat, amt in sorted(expense_by_cat.items(), key=lambda x: -x[1])
+    ]
 
     finance = {
-        "revenue": round(revenue), "recurring_rev": round(recurring_rev),
-        "oneoff_rev": round(income), "n_clients": n_active, "avg_check": avg_check,
-        "revenue_lines": revenue_lines, "cost_lines": cost_lines,
-        "costs_total": round(costs_total), "payroll": round(payroll),
+        "revenue": round(revenue), "costs_total": round(costs_total),
         "profit": round(profit),
         "margin": round(profit / revenue * 100, 1) if revenue else None,
+        "revenue_lines": revenue_lines, "cost_lines": cost_lines,
+        # справочные (в итоги не входят)
+        "recurring_plan": round(recurring_rev), "n_clients": n_active,
+        "avg_check": avg_check, "payroll_plan": round(payroll),
     }
 
     return jsonify({

@@ -238,28 +238,28 @@ function render(){
   const daysTxt = `День ${days.elapsed}/${days.in_month} · осталось ${days.remaining}`;
   let h = '';
 
-  // ── KPI cards (финансы) ──
+  // ── KPI cards (финансы) — итоги по ФАКТУ операций, нарастающим за месяц ──
   const mkt = fin.cost_lines.find(c=>/маркет/i.test(c.category));
   h += `<div class="kpis">
-    <div class="kpi green"><div class="lbl">Оборот (выручка)</div><div class="val">${money(fin.revenue)}</div><div class="sub">${daysTxt}</div></div>
-    <div class="kpi ${fin.profit>=0?'green':'red'}"><div class="lbl">Прибыль</div><div class="val">${money(fin.profit)}</div></div>
+    <div class="kpi green"><div class="lbl">Оборот (факт)</div><div class="val">${money(fin.revenue)}</div><div class="sub">нарастающим · ${daysTxt}</div></div>
+    <div class="kpi red"><div class="lbl">Расход (факт)</div><div class="val">${money(fin.costs_total)}</div></div>
+    <div class="kpi ${fin.profit>=0?'green':'red'}"><div class="lbl">Прибыль (факт)</div><div class="val">${money(fin.profit)}</div></div>
     <div class="kpi ${fin.margin>=0?'blue':'red'}"><div class="lbl">Маржа</div><div class="val">${fin.margin!=null?fin.margin+'%':'—'}</div></div>
-    <div class="kpi"><div class="lbl">Клиентов</div><div class="val">${fin.n_clients}</div><div class="sub">на ведении</div></div>
+    <div class="kpi"><div class="lbl">Клиентов</div><div class="val">${fin.n_clients}</div><div class="sub">ведение ${money(fin.recurring_plan)}/мес</div></div>
     <div class="kpi blue"><div class="lbl">Средний чек</div><div class="val">${money(fin.avg_check)}</div></div>
-    <div class="kpi red"><div class="lbl">ФОТ</div><div class="val">${money(fin.payroll)}</div><div class="sub">${fin.revenue?Math.round(fin.payroll/fin.revenue*100):0}% от выручки</div></div>
-    <div class="kpi yellow"><div class="lbl">Маркетинг</div><div class="val">${mkt?money(mkt.amount):'0 ₽'}</div><div class="sub">${mkt&&mkt.pct!=null?mkt.pct+'% от выручки':'—'}</div></div>
-    <div class="kpi purple"><div class="lbl">Разовые услуги</div><div class="val">${money(fin.oneoff_rev)}</div></div>
+    <div class="kpi purple"><div class="lbl">ФОТ (план)</div><div class="val">${money(fin.payroll_plan)}</div><div class="sub">справочно · из «Команда»</div></div>
+    <div class="kpi yellow"><div class="lbl">Маркетинг</div><div class="val">${mkt?money(mkt.amount):'0 ₽'}</div><div class="sub">${mkt&&mkt.pct!=null?mkt.pct+'% от оборота':'—'}</div></div>
   </div>`;
 
   // ── Финмодель P&L ──
-  h += `<div class="card"><div class="card-hd"><span class="card-name">💼 Финмодель (P&L / РНП)</span><span class="card-hd-sep"></span><span class="muted">${daysTxt}</span></div>
+  h += `<div class="card"><div class="card-hd"><span class="card-name">💼 Финмодель (P&L / РНП)</span><span class="card-hd-sep"></span><span class="muted">по факту операций · нарастающим за месяц</span></div>
     <div class="card-body"><div class="grid2">`;
   // revenue
   h += `<div><table><thead><tr><th>Выручка</th><th>₽</th><th>% оборота</th></tr></thead><tbody>`;
   fin.revenue_lines.forEach(l=>{
     h += `<tr><td>${esc(l.category)}${l.count?` <span class="muted">(${l.count})</span>`:''}</td><td>${money(l.amount)}</td><td class="muted">${l.pct!=null?l.pct+'%':'—'}</td></tr>`;
   });
-  if(!fin.revenue_lines.length) h += `<tr><td colspan="3" class="empty">Добавь клиентов или доход-операции</td></tr>`;
+  if(!fin.revenue_lines.length) h += `<tr><td colspan="3" class="empty">Добавь доход-операции ниже</td></tr>`;
   h += `<tr class="tot-row"><td>Итого оборот</td><td style="color:var(--green)">${money(fin.revenue)}</td><td>100%</td></tr>`;
   h += `</tbody></table></div>`;
   // costs
@@ -267,7 +267,7 @@ function render(){
   fin.cost_lines.forEach(l=>{
     h += `<tr><td>${esc(l.category)}${l.auto?' <span class="tag">авто</span>':''}</td><td style="color:var(--red)">${money(l.amount)}</td><td class="muted">${l.pct!=null?l.pct+'%':'—'}</td></tr>`;
   });
-  if(!fin.cost_lines.length) h += `<tr><td colspan="3" class="empty">ФОТ из «Команда» + расход-операции</td></tr>`;
+  if(!fin.cost_lines.length) h += `<tr><td colspan="3" class="empty">Добавь расход-операции ниже</td></tr>`;
   h += `<tr class="tot-row"><td>Итого затрат</td><td style="color:var(--red)">${money(fin.costs_total)}</td><td>${fin.revenue?Math.round(fin.costs_total/fin.revenue*100):0}%</td></tr>`;
   h += `<tr class="tot-row"><td>Прибыль · маржа</td><td style="color:${fin.profit>=0?'var(--green)':'var(--red)'}">${money(fin.profit)}</td><td class="pct ${fin.margin>=0?'ok':'low'}">${fin.margin!=null?fin.margin+'%':'—'}</td></tr>`;
   h += `</tbody></table></div>`;
@@ -275,7 +275,7 @@ function render(){
 
   // ── Клиенты ──
   h += `<div class="card"><div class="card-hd"><span class="card-name">🤝 Клиенты</span><span class="card-hd-sep"></span>
-    <span class="muted">${fin.n_clients} активных · ${money(fin.recurring_rev)}/мес · чек ${money(fin.avg_check)}</span>
+    <span class="muted">${fin.n_clients} активных · план ведения ${money(fin.recurring_plan)}/мес · чек ${money(fin.avg_check)}</span>
     <button class="btn btn-sm btn-primary" onclick="openClient()">+ клиент</button></div><div class="card-body p0">`;
   h += `<table><thead><tr><th>Клиент</th><th>Кабинет</th><th>Услуга</th><th>Чек ₽/мес</th><th>Старт</th><th>Статус</th><th></th></tr></thead><tbody>`;
   (d.clients||[]).forEach(c=>{
