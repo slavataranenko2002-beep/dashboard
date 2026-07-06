@@ -584,6 +584,20 @@ def _ensure_cockpit_tables():
                         UNIQUE (member_id, cabinet)
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS clients (
+                        id          SERIAL PRIMARY KEY,
+                        name        TEXT NOT NULL,
+                        cabinet     TEXT NOT NULL DEFAULT '',
+                        service     TEXT NOT NULL DEFAULT 'Ведение',
+                        mrr         NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        start_date  DATE,
+                        active      BOOLEAN NOT NULL DEFAULT TRUE,
+                        note        TEXT NOT NULL DEFAULT '',
+                        position    INTEGER NOT NULL DEFAULT 0,
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
             conn.commit()
         logging.info("Cockpit tables ready.")
     except Exception as e:
@@ -5710,9 +5724,75 @@ def api_cockpit_overview():
             "cabinets": cabs, "bonus_rub": round(bonus), "salary_total": total,
         })
 
+    # ── Клиенты + Финмодель (P&L / РНП) ─────────────────────────────────────
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM clients ORDER BY active DESC, position, id")
+            client_rows = cur.fetchall()
+    clients = []
+    recurring_rev = 0.0
+    n_active = 0
+    for c in client_rows:
+        mrr = float(c["mrr"] or 0)
+        act = bool(c["active"])
+        if act:
+            recurring_rev += mrr
+            n_active += 1
+        clients.append({
+            "id": c["id"], "name": c["name"], "cabinet": c["cabinet"],
+            "service": c["service"], "mrr": mrr, "active": act,
+            "start_date": c["start_date"].isoformat() if c["start_date"] else "",
+            "note": c["note"],
+        })
+
+    # Выручка = ведение (клиенты) + прочие поступления (доходы cashflow, сгруппированы)
+    income_by_cat = {}
+    expense_by_cat = {}
+    for r in cf_rows:
+        amt = float(r["amount"] or 0)
+        cat = (r["category"] or "").strip() or "Прочее"
+        if r["direction"] == "income":
+            income_by_cat[cat] = income_by_cat.get(cat, 0.0) + amt
+        else:
+            expense_by_cat[cat] = expense_by_cat.get(cat, 0.0) + amt
+
+    revenue = recurring_rev + income
+    avg_check = round(recurring_rev / n_active) if n_active else 0
+
+    revenue_lines = []
+    if recurring_rev:
+        revenue_lines.append({"category": "Ведение (клиенты)", "amount": round(recurring_rev),
+                              "pct": round(recurring_rev / revenue * 100, 1) if revenue else None,
+                              "count": n_active})
+    for cat, amt in sorted(income_by_cat.items(), key=lambda x: -x[1]):
+        revenue_lines.append({"category": cat, "amount": round(amt),
+                              "pct": round(amt / revenue * 100, 1) if revenue else None, "count": None})
+
+    # Затраты: ФОТ (авто из раздела Команда) + расходы cashflow по категориям
+    cost_lines = []
+    if payroll:
+        cost_lines.append({"category": "ФОТ (команда)", "amount": round(payroll),
+                           "pct": round(payroll / revenue * 100, 1) if revenue else None, "auto": True})
+    for cat, amt in sorted(expense_by_cat.items(), key=lambda x: -x[1]):
+        cost_lines.append({"category": cat, "amount": round(amt),
+                           "pct": round(amt / revenue * 100, 1) if revenue else None, "auto": False})
+    costs_total = payroll + expense
+    profit = revenue - costs_total
+
+    finance = {
+        "revenue": round(revenue), "recurring_rev": round(recurring_rev),
+        "oneoff_rev": round(income), "n_clients": n_active, "avg_check": avg_check,
+        "revenue_lines": revenue_lines, "cost_lines": cost_lines,
+        "costs_total": round(costs_total), "payroll": round(payroll),
+        "profit": round(profit),
+        "margin": round(profit / revenue * 100, 1) if revenue else None,
+    }
+
     return jsonify({
         "month": month_date.isoformat(),
         "days": {"in_month": dim, "elapsed": elapsed, "remaining": remaining},
+        "clients": clients,
+        "finance": finance,
         "kpi": kpi,
         "goals": {
             "money_plan": round(goal_money_plan), "money_fact": round(goal_money_fact),
@@ -5862,6 +5942,46 @@ def api_cockpit_team_del(mid):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM team_members WHERE id=%s", (mid,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/cockpit/clients", methods=["POST"])
+@require_admin_api
+def api_cockpit_client_save():
+    d = request.json or {}
+    cid = d.get("id")
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                if cid:
+                    cur.execute(
+                        "UPDATE clients SET name=%s,cabinet=%s,service=%s,mrr=%s,"
+                        "start_date=%s,active=%s,note=%s WHERE id=%s",
+                        (d.get("name", ""), d.get("cabinet", ""), d.get("service", "Ведение"),
+                         float(d.get("mrr") or 0), d.get("start_date") or None,
+                         bool(d.get("active", True)), d.get("note", ""), cid),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO clients (name,cabinet,service,mrr,start_date,active,note) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        (d.get("name", ""), d.get("cabinet", ""), d.get("service", "Ведение"),
+                         float(d.get("mrr") or 0), d.get("start_date") or None,
+                         bool(d.get("active", True)), d.get("note", "")),
+                    )
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cockpit/clients/<int:cid>", methods=["DELETE"])
+@require_admin_api
+def api_cockpit_client_del(cid):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM clients WHERE id=%s", (cid,))
         conn.commit()
     return jsonify({"ok": True})
 

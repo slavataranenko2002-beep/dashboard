@@ -24,40 +24,42 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;white-space:nowrap;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
 .hbtn:hover{background:var(--bg4);color:var(--text)}
 .theme-btn{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
-input[type=month],input[type=date],input[type=text],input[type=number],select{
-  padding:6px 10px;border-radius:7px;border:1px solid var(--border);
-  background:var(--bg3);color:var(--text);font-size:13px}
+input,select{font-family:inherit;font-size:13px;color:var(--text);background:var(--bg3);
+  border:1px solid var(--border);border-radius:7px;padding:6px 9px}
 input:focus,select:focus{outline:none;border-color:var(--blue)}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--blue);padding:0}
 .btn{padding:6px 13px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);
   color:var(--text);font-size:13px;cursor:pointer}
 .btn:hover{background:var(--bg4)}
 .btn-primary{background:var(--blue);color:#fff;border:none;font-weight:600}
-.btn-sm{padding:3px 8px;font-size:12px}
+.btn-sm{padding:4px 9px;font-size:12px}
 .btn-danger{color:var(--red)}
 .wrap{padding:20px;max-width:1560px;margin:0 auto}
 
-/* KPI cards */
 .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:22px}
 .kpi{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
 .kpi .lbl{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
-.kpi .val{font-size:24px;font-weight:700;margin-top:4px}
+.kpi .val{font-size:23px;font-weight:700;margin-top:4px}
 .kpi .sub{font-size:12px;color:var(--text2);margin-top:2px}
 .kpi.green .val{color:var(--green)} .kpi.red .val{color:var(--red)}
 .kpi.blue .val{color:var(--blue)} .kpi.purple .val{color:var(--purple)}
+.kpi.yellow .val{color:var(--yellow)}
 
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:22px;overflow:hidden}
 .card-hd{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .card-name{font-weight:700;font-size:15px}
 .card-hd-sep{flex:1}
 .card-body{padding:16px 18px}
+.card-body.p0{padding:0}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
 th{color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
-tr:last-child td{border-bottom:none}
+tbody tr:last-child td{border-bottom:none}
 .grp-row td{background:var(--bg3);font-weight:700;color:var(--text)}
-.editable{cursor:pointer;border-bottom:1px dashed var(--text3)}
-.editable:hover{color:var(--blue)}
+.tot-row td{border-top:2px solid var(--border);font-weight:700}
+.cell-inp{width:80px;text-align:right;padding:4px 7px}
+.cell-inp.wide{width:150px;text-align:left}
 .pct{font-weight:700}
 .pct.ok{color:var(--green)} .pct.mid{color:var(--yellow)} .pct.low{color:var(--red)}
 .bar{height:8px;border-radius:5px;background:var(--bg4);overflow:hidden;min-width:60px}
@@ -67,7 +69,6 @@ tr:last-child td{border-bottom:none}
 .progress .bar{height:12px}
 .muted{color:var(--text2)}
 .right{text-align:right}
-.chartbox{padding:8px 4px}
 .legend{display:flex;gap:16px;font-size:12px;color:var(--text2);margin-bottom:8px}
 .legend b{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
@@ -82,22 +83,29 @@ tr:last-child td{border-bottom:none}
 .cabcard .rowline{display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:3px}
 .cabcard .rowline b{color:var(--text)}
 .tag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:11px;background:var(--bg4);color:var(--text2)}
+.addbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 18px;background:var(--bg3);border-bottom:1px solid var(--border)}
+.addbar input,.addbar select{padding:6px 9px}
+.x{cursor:pointer;color:var(--text3);font-size:15px;padding:0 4px}
+.x:hover{color:var(--red)}
+.editable{cursor:pointer;color:var(--blue)}
+.empty{color:var(--text2);text-align:center;padding:26px 0}
+.chip{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
 
-/* modal */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
 .overlay.on{display:flex}
 .modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:560px;max-height:90vh;overflow:auto}
-.modal-hd{padding:15px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px;display:flex;align-items:center}
+.modal-hd{padding:15px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px}
 .modal-bd{padding:18px 20px}
-.modal-ft{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+.modal-ft{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center}
 .field{margin-bottom:13px}
 .field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px}
 .field input,.field select{width:100%}
+.field.check{display:flex;align-items:center;gap:8px}
+.field.check input{width:auto}
+.field.check label{margin:0}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .cabrow{display:grid;grid-template-columns:1.4fr 1fr .8fr auto;gap:8px;align-items:center;margin-bottom:7px}
 .cabrow input{width:100%}
-.x{cursor:pointer;color:var(--text3);font-size:16px;padding:0 4px}
-.x:hover{color:var(--red)}
-.empty{color:var(--text2);text-align:center;padding:26px 0}
 </style>
 </head>
 <body>
@@ -110,20 +118,73 @@ tr:last-child td{border-bottom:none}
   <button class="hbtn theme-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
 </div>
 
-<div class="wrap" id="root">
-  <div class="empty">Загрузка…</div>
+<div class="wrap" id="root"><div class="empty">Загрузка…</div></div>
+
+<!-- ── Client modal ── -->
+<div class="overlay" id="clientOverlay">
+  <div class="modal">
+    <div class="modal-hd" id="clientTitle">Клиент</div>
+    <div class="modal-bd">
+      <input type="hidden" id="cl_id">
+      <div class="field"><label>Название / имя клиента</label><input type="text" id="cl_name"></div>
+      <div class="row2">
+        <div class="field"><label>Кабинет</label><input type="text" id="cl_cabinet" list="cabList"></div>
+        <div class="field"><label>Услуга</label>
+          <select id="cl_service"><option>Ведение</option><option>Разовая</option><option>Консалтинг</option><option>Трафик</option></select></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Чек, ₽/мес</label><input type="number" id="cl_mrr" value="0"></div>
+        <div class="field"><label>Старт</label><input type="date" id="cl_start"></div>
+      </div>
+      <div class="field"><label>Заметка</label><input type="text" id="cl_note"></div>
+      <div class="field check"><input type="checkbox" id="cl_active" checked><label>Активный (учитывается в обороте)</label></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-danger" id="cl_del" onclick="deleteClient()">Удалить</button>
+      <span style="flex:1"></span>
+      <button class="btn" onclick="closeModal('clientOverlay')">Отмена</button>
+      <button class="btn btn-primary" onclick="saveClient()">Сохранить</button>
+    </div>
+  </div>
 </div>
 
-<!-- team modal -->
+<!-- ── KPI modal ── -->
+<div class="overlay" id="kpiOverlay">
+  <div class="modal">
+    <div class="modal-hd">Показатель воронки</div>
+    <div class="modal-bd">
+      <input type="hidden" id="k_id">
+      <div class="field"><label>Группа</label>
+        <select id="k_grp"><option>Привлечение</option><option>Продажи</option><option>Предоставление</option></select></div>
+      <div class="field"><label>Название показателя</label><input type="text" id="k_metric"></div>
+      <div class="row2">
+        <div class="field"><label>План (шт)</label><input type="number" id="k_plan" value="0"></div>
+        <div class="field"><label>Факт (шт)</label><input type="number" id="k_fact" value="0"></div>
+      </div>
+      <div class="field"><label>₽ за единицу (0 если не деньги)</label><input type="number" id="k_price" value="0"></div>
+    </div>
+    <div class="modal-ft">
+      <span style="flex:1"></span>
+      <button class="btn" onclick="closeModal('kpiOverlay')">Отмена</button>
+      <button class="btn btn-primary" onclick="saveKpiModal()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Team modal ── -->
 <div class="overlay" id="teamOverlay">
   <div class="modal">
-    <div class="modal-hd" id="teamModalTitle">Сотрудник</div>
+    <div class="modal-hd" id="teamTitle">Сотрудник</div>
     <div class="modal-bd">
       <input type="hidden" id="tm_id">
-      <div class="field"><label>Имя</label><input type="text" id="tm_name"></div>
-      <div class="field"><label>Должность</label><input type="text" id="tm_role"></div>
-      <div class="field"><label>Email (для связи с задачами, опц.)</label><input type="text" id="tm_email"></div>
-      <div class="field"><label>Оклад, ₽/мес</label><input type="number" id="tm_base" value="0"></div>
+      <div class="row2">
+        <div class="field"><label>Имя</label><input type="text" id="tm_name"></div>
+        <div class="field"><label>Должность</label><input type="text" id="tm_role"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Оклад, ₽/мес</label><input type="number" id="tm_base" value="0"></div>
+        <div class="field"><label>Email (опц.)</label><input type="text" id="tm_email"></div>
+      </div>
       <div class="field">
         <label>Мотивация по кабинетам (% от факта продаж кабинета)</label>
         <div id="tm_cabs"></div>
@@ -133,20 +194,23 @@ tr:last-child td{border-bottom:none}
     <div class="modal-ft">
       <button class="btn btn-danger" id="tm_del" onclick="deleteMember()">Удалить</button>
       <span style="flex:1"></span>
-      <button class="btn" onclick="closeTeam()">Отмена</button>
+      <button class="btn" onclick="closeModal('teamOverlay')">Отмена</button>
       <button class="btn btn-primary" onclick="saveMember()">Сохранить</button>
     </div>
   </div>
 </div>
 
+<datalist id="cabList"></datalist>
+
 <script>
 const CABINETS = {{ cabinets|tojson }};
 let DATA = null;
 
-function money(n){ n=Math.round(n||0); return n.toLocaleString('ru-RU')+' ₽'; }
+function money(n){ return (Math.round(n||0)).toLocaleString('ru-RU')+' ₽'; }
 function num(n){ return (Math.round(n||0)).toLocaleString('ru-RU'); }
 function pctClass(p){ if(p==null) return 'muted'; if(p>=100) return 'ok'; if(p>=60) return 'mid'; return 'low'; }
-function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function esc(s){ return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function closeModal(id){ document.getElementById(id).classList.remove('on'); }
 
 function toggleTheme(){
   const on = document.documentElement.getAttribute('data-theme')==='light';
@@ -154,131 +218,170 @@ function toggleTheme(){
   document.getElementById('themeBtn').textContent = on?'🌙':'☀️';
   localStorage.setItem('cockpit_theme', on?'dark':'light');
 }
-if(localStorage.getItem('cockpit_theme')==='light'){document.documentElement.setAttribute('data-theme','light');document.addEventListener('DOMContentLoaded',()=>document.getElementById('themeBtn').textContent='☀️');}
+if(localStorage.getItem('cockpit_theme')==='light'){document.documentElement.setAttribute('data-theme','light');}
 
 function curMonth(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 
 async function load(){
   const m = document.getElementById('month').value || curMonth();
   document.getElementById('month').value = m;
-  const r = await fetch('/api/cockpit/overview?month='+m);
-  DATA = await r.json();
-  render();
+  try{
+    const r = await fetch('/api/cockpit/overview?month='+m);
+    if(!r.ok){ document.getElementById('root').innerHTML = '<div class="empty">Ошибка загрузки ('+r.status+'). Обнови страницу.</div>'; return; }
+    DATA = await r.json();
+    render();
+  }catch(e){ document.getElementById('root').innerHTML = '<div class="empty">Ошибка сети: '+esc(e.message)+'</div>'; }
 }
 
 function render(){
-  const d = DATA, g = d.goals, cf = d.cashflow, days = d.days;
+  const d = DATA, g = d.goals, cf = d.cashflow, days = d.days, fin = d.finance;
   const daysTxt = `День ${days.elapsed}/${days.in_month} · осталось ${days.remaining}`;
   let h = '';
 
-  // ── KPI cards ──
+  // ── KPI cards (финансы) ──
+  const mkt = fin.cost_lines.find(c=>/маркет/i.test(c.category));
   h += `<div class="kpis">
-    <div class="kpi green"><div class="lbl">Доход</div><div class="val">${money(cf.income)}</div><div class="sub">${daysTxt}</div></div>
-    <div class="kpi red"><div class="lbl">Расход</div><div class="val">${money(cf.expense)}</div></div>
-    <div class="kpi ${cf.net>=0?'green':'red'}"><div class="lbl">Чистыми</div><div class="val">${money(cf.net)}</div></div>
-    <div class="kpi blue"><div class="lbl">Средний чек</div><div class="val">${money(cf.avg_check)}</div></div>
-    <div class="kpi"><div class="lbl">Лиды</div><div class="val">${g.leads_fact}<span class="sub"> / ${g.leads_plan}</span></div></div>
-    <div class="kpi"><div class="lbl">Продажи (шт)</div><div class="val">${g.sales_fact}<span class="sub"> / ${g.sales_plan}</span></div></div>
-    <div class="kpi purple"><div class="lbl">Цель по деньгам</div><div class="val">${g.money_pct!=null?g.money_pct+'%':'—'}</div><div class="sub">${money(g.money_fact)} / ${money(g.money_plan)}</div></div>
-    <div class="kpi"><div class="lbl">ФОТ (расчёт)</div><div class="val">${money(d.payroll)}</div></div>
+    <div class="kpi green"><div class="lbl">Оборот (выручка)</div><div class="val">${money(fin.revenue)}</div><div class="sub">${daysTxt}</div></div>
+    <div class="kpi ${fin.profit>=0?'green':'red'}"><div class="lbl">Прибыль</div><div class="val">${money(fin.profit)}</div></div>
+    <div class="kpi ${fin.margin>=0?'blue':'red'}"><div class="lbl">Маржа</div><div class="val">${fin.margin!=null?fin.margin+'%':'—'}</div></div>
+    <div class="kpi"><div class="lbl">Клиентов</div><div class="val">${fin.n_clients}</div><div class="sub">на ведении</div></div>
+    <div class="kpi blue"><div class="lbl">Средний чек</div><div class="val">${money(fin.avg_check)}</div></div>
+    <div class="kpi red"><div class="lbl">ФОТ</div><div class="val">${money(fin.payroll)}</div><div class="sub">${fin.revenue?Math.round(fin.payroll/fin.revenue*100):0}% от выручки</div></div>
+    <div class="kpi yellow"><div class="lbl">Маркетинг</div><div class="val">${mkt?money(mkt.amount):'0 ₽'}</div><div class="sub">${mkt&&mkt.pct!=null?mkt.pct+'% от выручки':'—'}</div></div>
+    <div class="kpi purple"><div class="lbl">Разовые услуги</div><div class="val">${money(fin.oneoff_rev)}</div></div>
   </div>`;
 
-  // ── Цели ──
-  h += `<div class="card"><div class="card-hd"><span class="card-name">🎯 Цели месяца</span><span class="card-hd-sep"></span><span class="muted">${daysTxt}</span></div><div class="card-body">`;
-  h += progress('Деньги (воронка агентства)', g.money_fact, g.money_plan, true);
-  h += progress('Лиды', g.leads_fact, g.leads_plan, false);
-  h += progress('Продажи (договоры+разовые)', g.sales_fact, g.sales_plan, false);
-  h += `</div></div>`;
+  // ── Финмодель P&L ──
+  h += `<div class="card"><div class="card-hd"><span class="card-name">💼 Финмодель (P&L / РНП)</span><span class="card-hd-sep"></span><span class="muted">${daysTxt}</span></div>
+    <div class="card-body"><div class="grid2">`;
+  // revenue
+  h += `<div><table><thead><tr><th>Выручка</th><th>₽</th><th>% оборота</th></tr></thead><tbody>`;
+  fin.revenue_lines.forEach(l=>{
+    h += `<tr><td>${esc(l.category)}${l.count?` <span class="muted">(${l.count})</span>`:''}</td><td>${money(l.amount)}</td><td class="muted">${l.pct!=null?l.pct+'%':'—'}</td></tr>`;
+  });
+  if(!fin.revenue_lines.length) h += `<tr><td colspan="3" class="empty">Добавь клиентов или доход-операции</td></tr>`;
+  h += `<tr class="tot-row"><td>Итого оборот</td><td style="color:var(--green)">${money(fin.revenue)}</td><td>100%</td></tr>`;
+  h += `</tbody></table></div>`;
+  // costs
+  h += `<div><table><thead><tr><th>Затраты</th><th>₽</th><th>% оборота</th></tr></thead><tbody>`;
+  fin.cost_lines.forEach(l=>{
+    h += `<tr><td>${esc(l.category)}${l.auto?' <span class="tag">авто</span>':''}</td><td style="color:var(--red)">${money(l.amount)}</td><td class="muted">${l.pct!=null?l.pct+'%':'—'}</td></tr>`;
+  });
+  if(!fin.cost_lines.length) h += `<tr><td colspan="3" class="empty">ФОТ из «Команда» + расход-операции</td></tr>`;
+  h += `<tr class="tot-row"><td>Итого затрат</td><td style="color:var(--red)">${money(fin.costs_total)}</td><td>${fin.revenue?Math.round(fin.costs_total/fin.revenue*100):0}%</td></tr>`;
+  h += `<tr class="tot-row"><td>Прибыль · маржа</td><td style="color:${fin.profit>=0?'var(--green)':'var(--red)'}">${money(fin.profit)}</td><td class="pct ${fin.margin>=0?'ok':'low'}">${fin.margin!=null?fin.margin+'%':'—'}</td></tr>`;
+  h += `</tbody></table></div>`;
+  h += `</div></div></div>`;
 
-  // ── Воронка агентства (KPI table) ──
+  // ── Клиенты ──
+  h += `<div class="card"><div class="card-hd"><span class="card-name">🤝 Клиенты</span><span class="card-hd-sep"></span>
+    <span class="muted">${fin.n_clients} активных · ${money(fin.recurring_rev)}/мес · чек ${money(fin.avg_check)}</span>
+    <button class="btn btn-sm btn-primary" onclick="openClient()">+ клиент</button></div><div class="card-body p0">`;
+  h += `<table><thead><tr><th>Клиент</th><th>Кабинет</th><th>Услуга</th><th>Чек ₽/мес</th><th>Старт</th><th>Статус</th><th></th></tr></thead><tbody>`;
+  (d.clients||[]).forEach(c=>{
+    h += `<tr>
+      <td>${esc(c.name)}${c.note?`<div class="muted" style="font-size:11px">${esc(c.note)}</div>`:''}</td>
+      <td class="right muted">${esc(c.cabinet)||'—'}</td>
+      <td class="right muted">${esc(c.service)}</td>
+      <td>${money(c.mrr)}</td>
+      <td class="right muted">${c.start_date||'—'}</td>
+      <td class="right"><span class="chip" style="background:${c.active?'var(--green)':'var(--text3)'}"></span>${c.active?'Активен':'Неактивен'}</td>
+      <td><span class="editable" onclick='openClient(${JSON.stringify(c)})'>✎</span></td>
+    </tr>`;
+  });
+  if(!(d.clients||[]).length) h += `<tr><td colspan="7" class="empty">Пока нет клиентов</td></tr>`;
+  h += `</tbody></table></div></div>`;
+
+  // ── Операции (доход/расход) ──
+  h += `<div class="card"><div class="card-hd"><span class="card-name">💸 Операции · доходы и расходы</span><span class="card-hd-sep"></span>
+    <span class="muted">доход ${money(cf.income)} · расход ${money(cf.expense)}</span></div>`;
+  h += `<div class="addbar">
+    <input type="date" id="op_dt">
+    <select id="op_dir"><option value="income">Доход</option><option value="expense">Расход</option></select>
+    <input type="text" id="op_cat" placeholder="категория (Маркетинг, Налоги…)" style="width:200px">
+    <input type="text" id="op_proj" placeholder="кабинет/клиент" list="cabList" style="width:150px">
+    <input type="number" id="op_amt" placeholder="сумма ₽" style="width:120px">
+    <input type="text" id="op_note" placeholder="заметка" style="width:160px">
+    <button class="btn btn-primary btn-sm" onclick="addOperation()">Добавить</button></div>`;
+  h += `<div class="card-body p0"><table><thead><tr><th>Дата</th><th>Тип</th><th>Категория</th><th>Кабинет</th><th>Заметка</th><th>Сумма</th><th></th></tr></thead><tbody>`;
+  cf.rows.forEach(r=>{
+    h += `<tr><td>${r.dt}</td>
+      <td><span class="tag" style="color:${r.direction==='income'?'var(--green)':'var(--red)'}">${r.direction==='income'?'Доход':'Расход'}</span></td>
+      <td class="right muted">${esc(r.category)||'—'}</td>
+      <td class="right muted">${esc(r.project)||'—'}</td>
+      <td class="right muted">${esc(r.note)||''}</td>
+      <td style="color:${r.direction==='income'?'var(--green)':'var(--red)'}">${money(r.amount)}</td>
+      <td><span class="x" onclick="delCash(${r.id})">✕</span></td></tr>`;
+  });
+  if(!cf.rows.length) h += `<tr><td colspan="7" class="empty">Нет операций за месяц</td></tr>`;
+  h += `</tbody></table></div></div>`;
+
+  // ── Воронка агентства (inline edit) ──
   h += `<div class="card"><div class="card-hd"><span class="card-name">📈 Воронка агентства</span><span class="card-hd-sep"></span>
-    <button class="btn btn-sm" onclick="editKpi()">+ показатель</button></div><div class="card-body" style="padding:0">`;
-  h += `<table><thead><tr><th>Показатель</th><th>План</th><th>Факт</th><th>Должно быть</th><th>Прогноз</th><th>% вып</th><th>₽/ед</th><th>₽ факт</th><th></th></tr></thead><tbody>`;
+    <span class="muted">${daysTxt}</span><button class="btn btn-sm" onclick="openKpi()">+ показатель</button></div><div class="card-body p0">`;
+  h += `<table><thead><tr><th>Показатель</th><th>План</th><th>Факт</th><th>Должно</th><th>Прогноз</th><th>% вып</th><th>₽/ед</th><th>₽ факт</th><th></th></tr></thead><tbody>`;
   let lastGrp='';
   d.kpi.forEach(k=>{
     if(k.grp!==lastGrp){ h+=`<tr class="grp-row"><td colspan="9">${esc(k.grp)}</td></tr>`; lastGrp=k.grp; }
     const pc = pctClass(k.pct);
     h += `<tr>
       <td>${esc(k.metric)}</td>
-      <td>${k.plan_qty}</td>
-      <td><b>${k.fact_qty}</b></td>
+      <td><input class="cell-inp" type="number" value="${k.plan_qty}" onchange="saveKpiField(${k.id},'plan_qty',this.value)"></td>
+      <td><input class="cell-inp" type="number" value="${k.fact_qty}" onchange="saveKpiField(${k.id},'fact_qty',this.value)"></td>
       <td class="muted">${k.should_be}</td>
       <td class="muted">${k.run_rate}</td>
       <td class="pct ${pc}">${k.pct!=null?k.pct+'%':'—'}</td>
-      <td class="muted">${k.unit_price?num(k.unit_price):'—'}</td>
+      <td><input class="cell-inp" type="number" value="${k.unit_price}" onchange="saveKpiField(${k.id},'unit_price',this.value)"></td>
       <td>${k.money_fact?money(k.money_fact):'—'}</td>
-      <td><span class="editable" onclick='editKpi(${JSON.stringify(k)})'>✎</span> <span class="x" onclick="delKpi(${k.id})">✕</span></td>
+      <td><span class="editable" onclick='openKpi(${JSON.stringify(k)})'>✎</span> <span class="x" onclick="delKpi(${k.id})">✕</span></td>
     </tr>`;
   });
   if(!d.kpi.length) h += `<tr><td colspan="9" class="empty">Нет показателей</td></tr>`;
   h += `</tbody></table></div></div>`;
 
-  // ── Денежные потоки ──
-  h += `<div class="card"><div class="card-hd"><span class="card-name">💸 Денежные потоки</span><span class="card-hd-sep"></span>
-    <button class="btn btn-sm btn-primary" onclick="addCashRow()">+ операция</button></div><div class="card-body">`;
-  h += cashChart(cf.by_day);
-  h += `<table style="margin-top:14px"><thead><tr><th>Дата</th><th>Тип</th><th>Категория</th><th>Кабинет</th><th>Заметка</th><th>Сумма</th><th></th></tr></thead><tbody>`;
-  cf.rows.forEach(r=>{
-    h += `<tr>
-      <td>${r.dt}</td>
-      <td><span class="tag" style="color:${r.direction==='income'?'var(--green)':'var(--red)'}">${r.direction==='income'?'Доход':'Расход'}</span></td>
-      <td class="right muted">${esc(r.category)||'—'}</td>
-      <td class="right muted">${esc(r.project)||'—'}</td>
-      <td class="right muted">${esc(r.note)||''}</td>
-      <td style="color:${r.direction==='income'?'var(--green)':'var(--red)'}">${money(r.amount)}</td>
-      <td><span class="x" onclick="delCash(${r.id})">✕</span></td>
-    </tr>`;
-  });
-  if(!cf.rows.length) h += `<tr><td colspan="7" class="empty">Нет операций за месяц</td></tr>`;
-  h += `</tbody></table></div></div>`;
-
-  // ── Сетка планов по кабинетам ──
-  h += `<div class="card"><div class="card-hd"><span class="card-name">🗂 Сетка планов по кабинетам</span><span class="card-hd-sep"></span><span class="muted">продажи ₽ · из План-Факта</span></div><div class="card-body"><div class="cabgrid">`;
+  // ── Цели + Сетка кабинетов (2 col) ──
+  h += `<div class="grid2">`;
+  h += `<div class="card"><div class="card-hd"><span class="card-name">🎯 Цели месяца</span></div><div class="card-body">`;
+  h += progress('Деньги (воронка)', g.money_fact, g.money_plan, true);
+  h += progress('Лиды', g.leads_fact, g.leads_plan, false);
+  h += progress('Продажи (шт)', g.sales_fact, g.sales_plan, false);
+  h += `</div></div>`;
+  h += `<div class="card"><div class="card-hd"><span class="card-name">🗂 Планы по кабинетам</span><span class="card-hd-sep"></span><span class="muted">продажи ₽</span></div><div class="card-body"><div class="cabgrid">`;
   d.cabinet_grid.forEach(c=>{
-    const pc = pctClass(c.pct);
     const col = c.pct==null?'var(--text3)':(c.pct>=100?'var(--green)':c.pct>=60?'var(--yellow)':'var(--red)');
     const w = c.pct==null?0:Math.min(100,c.pct);
     h += `<div class="cabcard"><div class="cn">${esc(c.cabinet)}</div>
       <div class="rowline"><span>Факт</span><b>${money(c.sales_rub_fact)}</b></div>
       <div class="rowline"><span>План</span><b>${c.sales_rub_plan?money(c.sales_rub_plan):'—'}</b></div>
       <div class="bar" style="margin-top:7px"><i style="width:${w}%;background:${col}"></i></div>
-      <div class="rowline" style="margin-top:6px"><span>Выполнение</span><b class="pct ${pc}">${c.pct!=null?c.pct+'%':'—'}</b></div>
-    </div>`;
+      <div class="rowline" style="margin-top:6px"><span>Выполнение</span><b class="pct ${pctClass(c.pct)}">${c.pct!=null?c.pct+'%':'—'}</b></div></div>`;
   });
   if(!d.cabinet_grid.length) h += `<div class="empty">Нет кабинетов</div>`;
-  h += `</div></div></div>`;
+  h += `</div></div></div></div>`;
 
-  // ── Операционка + Команда (2 колонки) ──
+  // ── Операционка + Команда (2 col) ──
   h += `<div class="grid2">`;
-  // tasks
   const t = d.tasks;
   h += `<div class="card"><div class="card-hd"><span class="card-name">⚙️ Операционка (задачи)</span></div><div class="card-body">
     <div class="kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
       <div class="kpi"><div class="lbl">Всего</div><div class="val">${t.total}</div></div>
       <div class="kpi green"><div class="lbl">Сделано</div><div class="val">${t.done}</div></div>
       <div class="kpi blue"><div class="lbl">В работе</div><div class="val">${t.in_work}</div></div>
-    </div>`;
-  h += `<div class="muted" style="margin-bottom:8px">По кабинетам</div><div class="hbars">`;
-  h += hbars(t.by_project, 'var(--blue)');
-  h += `</div></div></div>`;
-  // team
+    </div><div class="muted" style="margin-bottom:8px">По кабинетам</div><div class="hbars">${hbars(t.by_project,'var(--blue)')}</div></div></div>`;
   h += `<div class="card"><div class="card-hd"><span class="card-name">👥 Команда · ЗП · мотивация</span><span class="card-hd-sep"></span>
-    <button class="btn btn-sm btn-primary" onclick="openTeam()">+ сотрудник</button></div><div class="card-body" style="padding:0">`;
+    <button class="btn btn-sm btn-primary" onclick="openTeam()">+ сотрудник</button></div><div class="card-body p0">`;
   h += `<table><thead><tr><th>Сотрудник</th><th>Оклад</th><th>Бонус</th><th>Итого</th><th></th></tr></thead><tbody>`;
   d.team.forEach(m=>{
     const cabs = m.cabinets.map(c=>`${esc(c.cabinet)} ${c.bonus_pct}%`).join(', ');
-    h += `<tr>
-      <td>${esc(m.name)}<div class="muted" style="font-size:11px">${esc(m.role_title)}${cabs?' · '+cabs:''}</div></td>
+    h += `<tr><td>${esc(m.name)}<div class="muted" style="font-size:11px">${esc(m.role_title)}${cabs?' · '+cabs:''}</div></td>
       <td class="muted">${money(m.salary_base)}</td>
       <td style="color:var(--green)">${m.bonus_rub?money(m.bonus_rub):'—'}</td>
       <td><b>${money(m.salary_total)}</b></td>
-      <td><span class="editable" onclick='openTeam(${JSON.stringify(m)})'>✎</span></td>
-    </tr>`;
+      <td><span class="editable" onclick='openTeam(${JSON.stringify(m)})'>✎</span></td></tr>`;
   });
   if(!d.team.length) h += `<tr><td colspan="5" class="empty">Добавьте сотрудников</td></tr>`;
-  h += `<tr class="grp-row"><td>ФОТ итого</td><td colspan="2"></td><td><b>${money(d.payroll)}</b></td><td></td></tr>`;
-  h += `</tbody></table></div></div>`;
-  h += `</div>`;
+  h += `<tr class="tot-row"><td>ФОТ итого</td><td colspan="2"></td><td><b>${money(d.payroll)}</b></td><td></td></tr>`;
+  h += `</tbody></table></div></div></div>`;
 
   document.getElementById('root').innerHTML = h;
 }
@@ -291,7 +394,6 @@ function progress(label, fact, plan, isMoney){
   return `<div class="progress"><div class="top"><span>${label}</span><span><b class="pct ${pctClass(p)}">${p!=null?p+'%':'—'}</b> <span class="muted">${fmt(fact)} / ${fmt(plan)}</span></span></div>
     <div class="bar"><i style="width:${w}%;background:${col}"></i></div></div>`;
 }
-
 function hbars(obj, color){
   const entries = Object.entries(obj||{}).sort((a,b)=>b[1]-a[1]).slice(0,10);
   if(!entries.length) return '<div class="muted">Нет задач за месяц</div>';
@@ -302,65 +404,97 @@ function hbars(obj, color){
   }).join('');
 }
 
-function cashChart(byDay){
-  const days = Object.keys(byDay).sort();
-  if(!days.length) return '<div class="muted">Нет данных за месяц</div>';
-  const W=100, H=48;
-  const inc = days.map(d=>byDay[d].income), exp = days.map(d=>byDay[d].expense);
-  const max = Math.max(1, ...inc, ...exp);
-  const n = days.length;
-  const pts = arr => arr.map((v,i)=>`${(n<2?50:i/(n-1)*W).toFixed(1)},${(H-v/max*H).toFixed(1)}`).join(' ');
-  return `<div class="chartbox">
-    <div class="legend"><span><b style="background:var(--green)"></b>Доход</span><span><b style="background:var(--red)"></b>Расход</span></div>
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:120px">
-      <polyline fill="none" stroke="var(--green)" stroke-width="1.2" points="${pts(inc)}"/>
-      <polyline fill="none" stroke="var(--red)" stroke-width="1.2" points="${pts(exp)}"/>
-    </svg></div>`;
+/* ── KPI ── */
+function saveKpiField(id, field, val){
+  const k = DATA.kpi.find(x=>x.id===id); if(!k) return;
+  post('/api/cockpit/kpi', {id, month:DATA.month.slice(0,7), grp:k.grp, metric:k.metric,
+    plan_qty:k.plan_qty, fact_qty:k.fact_qty, unit_price:k.unit_price, [field]:+val});
 }
-
-/* ── KPI edit ── */
-function editKpi(k){
-  k = k || {};
-  const grp = prompt('Группа (Привлечение / Продажи / Предоставление):', k.grp||'Привлечение');
-  if(grp===null) return;
-  const metric = prompt('Название показателя:', k.metric||'');
-  if(metric===null||!metric.trim()) return;
-  const plan = prompt('План (шт):', k.plan_qty??0); if(plan===null) return;
-  const fact = prompt('Факт (шт):', k.fact_qty??0); if(fact===null) return;
-  const price = prompt('₽ за единицу (0 если нет):', k.unit_price??0); if(price===null) return;
-  post('/api/cockpit/kpi', {id:k.id, month:document.getElementById('month').value,
-    grp:grp.trim(), metric:metric.trim(), plan_qty:+plan, fact_qty:+fact, unit_price:+price});
+function openKpi(k){
+  k = k||{};
+  document.getElementById('k_id').value = k.id||'';
+  document.getElementById('k_grp').value = k.grp||'Привлечение';
+  document.getElementById('k_metric').value = k.metric||'';
+  document.getElementById('k_plan').value = k.plan_qty??0;
+  document.getElementById('k_fact').value = k.fact_qty??0;
+  document.getElementById('k_price').value = k.unit_price??0;
+  document.getElementById('kpiOverlay').classList.add('on');
+}
+function saveKpiModal(){
+  const metric = document.getElementById('k_metric').value.trim();
+  if(!metric){ alert('Укажите название'); return; }
+  post('/api/cockpit/kpi', {
+    id: document.getElementById('k_id').value||null, month:DATA.month.slice(0,7),
+    grp:document.getElementById('k_grp').value, metric,
+    plan_qty:+document.getElementById('k_plan').value||0,
+    fact_qty:+document.getElementById('k_fact').value||0,
+    unit_price:+document.getElementById('k_price').value||0,
+  }, ()=>closeModal('kpiOverlay'));
 }
 function delKpi(id){ if(confirm('Удалить показатель?')) del('/api/cockpit/kpi/'+id); }
 
-/* ── Cashflow ── */
-function addCashRow(){
-  const dir = confirm('OK = Доход, Отмена = Расход') ? 'income':'expense';
-  const amount = prompt((dir==='income'?'Доход':'Расход')+', ₽:', '');
-  if(amount===null||!amount) return;
-  const category = prompt('Категория (напр. Ведение, Разовая, Реклама, ЗП):','')||'';
-  const project = prompt('Кабинет/клиент (опц.):','')||'';
-  const dt = prompt('Дата (ГГГГ-ММ-ДД):', new Date().toISOString().slice(0,10)); if(dt===null) return;
-  const note = prompt('Заметка (опц.):','')||'';
-  post('/api/cockpit/cashflow', {dt, direction:dir, category, project, amount:+amount, note});
+/* ── Operations ── */
+function addOperation(){
+  const amt = +document.getElementById('op_amt').value;
+  if(!amt){ alert('Укажите сумму'); return; }
+  post('/api/cockpit/cashflow', {
+    dt: document.getElementById('op_dt').value || new Date().toISOString().slice(0,10),
+    direction: document.getElementById('op_dir').value,
+    category: document.getElementById('op_cat').value.trim(),
+    project: document.getElementById('op_proj').value.trim(),
+    amount: amt,
+    note: document.getElementById('op_note').value.trim(),
+  });
 }
 function delCash(id){ if(confirm('Удалить операцию?')) del('/api/cockpit/cashflow/'+id); }
 
-/* ── Team modal ── */
+/* ── Clients ── */
+function openClient(c){
+  c = c||{};
+  document.getElementById('clientTitle').textContent = c.id?'Редактировать клиента':'Новый клиент';
+  document.getElementById('cl_id').value = c.id||'';
+  document.getElementById('cl_name').value = c.name||'';
+  document.getElementById('cl_cabinet').value = c.cabinet||'';
+  document.getElementById('cl_service').value = c.service||'Ведение';
+  document.getElementById('cl_mrr').value = c.mrr||0;
+  document.getElementById('cl_start').value = c.start_date||'';
+  document.getElementById('cl_note').value = c.note||'';
+  document.getElementById('cl_active').checked = c.id? !!c.active : true;
+  document.getElementById('cl_del').style.display = c.id?'':'none';
+  document.getElementById('clientOverlay').classList.add('on');
+}
+function saveClient(){
+  const name = document.getElementById('cl_name').value.trim();
+  if(!name){ alert('Укажите название'); return; }
+  post('/api/cockpit/clients', {
+    id: document.getElementById('cl_id').value||null, name,
+    cabinet:document.getElementById('cl_cabinet').value.trim(),
+    service:document.getElementById('cl_service').value,
+    mrr:+document.getElementById('cl_mrr').value||0,
+    start_date:document.getElementById('cl_start').value||null,
+    note:document.getElementById('cl_note').value.trim(),
+    active:document.getElementById('cl_active').checked,
+  }, ()=>closeModal('clientOverlay'));
+}
+function deleteClient(){
+  const id = document.getElementById('cl_id').value;
+  if(id && confirm('Удалить клиента?')) del('/api/cockpit/clients/'+id, ()=>closeModal('clientOverlay'));
+}
+
+/* ── Team ── */
 function openTeam(m){
-  m = m || {};
-  document.getElementById('teamModalTitle').textContent = m.id?'Редактировать сотрудника':'Новый сотрудник';
+  m = m||{};
+  document.getElementById('teamTitle').textContent = m.id?'Редактировать сотрудника':'Новый сотрудник';
   document.getElementById('tm_id').value = m.id||'';
   document.getElementById('tm_name').value = m.name||'';
   document.getElementById('tm_role').value = m.role_title||'';
   document.getElementById('tm_email').value = m.email||'';
   document.getElementById('tm_base').value = m.salary_base||0;
   document.getElementById('tm_del').style.display = m.id?'':'none';
-  const box = document.getElementById('tm_cabs'); box.innerHTML='';
+  document.getElementById('tm_cabs').innerHTML='';
   (m.cabinets||[]).forEach(c=>addCabRow(c));
   document.getElementById('teamOverlay').classList.add('on');
 }
-function closeTeam(){ document.getElementById('teamOverlay').classList.remove('on'); }
 function addCabRow(c){
   c = c||{};
   const div = document.createElement('div'); div.className='cabrow';
@@ -373,41 +507,43 @@ function addCabRow(c){
 }
 function collectCabs(){
   return [...document.querySelectorAll('#tm_cabs .cabrow')].map(r=>({
-    cabinet: r.querySelector('.cb-cab').value,
-    plan_rub: +r.querySelector('.cb-plan').value||0,
-    bonus_pct: +r.querySelector('.cb-bonus').value||0,
+    cabinet:r.querySelector('.cb-cab').value, plan_rub:+r.querySelector('.cb-plan').value||0,
+    bonus_pct:+r.querySelector('.cb-bonus').value||0,
   }));
 }
 function saveMember(){
   const name = document.getElementById('tm_name').value.trim();
   if(!name){ alert('Укажите имя'); return; }
   post('/api/cockpit/team', {
-    id: document.getElementById('tm_id').value||null,
-    name, role_title:document.getElementById('tm_role').value.trim(),
+    id: document.getElementById('tm_id').value||null, name,
+    role_title:document.getElementById('tm_role').value.trim(),
     email:document.getElementById('tm_email').value.trim(),
-    salary_base:+document.getElementById('tm_base').value||0,
-    cabinets: collectCabs(),
-  }, closeTeam);
+    salary_base:+document.getElementById('tm_base').value||0, cabinets:collectCabs(),
+  }, ()=>closeModal('teamOverlay'));
 }
 function deleteMember(){
   const id = document.getElementById('tm_id').value;
-  if(id && confirm('Удалить сотрудника?')) del('/api/cockpit/team/'+id, closeTeam);
+  if(id && confirm('Удалить сотрудника?')) del('/api/cockpit/team/'+id, ()=>closeModal('teamOverlay'));
 }
 
-/* ── helpers ── */
+/* ── net ── */
 async function post(url, body, after){
-  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const j = await r.json();
-  if(j.error){ alert('Ошибка: '+j.error); return; }
-  if(after) after();
-  load();
+  try{
+    const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j = await r.json();
+    if(j.error){ alert('Ошибка: '+j.error); return; }
+    if(after) after();
+    load();
+  }catch(e){ alert('Ошибка сети: '+e.message); }
 }
 async function del(url, after){
-  await fetch(url,{method:'DELETE'});
-  if(after) after();
-  load();
+  try{ await fetch(url,{method:'DELETE'}); if(after) after(); load(); }
+  catch(e){ alert('Ошибка сети: '+e.message); }
 }
 
+// datalist кабинетов
+document.getElementById('cabList').innerHTML = CABINETS.map(c=>`<option value="${c}">`).join('');
+if(localStorage.getItem('cockpit_theme')==='light') document.getElementById('themeBtn').textContent='☀️';
 document.getElementById('month').value = curMonth();
 load();
 </script>
