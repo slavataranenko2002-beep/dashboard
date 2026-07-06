@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Кокпит агентства</title>
+<style>
+:root{
+  --bg:#0f1117;--bg2:#161b22;--bg3:#1c2333;--bg4:#21262d;
+  --border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--purple:#bc8cff;
+}
+[data-theme="light"]{
+  --bg:#f6f8fa;--bg2:#fff;--bg3:#f0f2f5;--bg4:#e8ebf0;
+  --border:#d0d7de;--text:#24292f;--text2:#656d76;--text3:#8c959f;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;min-height:100vh}
+.hdr{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 20px;gap:12px;position:sticky;top:0;z-index:20}
+.hdr-logo{font-weight:700;font-size:15px}
+.hdr-sep{flex:1}
+.hbtn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;white-space:nowrap;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+.hbtn:hover{background:var(--bg4);color:var(--text)}
+.theme-btn{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
+input[type=month],input[type=date],input[type=text],input[type=number],select{
+  padding:6px 10px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:13px}
+input:focus,select:focus{outline:none;border-color:var(--blue)}
+.btn{padding:6px 13px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);
+  color:var(--text);font-size:13px;cursor:pointer}
+.btn:hover{background:var(--bg4)}
+.btn-primary{background:var(--blue);color:#fff;border:none;font-weight:600}
+.btn-sm{padding:3px 8px;font-size:12px}
+.btn-danger{color:var(--red)}
+.wrap{padding:20px;max-width:1560px;margin:0 auto}
+
+/* KPI cards */
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:22px}
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.kpi .lbl{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
+.kpi .val{font-size:24px;font-weight:700;margin-top:4px}
+.kpi .sub{font-size:12px;color:var(--text2);margin-top:2px}
+.kpi.green .val{color:var(--green)} .kpi.red .val{color:var(--red)}
+.kpi.blue .val{color:var(--blue)} .kpi.purple .val{color:var(--purple)}
+
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:22px;overflow:hidden}
+.card-hd{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.card-name{font-weight:700;font-size:15px}
+.card-hd-sep{flex:1}
+.card-body{padding:16px 18px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+tr:last-child td{border-bottom:none}
+.grp-row td{background:var(--bg3);font-weight:700;color:var(--text)}
+.editable{cursor:pointer;border-bottom:1px dashed var(--text3)}
+.editable:hover{color:var(--blue)}
+.pct{font-weight:700}
+.pct.ok{color:var(--green)} .pct.mid{color:var(--yellow)} .pct.low{color:var(--red)}
+.bar{height:8px;border-radius:5px;background:var(--bg4);overflow:hidden;min-width:60px}
+.bar > i{display:block;height:100%;border-radius:5px}
+.progress{margin-bottom:14px}
+.progress .top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.progress .bar{height:12px}
+.muted{color:var(--text2)}
+.right{text-align:right}
+.chartbox{padding:8px 4px}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--text2);margin-bottom:8px}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.hbars .row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12px}
+.hbars .row .nm{width:130px;color:var(--text2);text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbars .row .bar{flex:1}
+.hbars .row .n{width:42px;text-align:right;font-weight:600}
+.cabgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.cabcard{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 15px}
+.cabcard .cn{font-weight:700;font-size:14px;margin-bottom:8px}
+.cabcard .rowline{display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:3px}
+.cabcard .rowline b{color:var(--text)}
+.tag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:11px;background:var(--bg4);color:var(--text2)}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.overlay.on{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:560px;max-height:90vh;overflow:auto}
+.modal-hd{padding:15px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px;display:flex;align-items:center}
+.modal-bd{padding:18px 20px}
+.modal-ft{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px}
+.field input,.field select{width:100%}
+.cabrow{display:grid;grid-template-columns:1.4fr 1fr .8fr auto;gap:8px;align-items:center;margin-bottom:7px}
+.cabrow input{width:100%}
+.x{cursor:pointer;color:var(--text3);font-size:16px;padding:0 4px}
+.x:hover{color:var(--red)}
+.empty{color:var(--text2);text-align:center;padding:26px 0}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <span class="hdr-logo">🚀 Кокпит агентства</span>
+  <input type="month" id="month" onchange="load()">
+  <button class="hbtn" onclick="load()">🔄 Обновить</button>
+  <span class="hdr-sep"></span>
+  <a href="/" class="hbtn">← Дашборд</a>
+  <button class="hbtn theme-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
+</div>
+
+<div class="wrap" id="root">
+  <div class="empty">Загрузка…</div>
+</div>
+
+<!-- team modal -->
+<div class="overlay" id="teamOverlay">
+  <div class="modal">
+    <div class="modal-hd" id="teamModalTitle">Сотрудник</div>
+    <div class="modal-bd">
+      <input type="hidden" id="tm_id">
+      <div class="field"><label>Имя</label><input type="text" id="tm_name"></div>
+      <div class="field"><label>Должность</label><input type="text" id="tm_role"></div>
+      <div class="field"><label>Email (для связи с задачами, опц.)</label><input type="text" id="tm_email"></div>
+      <div class="field"><label>Оклад, ₽/мес</label><input type="number" id="tm_base" value="0"></div>
+      <div class="field">
+        <label>Мотивация по кабинетам (% от факта продаж кабинета)</label>
+        <div id="tm_cabs"></div>
+        <button class="btn btn-sm" onclick="addCabRow()">+ кабинет</button>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-danger" id="tm_del" onclick="deleteMember()">Удалить</button>
+      <span style="flex:1"></span>
+      <button class="btn" onclick="closeTeam()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveMember()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CABINETS = {{ cabinets|tojson }};
+let DATA = null;
+
+function money(n){ n=Math.round(n||0); return n.toLocaleString('ru-RU')+' ₽'; }
+function num(n){ return (Math.round(n||0)).toLocaleString('ru-RU'); }
+function pctClass(p){ if(p==null) return 'muted'; if(p>=100) return 'ok'; if(p>=60) return 'mid'; return 'low'; }
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function toggleTheme(){
+  const on = document.documentElement.getAttribute('data-theme')==='light';
+  document.documentElement.setAttribute('data-theme', on?'dark':'light');
+  document.getElementById('themeBtn').textContent = on?'🌙':'☀️';
+  localStorage.setItem('cockpit_theme', on?'dark':'light');
+}
+if(localStorage.getItem('cockpit_theme')==='light'){document.documentElement.setAttribute('data-theme','light');document.addEventListener('DOMContentLoaded',()=>document.getElementById('themeBtn').textContent='☀️');}
+
+function curMonth(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+
+async function load(){
+  const m = document.getElementById('month').value || curMonth();
+  document.getElementById('month').value = m;
+  const r = await fetch('/api/cockpit/overview?month='+m);
+  DATA = await r.json();
+  render();
+}
+
+function render(){
+  const d = DATA, g = d.goals, cf = d.cashflow, days = d.days;
+  const daysTxt = `День ${days.elapsed}/${days.in_month} · осталось ${days.remaining}`;
+  let h = '';
+
+  // ── KPI cards ──
+  h += `<div class="kpis">
+    <div class="kpi green"><div class="lbl">Доход</div><div class="val">${money(cf.income)}</div><div class="sub">${daysTxt}</div></div>
+    <div class="kpi red"><div class="lbl">Расход</div><div class="val">${money(cf.expense)}</div></div>
+    <div class="kpi ${cf.net>=0?'green':'red'}"><div class="lbl">Чистыми</div><div class="val">${money(cf.net)}</div></div>
+    <div class="kpi blue"><div class="lbl">Средний чек</div><div class="val">${money(cf.avg_check)}</div></div>
+    <div class="kpi"><div class="lbl">Лиды</div><div class="val">${g.leads_fact}<span class="sub"> / ${g.leads_plan}</span></div></div>
+    <div class="kpi"><div class="lbl">Продажи (шт)</div><div class="val">${g.sales_fact}<span class="sub"> / ${g.sales_plan}</span></div></div>
+    <div class="kpi purple"><div class="lbl">Цель по деньгам</div><div class="val">${g.money_pct!=null?g.money_pct+'%':'—'}</div><div class="sub">${money(g.money_fact)} / ${money(g.money_plan)}</div></div>
+    <div class="kpi"><div class="lbl">ФОТ (расчёт)</div><div class="val">${money(d.payroll)}</div></div>
+  </div>`;
+
+  // ── Цели ──
+  h += `<div class="card"><div class="card-hd"><span class="card-name">🎯 Цели месяца</span><span class="card-hd-sep"></span><span class="muted">${daysTxt}</span></div><div class="card-body">`;
+  h += progress('Деньги (воронка агентства)', g.money_fact, g.money_plan, true);
+  h += progress('Лиды', g.leads_fact, g.leads_plan, false);
+  h += progress('Продажи (договоры+разовые)', g.sales_fact, g.sales_plan, false);
+  h += `</div></div>`;
+
+  // ── Воронка агентства (KPI table) ──
+  h += `<div class="card"><div class="card-hd"><span class="card-name">📈 Воронка агентства</span><span class="card-hd-sep"></span>
+    <button class="btn btn-sm" onclick="editKpi()">+ показатель</button></div><div class="card-body" style="padding:0">`;
+  h += `<table><thead><tr><th>Показатель</th><th>План</th><th>Факт</th><th>Должно быть</th><th>Прогноз</th><th>% вып</th><th>₽/ед</th><th>₽ факт</th><th></th></tr></thead><tbody>`;
+  let lastGrp='';
+  d.kpi.forEach(k=>{
+    if(k.grp!==lastGrp){ h+=`<tr class="grp-row"><td colspan="9">${esc(k.grp)}</td></tr>`; lastGrp=k.grp; }
+    const pc = pctClass(k.pct);
+    h += `<tr>
+      <td>${esc(k.metric)}</td>
+      <td>${k.plan_qty}</td>
+      <td><b>${k.fact_qty}</b></td>
+      <td class="muted">${k.should_be}</td>
+      <td class="muted">${k.run_rate}</td>
+      <td class="pct ${pc}">${k.pct!=null?k.pct+'%':'—'}</td>
+      <td class="muted">${k.unit_price?num(k.unit_price):'—'}</td>
+      <td>${k.money_fact?money(k.money_fact):'—'}</td>
+      <td><span class="editable" onclick='editKpi(${JSON.stringify(k)})'>✎</span> <span class="x" onclick="delKpi(${k.id})">✕</span></td>
+    </tr>`;
+  });
+  if(!d.kpi.length) h += `<tr><td colspan="9" class="empty">Нет показателей</td></tr>`;
+  h += `</tbody></table></div></div>`;
+
+  // ── Денежные потоки ──
+  h += `<div class="card"><div class="card-hd"><span class="card-name">💸 Денежные потоки</span><span class="card-hd-sep"></span>
+    <button class="btn btn-sm btn-primary" onclick="addCashRow()">+ операция</button></div><div class="card-body">`;
+  h += cashChart(cf.by_day);
+  h += `<table style="margin-top:14px"><thead><tr><th>Дата</th><th>Тип</th><th>Категория</th><th>Кабинет</th><th>Заметка</th><th>Сумма</th><th></th></tr></thead><tbody>`;
+  cf.rows.forEach(r=>{
+    h += `<tr>
+      <td>${r.dt}</td>
+      <td><span class="tag" style="color:${r.direction==='income'?'var(--green)':'var(--red)'}">${r.direction==='income'?'Доход':'Расход'}</span></td>
+      <td class="right muted">${esc(r.category)||'—'}</td>
+      <td class="right muted">${esc(r.project)||'—'}</td>
+      <td class="right muted">${esc(r.note)||''}</td>
+      <td style="color:${r.direction==='income'?'var(--green)':'var(--red)'}">${money(r.amount)}</td>
+      <td><span class="x" onclick="delCash(${r.id})">✕</span></td>
+    </tr>`;
+  });
+  if(!cf.rows.length) h += `<tr><td colspan="7" class="empty">Нет операций за месяц</td></tr>`;
+  h += `</tbody></table></div></div>`;
+
+  // ── Сетка планов по кабинетам ──
+  h += `<div class="card"><div class="card-hd"><span class="card-name">🗂 Сетка планов по кабинетам</span><span class="card-hd-sep"></span><span class="muted">продажи ₽ · из План-Факта</span></div><div class="card-body"><div class="cabgrid">`;
+  d.cabinet_grid.forEach(c=>{
+    const pc = pctClass(c.pct);
+    const col = c.pct==null?'var(--text3)':(c.pct>=100?'var(--green)':c.pct>=60?'var(--yellow)':'var(--red)');
+    const w = c.pct==null?0:Math.min(100,c.pct);
+    h += `<div class="cabcard"><div class="cn">${esc(c.cabinet)}</div>
+      <div class="rowline"><span>Факт</span><b>${money(c.sales_rub_fact)}</b></div>
+      <div class="rowline"><span>План</span><b>${c.sales_rub_plan?money(c.sales_rub_plan):'—'}</b></div>
+      <div class="bar" style="margin-top:7px"><i style="width:${w}%;background:${col}"></i></div>
+      <div class="rowline" style="margin-top:6px"><span>Выполнение</span><b class="pct ${pc}">${c.pct!=null?c.pct+'%':'—'}</b></div>
+    </div>`;
+  });
+  if(!d.cabinet_grid.length) h += `<div class="empty">Нет кабинетов</div>`;
+  h += `</div></div></div>`;
+
+  // ── Операционка + Команда (2 колонки) ──
+  h += `<div class="grid2">`;
+  // tasks
+  const t = d.tasks;
+  h += `<div class="card"><div class="card-hd"><span class="card-name">⚙️ Операционка (задачи)</span></div><div class="card-body">
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+      <div class="kpi"><div class="lbl">Всего</div><div class="val">${t.total}</div></div>
+      <div class="kpi green"><div class="lbl">Сделано</div><div class="val">${t.done}</div></div>
+      <div class="kpi blue"><div class="lbl">В работе</div><div class="val">${t.in_work}</div></div>
+    </div>`;
+  h += `<div class="muted" style="margin-bottom:8px">По кабинетам</div><div class="hbars">`;
+  h += hbars(t.by_project, 'var(--blue)');
+  h += `</div></div></div>`;
+  // team
+  h += `<div class="card"><div class="card-hd"><span class="card-name">👥 Команда · ЗП · мотивация</span><span class="card-hd-sep"></span>
+    <button class="btn btn-sm btn-primary" onclick="openTeam()">+ сотрудник</button></div><div class="card-body" style="padding:0">`;
+  h += `<table><thead><tr><th>Сотрудник</th><th>Оклад</th><th>Бонус</th><th>Итого</th><th></th></tr></thead><tbody>`;
+  d.team.forEach(m=>{
+    const cabs = m.cabinets.map(c=>`${esc(c.cabinet)} ${c.bonus_pct}%`).join(', ');
+    h += `<tr>
+      <td>${esc(m.name)}<div class="muted" style="font-size:11px">${esc(m.role_title)}${cabs?' · '+cabs:''}</div></td>
+      <td class="muted">${money(m.salary_base)}</td>
+      <td style="color:var(--green)">${m.bonus_rub?money(m.bonus_rub):'—'}</td>
+      <td><b>${money(m.salary_total)}</b></td>
+      <td><span class="editable" onclick='openTeam(${JSON.stringify(m)})'>✎</span></td>
+    </tr>`;
+  });
+  if(!d.team.length) h += `<tr><td colspan="5" class="empty">Добавьте сотрудников</td></tr>`;
+  h += `<tr class="grp-row"><td>ФОТ итого</td><td colspan="2"></td><td><b>${money(d.payroll)}</b></td><td></td></tr>`;
+  h += `</tbody></table></div></div>`;
+  h += `</div>`;
+
+  document.getElementById('root').innerHTML = h;
+}
+
+function progress(label, fact, plan, isMoney){
+  const p = plan? Math.round(fact/plan*100):null;
+  const w = p==null?0:Math.min(100,p);
+  const col = p==null?'var(--text3)':(p>=100?'var(--green)':p>=60?'var(--yellow)':'var(--red)');
+  const fmt = isMoney?money:num;
+  return `<div class="progress"><div class="top"><span>${label}</span><span><b class="pct ${pctClass(p)}">${p!=null?p+'%':'—'}</b> <span class="muted">${fmt(fact)} / ${fmt(plan)}</span></span></div>
+    <div class="bar"><i style="width:${w}%;background:${col}"></i></div></div>`;
+}
+
+function hbars(obj, color){
+  const entries = Object.entries(obj||{}).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if(!entries.length) return '<div class="muted">Нет задач за месяц</div>';
+  const max = Math.max(...entries.map(e=>e[1]));
+  return entries.map(([k,v])=>{
+    const w = max? Math.round(v/max*100):0;
+    return `<div class="row"><span class="nm">${esc(k)}</span><span class="bar"><i style="width:${w}%;background:${color}"></i></span><span class="n">${v}</span></div>`;
+  }).join('');
+}
+
+function cashChart(byDay){
+  const days = Object.keys(byDay).sort();
+  if(!days.length) return '<div class="muted">Нет данных за месяц</div>';
+  const W=100, H=48;
+  const inc = days.map(d=>byDay[d].income), exp = days.map(d=>byDay[d].expense);
+  const max = Math.max(1, ...inc, ...exp);
+  const n = days.length;
+  const pts = arr => arr.map((v,i)=>`${(n<2?50:i/(n-1)*W).toFixed(1)},${(H-v/max*H).toFixed(1)}`).join(' ');
+  return `<div class="chartbox">
+    <div class="legend"><span><b style="background:var(--green)"></b>Доход</span><span><b style="background:var(--red)"></b>Расход</span></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:120px">
+      <polyline fill="none" stroke="var(--green)" stroke-width="1.2" points="${pts(inc)}"/>
+      <polyline fill="none" stroke="var(--red)" stroke-width="1.2" points="${pts(exp)}"/>
+    </svg></div>`;
+}
+
+/* ── KPI edit ── */
+function editKpi(k){
+  k = k || {};
+  const grp = prompt('Группа (Привлечение / Продажи / Предоставление):', k.grp||'Привлечение');
+  if(grp===null) return;
+  const metric = prompt('Название показателя:', k.metric||'');
+  if(metric===null||!metric.trim()) return;
+  const plan = prompt('План (шт):', k.plan_qty??0); if(plan===null) return;
+  const fact = prompt('Факт (шт):', k.fact_qty??0); if(fact===null) return;
+  const price = prompt('₽ за единицу (0 если нет):', k.unit_price??0); if(price===null) return;
+  post('/api/cockpit/kpi', {id:k.id, month:document.getElementById('month').value,
+    grp:grp.trim(), metric:metric.trim(), plan_qty:+plan, fact_qty:+fact, unit_price:+price});
+}
+function delKpi(id){ if(confirm('Удалить показатель?')) del('/api/cockpit/kpi/'+id); }
+
+/* ── Cashflow ── */
+function addCashRow(){
+  const dir = confirm('OK = Доход, Отмена = Расход') ? 'income':'expense';
+  const amount = prompt((dir==='income'?'Доход':'Расход')+', ₽:', '');
+  if(amount===null||!amount) return;
+  const category = prompt('Категория (напр. Ведение, Разовая, Реклама, ЗП):','')||'';
+  const project = prompt('Кабинет/клиент (опц.):','')||'';
+  const dt = prompt('Дата (ГГГГ-ММ-ДД):', new Date().toISOString().slice(0,10)); if(dt===null) return;
+  const note = prompt('Заметка (опц.):','')||'';
+  post('/api/cockpit/cashflow', {dt, direction:dir, category, project, amount:+amount, note});
+}
+function delCash(id){ if(confirm('Удалить операцию?')) del('/api/cockpit/cashflow/'+id); }
+
+/* ── Team modal ── */
+function openTeam(m){
+  m = m || {};
+  document.getElementById('teamModalTitle').textContent = m.id?'Редактировать сотрудника':'Новый сотрудник';
+  document.getElementById('tm_id').value = m.id||'';
+  document.getElementById('tm_name').value = m.name||'';
+  document.getElementById('tm_role').value = m.role_title||'';
+  document.getElementById('tm_email').value = m.email||'';
+  document.getElementById('tm_base').value = m.salary_base||0;
+  document.getElementById('tm_del').style.display = m.id?'':'none';
+  const box = document.getElementById('tm_cabs'); box.innerHTML='';
+  (m.cabinets||[]).forEach(c=>addCabRow(c));
+  document.getElementById('teamOverlay').classList.add('on');
+}
+function closeTeam(){ document.getElementById('teamOverlay').classList.remove('on'); }
+function addCabRow(c){
+  c = c||{};
+  const div = document.createElement('div'); div.className='cabrow';
+  const opts = CABINETS.map(cab=>`<option ${cab===c.cabinet?'selected':''}>${cab}</option>`).join('');
+  div.innerHTML = `<select class="cb-cab">${opts}</select>
+    <input type="number" class="cb-plan" placeholder="план ₽" value="${c.plan_rub||''}">
+    <input type="number" class="cb-bonus" placeholder="%" value="${c.bonus_pct||''}">
+    <span class="x" onclick="this.parentNode.remove()">✕</span>`;
+  document.getElementById('tm_cabs').appendChild(div);
+}
+function collectCabs(){
+  return [...document.querySelectorAll('#tm_cabs .cabrow')].map(r=>({
+    cabinet: r.querySelector('.cb-cab').value,
+    plan_rub: +r.querySelector('.cb-plan').value||0,
+    bonus_pct: +r.querySelector('.cb-bonus').value||0,
+  }));
+}
+function saveMember(){
+  const name = document.getElementById('tm_name').value.trim();
+  if(!name){ alert('Укажите имя'); return; }
+  post('/api/cockpit/team', {
+    id: document.getElementById('tm_id').value||null,
+    name, role_title:document.getElementById('tm_role').value.trim(),
+    email:document.getElementById('tm_email').value.trim(),
+    salary_base:+document.getElementById('tm_base').value||0,
+    cabinets: collectCabs(),
+  }, closeTeam);
+}
+function deleteMember(){
+  const id = document.getElementById('tm_id').value;
+  if(id && confirm('Удалить сотрудника?')) del('/api/cockpit/team/'+id, closeTeam);
+}
+
+/* ── helpers ── */
+async function post(url, body, after){
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j = await r.json();
+  if(j.error){ alert('Ошибка: '+j.error); return; }
+  if(after) after();
+  load();
+}
+async function del(url, after){
+  await fetch(url,{method:'DELETE'});
+  if(after) after();
+  load();
+}
+
+document.getElementById('month').value = curMonth();
+load();
+</script>
+</body>
+</html>

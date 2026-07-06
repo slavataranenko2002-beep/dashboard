@@ -524,6 +524,72 @@ def _ensure_season_tables():
         logging.error(f"_ensure_season_tables error: {e}")
 
 
+def _ensure_cockpit_tables():
+    """
+    Таблицы овнерского кокпита (/cockpit, только admin).
+      agency_kpi    — план-факт показателей агентства (воронка привлечение/продажи/
+                      предоставление): план/факт в штуках + цена ₽ за единицу.
+      cashflow      — денежные потоки (доход/расход) по датам/категориям/кабинетам.
+      team_members  — команда: оклад + должность.
+      team_cabinets — привязка сотрудника к кабинету с планом и % мотивации от факта.
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS agency_kpi (
+                        id          SERIAL PRIMARY KEY,
+                        month       DATE NOT NULL,
+                        grp         TEXT NOT NULL DEFAULT 'Привлечение',
+                        metric      TEXT NOT NULL,
+                        plan_qty    INTEGER NOT NULL DEFAULT 0,
+                        fact_qty    INTEGER NOT NULL DEFAULT 0,
+                        unit_price  NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        position    INTEGER NOT NULL DEFAULT 0,
+                        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE (month, grp, metric)
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS cashflow (
+                        id          SERIAL PRIMARY KEY,
+                        dt          DATE NOT NULL,
+                        direction   TEXT NOT NULL DEFAULT 'income',
+                        category    TEXT NOT NULL DEFAULT '',
+                        project     TEXT NOT NULL DEFAULT '',
+                        amount      NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        note        TEXT NOT NULL DEFAULT '',
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS team_members (
+                        id          SERIAL PRIMARY KEY,
+                        name        TEXT NOT NULL,
+                        email       TEXT NOT NULL DEFAULT '',
+                        role_title  TEXT NOT NULL DEFAULT '',
+                        salary_base NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        active      BOOLEAN NOT NULL DEFAULT TRUE,
+                        position    INTEGER NOT NULL DEFAULT 0,
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS team_cabinets (
+                        id          SERIAL PRIMARY KEY,
+                        member_id   INTEGER NOT NULL REFERENCES team_members(id) ON DELETE CASCADE,
+                        cabinet     TEXT NOT NULL,
+                        plan_rub    NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        bonus_pct   NUMERIC(6,2) NOT NULL DEFAULT 0,
+                        UNIQUE (member_id, cabinet)
+                    )
+                """)
+            conn.commit()
+        logging.info("Cockpit tables ready.")
+    except Exception as e:
+        logging.error(f"_ensure_cockpit_tables error: {e}")
+
+
 def _run_startup_migrations():
     """
     Выполняет все стартовые миграции под Postgres advisory-lock, чтобы разные воркеры
@@ -543,6 +609,7 @@ def _run_startup_migrations():
                 _ensure_design_tables()
                 _ensure_funnel_tables()
                 _ensure_season_tables()
+                _ensure_cockpit_tables()
             finally:
                 with lock_conn.cursor() as cur:
                     cur.execute("SELECT pg_advisory_unlock(%s)", (LOCK_KEY,))
@@ -5416,6 +5483,387 @@ def api_season_cron_refresh():
             errors[cabinet] = str(e)
     return jsonify({"ok": True, "refreshed": refreshed, "errors": errors,
                     "at": datetime.now().isoformat()})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  КОКПИТ АГЕНТСТВА (/cockpit) — только владелец (admin)
+#  Аналитика бизнеса: воронка агентства (KPI), денежные потоки, цели, задачи,
+#  сетка планов по кабинетам, команда/ЗП/мотивация.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Дефолтные показатели воронки агентства (как в Google-таблице): группа → метрики
+COCKPIT_KPI_DEFAULTS = [
+    ("Привлечение", "Рассылки в личку",       300, 0),
+    ("Привлечение", "Рекламное объявление",     4, 20000),
+    ("Продажи",     "Обработано лидов",         30, 0),
+    ("Продажи",     "Разовые услуги",            2, 10000),
+    ("Продажи",     "Продажа (договор)",         3, 150000),
+    ("Предоставление", "Аудиты",                 6, 0),
+    ("Предоставление", "Стратегия на месяц",     3, 0),
+    ("Предоставление", "Ведение кабинета",       3, 0),
+]
+
+
+def _cockpit_month(arg: str | None) -> date:
+    """'YYYY-MM' → первое число месяца. Пусто/битое → текущий месяц."""
+    today = date.today()
+    if arg:
+        try:
+            y, m = arg.split("-")[:2]
+            return date(int(y), int(m), 1)
+        except Exception:
+            pass
+    return today.replace(day=1)
+
+
+def _cockpit_seed_kpi(month_date: date):
+    """Если за месяц ещё нет показателей — засеять дефолтной воронкой."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM agency_kpi WHERE month=%s", (month_date,))
+            if (cur.fetchone()["n"] or 0) > 0:
+                return
+            for i, (grp, metric, plan, price) in enumerate(COCKPIT_KPI_DEFAULTS):
+                cur.execute(
+                    "INSERT INTO agency_kpi (month,grp,metric,plan_qty,fact_qty,unit_price,position) "
+                    "VALUES (%s,%s,%s,%s,0,%s,%s) ON CONFLICT (month,grp,metric) DO NOTHING",
+                    (month_date, grp, metric, plan, price, i),
+                )
+        conn.commit()
+
+
+def _cockpit_days(month_date: date) -> tuple[int, int, int]:
+    """(дней в месяце, прошло, осталось) — прошло не больше, чем весь месяц."""
+    import calendar as _cal
+    dim = _cal.monthrange(month_date.year, month_date.month)[1]
+    today = date.today()
+    if today < month_date:
+        elapsed = 0
+    elif today.year == month_date.year and today.month == month_date.month:
+        elapsed = today.day
+    else:
+        elapsed = dim
+    return dim, elapsed, max(0, dim - elapsed)
+
+
+def _cockpit_cabinet_facts(month_date: date) -> dict:
+    """
+    По каждому WB-кабинету: план/факт продаж (₽) за месяц из planfact_cache
+    (тот же источник, что и вкладка План-Факт). Без обращения к WB.
+    """
+    out = {}
+    for cab in WB_CABINETS:
+        data, _fetched, _complete = _pf_load_cache(cab, month_date)
+        t = (data or {}).get("totals", {}) if data else {}
+        sales_fact = float(t.get("sales_rub_fact") or 0)
+        sales_plan = float(t.get("sales_rub_plan") or 0)
+        orders_fact = float(t.get("orders_rub_fact") or 0)
+        pct = round(sales_fact / sales_plan * 100, 1) if sales_plan else None
+        out[cab] = {
+            "sales_rub_fact": sales_fact,
+            "sales_rub_plan": sales_plan,
+            "orders_rub_fact": orders_fact,
+            "pct": pct,
+        }
+    return out
+
+
+def _cockpit_task_stats(month_date: date) -> dict:
+    """Операционная загрузка за месяц из общей таблицы tasks (created_at в месяце)."""
+    if month_date.month == 12:
+        month_end = date(month_date.year + 1, 1, 1)
+    else:
+        month_end = date(month_date.year, month_date.month + 1, 1)
+    stats = {"total": 0, "done": 0, "in_work": 0, "by_project": {}, "by_priority": {}}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT project, priority, done FROM tasks "
+                    "WHERE created_at >= %s AND created_at < %s",
+                    (month_date, month_end),
+                )
+                for r in cur.fetchall():
+                    stats["total"] += 1
+                    if r["done"]:
+                        stats["done"] += 1
+                    else:
+                        stats["in_work"] += 1
+                    proj = r["project"] or "Без проекта"
+                    prio = r["priority"] or "med"
+                    stats["by_project"][proj] = stats["by_project"].get(proj, 0) + 1
+                    stats["by_priority"][prio] = stats["by_priority"].get(prio, 0) + 1
+    except Exception as e:
+        logging.error(f"cockpit task_stats: {e}")
+    return stats
+
+
+@app.route("/cockpit")
+@require_admin
+def cockpit_page():
+    u = _session_user()
+    return render_template("cockpit.html", current_user=u, cabinets=WB_CABINETS)
+
+
+@app.route("/api/cockpit/overview")
+@require_admin_api
+def api_cockpit_overview():
+    month_date = _cockpit_month(request.args.get("month"))
+    _cockpit_seed_kpi(month_date)
+    dim, elapsed, remaining = _cockpit_days(month_date)
+
+    # ── Воронка агентства (KPI) ─────────────────────────────────────────────
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM agency_kpi WHERE month=%s ORDER BY position, id", (month_date,)
+            )
+            kpi_rows = cur.fetchall()
+    kpi = []
+    goal_money_plan = goal_money_fact = 0.0
+    leads_plan = leads_fact = sales_plan_q = sales_fact_q = 0
+    for r in kpi_rows:
+        plan_q = int(r["plan_qty"] or 0)
+        fact_q = int(r["fact_qty"] or 0)
+        price = float(r["unit_price"] or 0)
+        should = round(plan_q * elapsed / dim) if dim else 0
+        run_rate = round(fact_q / elapsed * dim) if elapsed else 0
+        pct = round(fact_q / plan_q * 100) if plan_q else None
+        kpi.append({
+            "id": r["id"], "grp": r["grp"], "metric": r["metric"],
+            "plan_qty": plan_q, "fact_qty": fact_q, "unit_price": price,
+            "money_plan": plan_q * price, "money_fact": fact_q * price,
+            "should_be": should, "run_rate": run_rate, "pct": pct,
+        })
+        goal_money_plan += plan_q * price
+        goal_money_fact += fact_q * price
+        ml = r["metric"].lower()
+        if "лид" in ml:
+            leads_plan += plan_q; leads_fact += fact_q
+        if "договор" in ml or "разов" in ml:
+            sales_plan_q += plan_q; sales_fact_q += fact_q
+
+    # ── Денежные потоки за месяц ─────────────────────────────────────────────
+    if month_date.month == 12:
+        month_end = date(month_date.year + 1, 1, 1)
+    else:
+        month_end = date(month_date.year, month_date.month + 1, 1)
+    income = expense = 0.0
+    cf_by_day = {}
+    cf_rows = []
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM cashflow WHERE dt >= %s AND dt < %s ORDER BY dt DESC, id DESC",
+                (month_date, month_end),
+            )
+            cf_rows = cur.fetchall()
+    n_income_ops = 0
+    for r in cf_rows:
+        amt = float(r["amount"] or 0)
+        key = r["dt"].isoformat()
+        d = cf_by_day.setdefault(key, {"income": 0.0, "expense": 0.0})
+        if r["direction"] == "income":
+            income += amt; d["income"] += amt; n_income_ops += 1
+        else:
+            expense += amt; d["expense"] += amt
+    avg_check = round(income / n_income_ops) if n_income_ops else 0
+
+    # ── Сетка планов по кабинетам + команда/ЗП ──────────────────────────────
+    cab_facts = _cockpit_cabinet_facts(month_date)
+    cabinet_grid = [
+        {"cabinet": cab, **vals} for cab, vals in cab_facts.items()
+    ]
+    cabinet_grid.sort(key=lambda x: -(x["sales_rub_fact"] or 0))
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM team_members ORDER BY position, id")
+            members = cur.fetchall()
+            cur.execute("SELECT * FROM team_cabinets ORDER BY id")
+            tc_rows = cur.fetchall()
+    tc_by_member = {}
+    for r in tc_rows:
+        tc_by_member.setdefault(r["member_id"], []).append(r)
+    team = []
+    payroll = 0.0
+    for m in members:
+        base = float(m["salary_base"] or 0)
+        cabs = []
+        bonus = 0.0
+        for tc in tc_by_member.get(m["id"], []):
+            fact = float(cab_facts.get(tc["cabinet"], {}).get("sales_rub_fact") or 0)
+            plan = float(tc["plan_rub"] or 0)
+            bp = float(tc["bonus_pct"] or 0)
+            b = round(fact * bp / 100)
+            bonus += b
+            cabs.append({
+                "id": tc["id"], "cabinet": tc["cabinet"], "plan_rub": plan,
+                "fact_rub": fact, "bonus_pct": bp, "bonus_rub": b,
+                "pct": round(fact / plan * 100, 1) if plan else None,
+            })
+        total = round(base + bonus)
+        payroll += total
+        team.append({
+            "id": m["id"], "name": m["name"], "email": m["email"],
+            "role_title": m["role_title"], "salary_base": base, "active": bool(m["active"]),
+            "cabinets": cabs, "bonus_rub": round(bonus), "salary_total": total,
+        })
+
+    return jsonify({
+        "month": month_date.isoformat(),
+        "days": {"in_month": dim, "elapsed": elapsed, "remaining": remaining},
+        "kpi": kpi,
+        "goals": {
+            "money_plan": round(goal_money_plan), "money_fact": round(goal_money_fact),
+            "money_pct": round(goal_money_fact / goal_money_plan * 100, 1) if goal_money_plan else None,
+            "leads_plan": leads_plan, "leads_fact": leads_fact,
+            "sales_plan": sales_plan_q, "sales_fact": sales_fact_q,
+        },
+        "cashflow": {
+            "income": round(income), "expense": round(expense),
+            "net": round(income - expense), "avg_check": avg_check,
+            "by_day": cf_by_day,
+            "rows": [{
+                "id": r["id"], "dt": r["dt"].isoformat(),
+                "direction": r["direction"], "category": r["category"],
+                "project": r["project"], "amount": float(r["amount"] or 0),
+                "note": r["note"],
+            } for r in cf_rows],
+        },
+        "cabinet_grid": cabinet_grid,
+        "tasks": _cockpit_task_stats(month_date),
+        "team": team,
+        "payroll": round(payroll),
+    })
+
+
+@app.route("/api/cockpit/kpi", methods=["POST"])
+@require_admin_api
+def api_cockpit_kpi_save():
+    d = request.json or {}
+    month_date = _cockpit_month(d.get("month"))
+    kid = d.get("id")
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                if kid:
+                    cur.execute(
+                        "UPDATE agency_kpi SET grp=%s,metric=%s,plan_qty=%s,fact_qty=%s,"
+                        "unit_price=%s,updated_at=NOW() WHERE id=%s",
+                        (d.get("grp", "Привлечение"), d.get("metric", ""),
+                         int(d.get("plan_qty") or 0), int(d.get("fact_qty") or 0),
+                         float(d.get("unit_price") or 0), kid),
+                    )
+                else:
+                    cur.execute("SELECT COALESCE(MAX(position),0)+1 AS p FROM agency_kpi WHERE month=%s", (month_date,))
+                    pos = cur.fetchone()["p"]
+                    cur.execute(
+                        "INSERT INTO agency_kpi (month,grp,metric,plan_qty,fact_qty,unit_price,position) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+                        "ON CONFLICT (month,grp,metric) DO UPDATE SET "
+                        "plan_qty=EXCLUDED.plan_qty,fact_qty=EXCLUDED.fact_qty,"
+                        "unit_price=EXCLUDED.unit_price,updated_at=NOW()",
+                        (month_date, d.get("grp", "Привлечение"), d.get("metric", ""),
+                         int(d.get("plan_qty") or 0), int(d.get("fact_qty") or 0),
+                         float(d.get("unit_price") or 0), pos),
+                    )
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cockpit/kpi/<int:kid>", methods=["DELETE"])
+@require_admin_api
+def api_cockpit_kpi_del(kid):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM agency_kpi WHERE id=%s", (kid,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/cockpit/cashflow", methods=["POST"])
+@require_admin_api
+def api_cockpit_cashflow_add():
+    d = request.json or {}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO cashflow (dt,direction,category,project,amount,note) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
+                    (d.get("dt") or date.today().isoformat(),
+                     d.get("direction", "income"), d.get("category", ""),
+                     d.get("project", ""), float(d.get("amount") or 0), d.get("note", "")),
+                )
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cockpit/cashflow/<int:cid>", methods=["DELETE"])
+@require_admin_api
+def api_cockpit_cashflow_del(cid):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM cashflow WHERE id=%s", (cid,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/cockpit/team", methods=["POST"])
+@require_admin_api
+def api_cockpit_team_save():
+    d = request.json or {}
+    mid = d.get("id")
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                if mid:
+                    cur.execute(
+                        "UPDATE team_members SET name=%s,email=%s,role_title=%s,"
+                        "salary_base=%s,active=%s WHERE id=%s",
+                        (d.get("name", ""), d.get("email", ""), d.get("role_title", ""),
+                         float(d.get("salary_base") or 0), bool(d.get("active", True)), mid),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO team_members (name,email,role_title,salary_base) "
+                        "VALUES (%s,%s,%s,%s) RETURNING id",
+                        (d.get("name", ""), d.get("email", ""), d.get("role_title", ""),
+                         float(d.get("salary_base") or 0)),
+                    )
+                    mid = cur.fetchone()["id"]
+                # Полная замена привязок к кабинетам, если переданы
+                if "cabinets" in d:
+                    cur.execute("DELETE FROM team_cabinets WHERE member_id=%s", (mid,))
+                    for c in d.get("cabinets") or []:
+                        if not c.get("cabinet"):
+                            continue
+                        cur.execute(
+                            "INSERT INTO team_cabinets (member_id,cabinet,plan_rub,bonus_pct) "
+                            "VALUES (%s,%s,%s,%s) ON CONFLICT (member_id,cabinet) DO UPDATE SET "
+                            "plan_rub=EXCLUDED.plan_rub,bonus_pct=EXCLUDED.bonus_pct",
+                            (mid, c["cabinet"], float(c.get("plan_rub") or 0),
+                             float(c.get("bonus_pct") or 0)),
+                        )
+            conn.commit()
+        return jsonify({"ok": True, "id": mid})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cockpit/team/<int:mid>", methods=["DELETE"])
+@require_admin_api
+def api_cockpit_team_del(mid):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM team_members WHERE id=%s", (mid,))
+        conn.commit()
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
