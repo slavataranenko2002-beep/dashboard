@@ -5571,16 +5571,36 @@ def _cockpit_days(month_date: date) -> tuple[int, int, int]:
 
 def _cockpit_cabinet_facts(month_date: date) -> dict:
     """
-    По каждому WB-кабинету: план/факт продаж (₽) за месяц из planfact_cache
-    (тот же источник, что и вкладка План-Факт). Без обращения к WB.
+    По каждому WB-кабинету: факт продаж (₽) — из planfact_cache (снимок факта),
+    план продаж (₽) — из таблицы sales_plans (план в кэше не хранится, он
+    накладывается поверх при отдаче План-Факта). Без обращения к WB.
     """
+    # План продаж по кабинетам за месяц — тот же источник, что и вкладка План-Факт
+    plans = {}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT project, COALESCE(SUM(sales_rub_plan),0) AS splan, "
+                    "COALESCE(SUM(orders_rub_plan),0) AS oplan "
+                    "FROM sales_plans WHERE month=%s GROUP BY project",
+                    (month_date,),
+                )
+                for r in cur.fetchall():
+                    plans[r["project"]] = {
+                        "sales_rub_plan": float(r["splan"] or 0),
+                        "orders_rub_plan": float(r["oplan"] or 0),
+                    }
+    except Exception as e:
+        logging.error(f"cockpit cabinet plans: {e}")
+
     out = {}
     for cab in WB_CABINETS:
         data, _fetched, _complete = _pf_load_cache(cab, month_date)
         t = (data or {}).get("totals", {}) if data else {}
         sales_fact = float(t.get("sales_rub_fact") or 0)
-        sales_plan = float(t.get("sales_rub_plan") or 0)
         orders_fact = float(t.get("orders_rub_fact") or 0)
+        sales_plan = plans.get(cab, {}).get("sales_rub_plan", 0.0)
         pct = round(sales_fact / sales_plan * 100, 1) if sales_plan else None
         out[cab] = {
             "sales_rub_fact": sales_fact,
