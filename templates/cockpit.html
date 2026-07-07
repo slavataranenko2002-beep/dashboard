@@ -377,13 +377,13 @@ function render(){
   h += progress('Продажи (шт)', g.sales_fact, g.sales_plan, false);
   h += progress('Деньги воронки', g.money_fact, g.money_plan, true);
   h += `</div></div>`;
-  h += `<div class="card"><div class="card-hd"><span class="card-name">🗂 Планы по кабинетам</span><span class="card-hd-sep"></span><span class="muted">продажи ₽</span></div><div class="card-body"><div class="cabgrid">`;
+  h += `<div class="card"><div class="card-hd"><span class="card-name">🗂 Планы по кабинетам</span><span class="card-hd-sep"></span><span class="muted">заказы ₽</span></div><div class="card-body"><div class="cabgrid">`;
   d.cabinet_grid.forEach(c=>{
     const col = c.pct==null?'var(--text3)':(c.pct>=100?'var(--green)':c.pct>=60?'var(--yellow)':'var(--red)');
     const w = c.pct==null?0:Math.min(100,c.pct);
     h += `<div class="cabcard"><div class="cn">${esc(c.cabinet)}</div>
-      <div class="rowline"><span>Факт</span><b>${money(c.sales_rub_fact)}</b></div>
-      <div class="rowline"><span>План</span><b>${c.sales_rub_plan?money(c.sales_rub_plan):'—'}</b></div>
+      <div class="rowline"><span>Факт (заказы)</span><b>${money(c.orders_rub_fact)}</b></div>
+      <div class="rowline"><span>План (заказы)</span><b>${c.orders_rub_plan?money(c.orders_rub_plan):'—'}</b></div>
       <div class="bar" style="margin-top:7px"><i style="width:${w}%;background:${col}"></i></div>
       <div class="rowline" style="margin-top:6px"><span>Выполнение</span><b class="pct ${pctClass(c.pct)}">${c.pct!=null?c.pct+'%':'—'}</b></div></div>`;
   });
@@ -439,6 +439,7 @@ function renderRnp(){
   const R = RNP;
   let h = `<div class="card"><div class="card-hd"><span class="card-name">📋 РНП — план на неделю и отметки по дням</span>
     <span class="card-hd-sep"></span>
+    <span class="muted" style="font-size:11px">план недели — авто (перенос долга)</span>
     <button class="btn btn-sm" onclick="navWeek('${R.prev_week}')">‹</button>
     <span class="tag">${fmtD(R.week_start)} – ${fmtD(R.week_end)}</span>
     <button class="btn btn-sm" onclick="navWeek('${R.next_week}')">›</button></div><div class="card-body p0">`;
@@ -450,7 +451,7 @@ function renderRnp(){
     if(m.grp!==lastGrp){ h+=`<tr class="grp-row"><td colspan="${R.day_labels.length+4}">${esc(m.grp)}</td></tr>`; lastGrp=m.grp; }
     const pc = m.week_pct==null?'muted':(m.week_pct>=100?'ok':m.week_pct>=60?'mid':'low');
     h += `<tr><td>${esc(m.metric)}${m.unit_price?` <span class="muted" style="font-size:11px">${num(m.unit_price)}₽</span>`:''}</td>
-      <td><input class="cell-inp" style="width:56px" type="number" value="${m.week_plan||''}" onchange="saveWeekPlan(${m.id},'${R.week_start}',this.value)"></td>`;
+      <td title="авто: цель к концу недели минус сделанное ранее (перенос долга)"><b>${num(m.week_plan)}</b></td>`;
     R.days.forEach((day,i)=>{
       const v = m.daily[i]||0;
       h += `<td><input class="cell-inp" style="width:46px;${v?'':'color:var(--text3)'}" type="number" value="${v||''}" onchange="saveDaily(${m.id},'${day}',this.value)"></td>`;
@@ -487,11 +488,6 @@ function barChart(vals, labels, nums){
 async function saveDaily(kid, day, val){
   await fetch('/api/cockpit/rnp/daily',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({kpi_id:kid, day, qty:+val||0})});
-  loadRnp();
-}
-async function saveWeekPlan(kid, ws, val){
-  await fetch('/api/cockpit/rnp/week-plan',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({kpi_id:kid, week_start:ws, plan_qty:+val||0})});
   loadRnp();
 }
 

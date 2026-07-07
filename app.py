@@ -5665,14 +5665,12 @@ def _cockpit_cabinet_facts(month_date: date) -> dict:
     for cab in WB_CABINETS:
         data, _fetched, _complete = _pf_load_cache(cab, month_date)
         t = (data or {}).get("totals", {}) if data else {}
-        sales_fact = float(t.get("sales_rub_fact") or 0)
         orders_fact = float(t.get("orders_rub_fact") or 0)
-        sales_plan = plans.get(cab, {}).get("sales_rub_plan", 0.0)
-        pct = round(sales_fact / sales_plan * 100, 1) if sales_plan else None
+        orders_plan = plans.get(cab, {}).get("orders_rub_plan", 0.0)
+        pct = round(orders_fact / orders_plan * 100, 1) if orders_plan else None
         out[cab] = {
-            "sales_rub_fact": sales_fact,
-            "sales_rub_plan": sales_plan,
             "orders_rub_fact": orders_fact,
+            "orders_rub_plan": orders_plan,
             "pct": pct,
         }
     return out
@@ -5825,7 +5823,7 @@ def api_cockpit_overview():
     cabinet_grid = [
         {"cabinet": cab, **vals} for cab, vals in cab_facts.items()
     ]
-    cabinet_grid.sort(key=lambda x: -(x["sales_rub_fact"] or 0))
+    cabinet_grid.sort(key=lambda x: -(x["orders_rub_fact"] or 0))
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -5843,7 +5841,7 @@ def api_cockpit_overview():
         cabs = []
         bonus = 0.0
         for tc in tc_by_member.get(m["id"], []):
-            fact = float(cab_facts.get(tc["cabinet"], {}).get("sales_rub_fact") or 0)
+            fact = float(cab_facts.get(tc["cabinet"], {}).get("orders_rub_fact") or 0)
             plan = float(tc["plan_rub"] or 0)
             bp = float(tc["bonus_pct"] or 0)
             b = round(fact * bp / 100)
@@ -6040,7 +6038,7 @@ def api_cockpit_rnp():
             cur.execute("SELECT * FROM agency_kpi WHERE month=%s ORDER BY position, id", (month_date,))
             kpi_rows = cur.fetchall()
             ids = [r["id"] for r in kpi_rows]
-            daily, wplan = {}, {}
+            daily, fact_before = {}, {}
             if ids:
                 cur.execute(
                     "SELECT kpi_id, day, qty FROM agency_kpi_daily "
@@ -6049,14 +6047,23 @@ def api_cockpit_rnp():
                 )
                 for r in cur.fetchall():
                     daily[(r["kpi_id"], r["day"].isoformat())] = float(r["qty"] or 0)
+                # Факт, накопленный ДО текущей недели (для переноса долга в недельный план)
                 cur.execute(
-                    "SELECT kpi_id, plan_qty FROM agency_kpi_week "
-                    "WHERE kpi_id = ANY(%s) AND week_start = %s",
-                    (ids, sel),
+                    "SELECT kpi_id, COALESCE(SUM(qty),0) AS s FROM agency_kpi_daily "
+                    "WHERE kpi_id = ANY(%s) AND day >= %s AND day < %s GROUP BY kpi_id",
+                    (ids, month_date, sel),
                 )
                 for r in cur.fetchall():
-                    wplan[r["kpi_id"]] = float(r["plan_qty"] or 0)
+                    fact_before[r["kpi_id"]] = float(r["s"] or 0)
     daily_month = _cockpit_daily_by_kpi(ids)
+
+    # Недельный план считается автоматом из месячного: цель к концу текущей недели
+    # (пропорционально дням месяца) минус уже сделанное до недели. Так недовыполнение
+    # накапливается в план следующей недели (+), перевыполнение — уменьшает (−, до 0).
+    month_end = month_date.replace(day=dim)
+    end_ref = min(days[6], month_end)
+    cum_days = (end_ref - month_date).days + 1 if end_ref >= month_date else 0
+    cum_days = max(0, min(cum_days, dim))
 
     metrics = []
     daily_money = [0.0] * 7
@@ -6066,8 +6073,9 @@ def api_cockpit_rnp():
         for i, c in enumerate(cells):
             daily_money[i] += c * price
         wfact = sum(cells)
-        wp = wplan.get(r["id"], 0.0)
         mplan = int(r["plan_qty"] or 0)
+        target_through = mplan * cum_days / dim if dim else 0
+        wp = max(0, round(target_through - fact_before.get(r["id"], 0.0)))
         mfact = daily_month.get(r["id"], float(r["fact_qty"] or 0))
         metrics.append({
             "id": r["id"], "grp": r["grp"], "metric": r["metric"], "unit_price": price,
@@ -6107,26 +6115,6 @@ def api_cockpit_rnp_daily():
                     "INSERT INTO agency_kpi_daily (kpi_id, day, qty) VALUES (%s,%s,%s) "
                     "ON CONFLICT (kpi_id, day) DO UPDATE SET qty=EXCLUDED.qty",
                     (int(d["kpi_id"]), d["day"], float(d.get("qty") or 0)),
-                )
-            conn.commit()
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cockpit/rnp/week-plan", methods=["POST"])
-@require_admin_api
-def api_cockpit_rnp_week_plan():
-    d = request.json or {}
-    if not d.get("kpi_id") or not d.get("week_start"):
-        return jsonify({"error": "kpi_id and week_start required"}), 400
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO agency_kpi_week (kpi_id, week_start, plan_qty) VALUES (%s,%s,%s) "
-                    "ON CONFLICT (kpi_id, week_start) DO UPDATE SET plan_qty=EXCLUDED.plan_qty",
-                    (int(d["kpi_id"]), d["week_start"], float(d.get("plan_qty") or 0)),
                 )
             conn.commit()
         return jsonify({"ok": True})
