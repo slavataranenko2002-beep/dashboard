@@ -607,6 +607,16 @@ def _ensure_cockpit_tables():
                         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                 """)
+                # Ручные финансовые цели месяца (оборот/прибыль ₽); факт тянется из
+                # операций. Цели по лидам/продажам считаются из воронки, тут не хранятся.
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS cockpit_goals (
+                        month         DATE PRIMARY KEY,
+                        revenue_goal  NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        profit_goal   NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
             conn.commit()
         logging.info("Cockpit tables ready.")
     except Exception as e:
@@ -5851,11 +5861,26 @@ def api_cockpit_overview():
         "avg_check": avg_check, "payroll_plan": round(payroll),
     }
 
+    # ── Ручные финансовые цели (оборот/прибыль); факт — из финмодели ─────────
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT revenue_goal, profit_goal FROM cockpit_goals WHERE month=%s", (month_date,))
+            grow = cur.fetchone()
+    rev_goal = float(grow["revenue_goal"]) if grow else 0.0
+    prof_goal = float(grow["profit_goal"]) if grow else 0.0
+    fin_goals = {
+        "revenue_goal": round(rev_goal), "revenue_fact": round(revenue),
+        "revenue_pct": round(revenue / rev_goal * 100, 1) if rev_goal else None,
+        "profit_goal": round(prof_goal), "profit_fact": round(profit),
+        "profit_pct": round(profit / prof_goal * 100, 1) if prof_goal else None,
+    }
+
     return jsonify({
         "month": month_date.isoformat(),
         "days": {"in_month": dim, "elapsed": elapsed, "remaining": remaining},
         "clients": clients,
         "finance": finance,
+        "fin_goals": fin_goals,
         "kpi": kpi,
         "goals": {
             "money_plan": round(goal_money_plan), "money_fact": round(goal_money_fact),
@@ -6033,6 +6058,26 @@ def api_cockpit_client_save():
                          float(d.get("mrr") or 0), d.get("start_date") or None,
                          bool(d.get("active", True)), d.get("note", "")),
                     )
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cockpit/goals", methods=["POST"])
+@require_admin_api
+def api_cockpit_goals_save():
+    d = request.json or {}
+    month_date = _cockpit_month(d.get("month"))
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO cockpit_goals (month, revenue_goal, profit_goal, updated_at) "
+                    "VALUES (%s,%s,%s,NOW()) ON CONFLICT (month) DO UPDATE SET "
+                    "revenue_goal=EXCLUDED.revenue_goal, profit_goal=EXCLUDED.profit_goal, updated_at=NOW()",
+                    (month_date, float(d.get("revenue_goal") or 0), float(d.get("profit_goal") or 0)),
+                )
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:

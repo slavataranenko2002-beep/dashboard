@@ -171,6 +171,23 @@ tbody tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- ── Goals modal ── -->
+<div class="overlay" id="goalsOverlay">
+  <div class="modal">
+    <div class="modal-hd">Финансовые цели месяца</div>
+    <div class="modal-bd">
+      <div class="field"><label>Цель по обороту, ₽</label><input type="number" id="gl_rev" value="0"></div>
+      <div class="field"><label>Цель по прибыли, ₽</label><input type="number" id="gl_prof" value="0"></div>
+      <div class="muted" style="font-size:12px">Факт тянется из операций автоматически. Лиды/продажи — из воронки.</div>
+    </div>
+    <div class="modal-ft">
+      <span style="flex:1"></span>
+      <button class="btn" onclick="closeModal('goalsOverlay')">Отмена</button>
+      <button class="btn btn-primary" onclick="saveGoals()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Team modal ── -->
 <div class="overlay" id="teamOverlay">
   <div class="modal">
@@ -273,6 +290,16 @@ function render(){
   h += `</tbody></table></div>`;
   h += `</div></div></div>`;
 
+  // ── Финансовые цели (ручные) ──
+  const fg = d.fin_goals;
+  h += `<div class="card"><div class="card-hd"><span class="card-name">🎯 Финансовые цели</span><span class="card-hd-sep"></span>
+    <span class="muted">цель ручная · факт из операций</span>
+    <button class="btn btn-sm" onclick="openGoals()">✎ Задать цели</button></div><div class="card-body">`;
+  h += progress('Оборот', fg.revenue_fact, fg.revenue_goal, true);
+  h += progress('Прибыль', fg.profit_fact, fg.profit_goal, true);
+  if(!fg.revenue_goal && !fg.profit_goal) h += `<div class="muted" style="font-size:12px">Цели не заданы — нажми «Задать цели».</div>`;
+  h += `</div></div>`;
+
   // ── Клиенты ──
   h += `<div class="card"><div class="card-hd"><span class="card-name">🤝 Клиенты</span><span class="card-hd-sep"></span>
     <span class="muted">${fin.n_clients} активных · план ведения ${money(fin.recurring_plan)}/мес · чек ${money(fin.avg_check)}</span>
@@ -341,10 +368,10 @@ function render(){
 
   // ── Цели + Сетка кабинетов (2 col) ──
   h += `<div class="grid2">`;
-  h += `<div class="card"><div class="card-hd"><span class="card-name">🎯 Цели месяца</span></div><div class="card-body">`;
-  h += progress('Деньги (воронка)', g.money_fact, g.money_plan, true);
+  h += `<div class="card"><div class="card-hd"><span class="card-name">🎯 Цели воронки</span><span class="card-hd-sep"></span><span class="muted">из «Воронки агентства»</span></div><div class="card-body">`;
   h += progress('Лиды', g.leads_fact, g.leads_plan, false);
   h += progress('Продажи (шт)', g.sales_fact, g.sales_plan, false);
+  h += progress('Деньги воронки', g.money_fact, g.money_plan, true);
   h += `</div></div>`;
   h += `<div class="card"><div class="card-hd"><span class="card-name">🗂 Планы по кабинетам</span><span class="card-hd-sep"></span><span class="muted">продажи ₽</span></div><div class="card-body"><div class="cabgrid">`;
   d.cabinet_grid.forEach(c=>{
@@ -447,6 +474,21 @@ function addOperation(){
   });
 }
 function delCash(id){ if(confirm('Удалить операцию?')) del('/api/cockpit/cashflow/'+id); }
+
+/* ── Goals ── */
+function openGoals(){
+  const fg = DATA.fin_goals;
+  document.getElementById('gl_rev').value = fg.revenue_goal||0;
+  document.getElementById('gl_prof').value = fg.profit_goal||0;
+  document.getElementById('goalsOverlay').classList.add('on');
+}
+function saveGoals(){
+  post('/api/cockpit/goals', {
+    month: DATA.month.slice(0,7),
+    revenue_goal:+document.getElementById('gl_rev').value||0,
+    profit_goal:+document.getElementById('gl_prof').value||0,
+  }, ()=>closeModal('goalsOverlay'));
+}
 
 /* ── Clients ── */
 function openClient(c){
