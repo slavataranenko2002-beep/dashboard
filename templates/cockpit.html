@@ -111,7 +111,7 @@ tbody tr:last-child td{border-bottom:none}
 <body>
 <div class="hdr">
   <span class="hdr-logo">🚀 Кокпит агентства</span>
-  <input type="month" id="month" onchange="load()">
+  <input type="month" id="month" onchange="onMonthChange()">
   <button class="hbtn" onclick="load()">🔄 Обновить</button>
   <span class="hdr-sep"></span>
   <a href="/" class="hbtn">← Дашборд</a>
@@ -238,6 +238,7 @@ function toggleTheme(){
 if(localStorage.getItem('cockpit_theme')==='light'){document.documentElement.setAttribute('data-theme','light');}
 
 function curMonth(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function onMonthChange(){ RNP_WEEK = null; load(); }
 
 async function load(){
   const m = document.getElementById('month').value || curMonth();
@@ -354,7 +355,7 @@ function render(){
     h += `<tr>
       <td>${esc(k.metric)}</td>
       <td><input class="cell-inp" type="number" value="${k.plan_qty}" onchange="saveKpiField(${k.id},'plan_qty',this.value)"></td>
-      <td><input class="cell-inp" type="number" value="${k.fact_qty}" onchange="saveKpiField(${k.id},'fact_qty',this.value)"></td>
+      <td title="из отметок по дням (РНП ниже)"><b>${k.fact_qty}</b></td>
       <td class="muted">${k.should_be}</td>
       <td class="muted">${k.run_rate}</td>
       <td class="pct ${pc}">${k.pct!=null?k.pct+'%':'—'}</td>
@@ -365,6 +366,9 @@ function render(){
   });
   if(!d.kpi.length) h += `<tr><td colspan="9" class="empty">Нет показателей</td></tr>`;
   h += `</tbody></table></div></div>`;
+
+  // ── РНП: неделя + отметки по дням (грузится отдельно) ──
+  h += `<div id="rnp-card"><div class="card"><div class="card-body"><div class="empty">Загрузка РНП…</div></div></div></div>`;
 
   // ── Цели + Сетка кабинетов (2 col) ──
   h += `<div class="grid2">`;
@@ -411,6 +415,84 @@ function render(){
   h += `</tbody></table></div></div></div>`;
 
   document.getElementById('root').innerHTML = h;
+  loadRnp();
+}
+
+/* ── РНП: неделя + отметки по дням ── */
+let RNP_WEEK = null;   // выбранный понедельник (iso) или null = текущая
+let RNP = null;
+async function loadRnp(){
+  const m = document.getElementById('month').value || curMonth();
+  let url = '/api/cockpit/rnp?month='+m + (RNP_WEEK?('&week='+RNP_WEEK):'');
+  try{
+    const r = await fetch(url);
+    if(!r.ok){ document.getElementById('rnp-card').innerHTML = '<div class="card"><div class="card-body"><div class="empty">РНП: ошибка '+r.status+'</div></div></div>'; return; }
+    RNP = await r.json();
+    RNP_WEEK = RNP.week_start;
+    renderRnp();
+  }catch(e){ /* тихо */ }
+}
+function navWeek(iso){ RNP_WEEK = iso; loadRnp(); }
+function fmtD(iso){ const p=iso.split('-'); return p[2]+'.'+p[1]; }
+
+function renderRnp(){
+  const R = RNP;
+  let h = `<div class="card"><div class="card-hd"><span class="card-name">📋 РНП — план на неделю и отметки по дням</span>
+    <span class="card-hd-sep"></span>
+    <button class="btn btn-sm" onclick="navWeek('${R.prev_week}')">‹</button>
+    <span class="tag">${fmtD(R.week_start)} – ${fmtD(R.week_end)}</span>
+    <button class="btn btn-sm" onclick="navWeek('${R.next_week}')">›</button></div><div class="card-body p0">`;
+  h += `<table><thead><tr><th>Показатель</th><th>План нед</th>`;
+  R.day_labels.forEach((lbl,i)=>{ h += `<th class="${R.in_month[i]?'':'muted'}">${lbl}<br>${R.day_nums[i]}</th>`; });
+  h += `<th>Факт</th><th>%</th></tr></thead><tbody>`;
+  let lastGrp='';
+  R.metrics.forEach(m=>{
+    if(m.grp!==lastGrp){ h+=`<tr class="grp-row"><td colspan="${R.day_labels.length+4}">${esc(m.grp)}</td></tr>`; lastGrp=m.grp; }
+    const pc = m.week_pct==null?'muted':(m.week_pct>=100?'ok':m.week_pct>=60?'mid':'low');
+    h += `<tr><td>${esc(m.metric)}${m.unit_price?` <span class="muted" style="font-size:11px">${num(m.unit_price)}₽</span>`:''}</td>
+      <td><input class="cell-inp" style="width:56px" type="number" value="${m.week_plan||''}" onchange="saveWeekPlan(${m.id},'${R.week_start}',this.value)"></td>`;
+    R.days.forEach((day,i)=>{
+      const v = m.daily[i]||0;
+      h += `<td><input class="cell-inp" style="width:46px;${v?'':'color:var(--text3)'}" type="number" value="${v||''}" onchange="saveDaily(${m.id},'${day}',this.value)"></td>`;
+    });
+    h += `<td><b>${num(m.week_fact)}</b></td><td class="pct ${pc}">${m.week_pct!=null?m.week_pct+'%':'—'}</td></tr>`;
+  });
+  if(!R.metrics.length) h += `<tr><td colspan="${R.day_labels.length+4}" class="empty">Нет показателей</td></tr>`;
+  h += `</tbody></table></div>`;
+  // графики
+  h += `<div class="card-body"><div class="grid2">`;
+  h += `<div><div class="muted" style="margin-bottom:8px">Деньги по дням недели (₽)</div>${barChart(R.daily_money, R.day_labels, R.day_nums)}</div>`;
+  h += `<div><div class="muted" style="margin-bottom:8px">Выполнение месяца по показателям</div><div class="hbars">`;
+  R.metrics.forEach(m=>{
+    const p = m.month_pct==null?0:Math.min(150,m.month_pct);
+    const col = m.month_pct==null?'var(--text3)':(m.month_pct>=100?'var(--green)':m.month_pct>=60?'var(--yellow)':'var(--red)');
+    h += `<div class="row"><span class="nm">${esc(m.metric)}</span><span class="bar"><i style="width:${Math.min(100,p/1.5)}%;background:${col}"></i></span><span class="n">${m.month_pct!=null?m.month_pct+'%':'—'}</span></div>`;
+  });
+  h += `</div></div></div></div>`;
+  h += `</div>`;
+  document.getElementById('rnp-card').innerHTML = h;
+}
+
+function barChart(vals, labels, nums){
+  const max = Math.max(1, ...vals);
+  const bars = vals.map((v,i)=>{
+    const hpx = Math.round(v/max*90);
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0">
+      <div style="font-size:10px;color:var(--text2);height:12px">${v?num(v):''}</div>
+      <div style="width:60%;height:${hpx}px;background:var(--blue);border-radius:4px 4px 0 0;min-height:2px"></div>
+      <div style="font-size:10px;color:var(--text3)">${labels[i]}<br>${nums[i]}</div></div>`;
+  }).join('');
+  return `<div style="display:flex;align-items:flex-end;gap:6px;height:130px;padding:4px 0">${bars}</div>`;
+}
+async function saveDaily(kid, day, val){
+  await fetch('/api/cockpit/rnp/daily',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({kpi_id:kid, day, qty:+val||0})});
+  loadRnp();
+}
+async function saveWeekPlan(kid, ws, val){
+  await fetch('/api/cockpit/rnp/week-plan',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({kpi_id:kid, week_start:ws, plan_qty:+val||0})});
+  loadRnp();
 }
 
 function progress(label, fact, plan, isMoney){
