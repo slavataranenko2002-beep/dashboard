@@ -1015,7 +1015,13 @@ def auth_login():
 
 @app.route("/auth/callback")
 def auth_callback():
-    token = oauth.google.authorize_access_token()
+    try:
+        token = oauth.google.authorize_access_token()
+    except Exception as e:
+        # Битый/устаревший OAuth-state: перезаход, истёкшая сессия, боты, крауллеры,
+        # префетч колбэка. Не отдаём 500 — начинаем логин заново (свежий state).
+        logging.info("auth callback restart (%s): %s", type(e).__name__, e)
+        return redirect("/auth/login")
     info = token.get("userinfo") or {}
     email = info.get("email", "")
     if not email:

@@ -22,6 +22,11 @@ def _get_pool() -> ConnectionPool:
             max_size=5,          # 2 воркера × 5 < лимита Postgres (+ бот на той же БД)
             timeout=15,          # не ждать соединение 30 сек — быстрее отдавать ошибку
             max_idle=300,        # закрывать простаивающие соединения, освобождать слоты
+            max_lifetime=1800,   # раз в 30 мин пересоздавать соединение (профилактика)
+            # Проверять соединение перед выдачей: если Postgres закрыл его (idle-timeout,
+            # рестарт, сетевой обрыв) — пул отбросит битое и выдаст живое. Иначе первый
+            # запрос падает с "SSL SYSCALL error: EOF detected".
+            check=ConnectionPool.check_connection,
             kwargs={"row_factory": dict_row, "connect_timeout": 10},
         )
     return _db_pool
