@@ -361,7 +361,6 @@ tfoot td.fcomp{background:var(--comp-bg)}
       <option value="liters">Литраж</option>
       <option value="redemption_pct">% выкупа</option>
       <option value="warehouse">Склад</option>
-      <option value="irp">ИРП</option>
       <option value="il">ИЛ</option>
     </optgroup>
     <optgroup label="Цена и реклама">
@@ -727,7 +726,6 @@ const COL_DEFS = [
   {k:'liters',           get:r=>+r.liters||Math.round(compute(r).liters*10)/10,type:'num'},
   {k:'redemption_pct',   get:r=>+r.redemption_pct||100,                       type:'num'},
   {k:'warehouse',        get:r=>r.warehouse||'',                              type:'text'},
-  {k:'irp',              get:r=>+r.irp||1,                                    type:'num'},
   {k:'il',               get:r=>+r.il||1,                                     type:'num'},
   {k:'logKtr',           get:r=>Math.round(compute(r).logKtr),                type:'num'},
   {k:'storage30',        get:r=>Math.round(compute(r).storage30),             type:'num'},
@@ -903,7 +901,6 @@ function compute(r) {
   const wp  = +r.wb_price       || 0;
   const com = +r.commission_pct || 36;
   const red = +r.redemption_pct || 100;
-  const irp = +r.irp            || 1.0;
   const dp  = +r.drr_pct        || 0;
   const de  = +r.drr_external_rub || 0;
   const qty = +r.stock       || 0;
@@ -939,8 +936,7 @@ function compute(r) {
     const buyoutRate = red / 100;                  // доля выкупа
     const forward    = base * (wCoef / 100) * il;  // прямая логистика
     const returnLog  = returnRate * base;           // обратная логистика (без коэф. и ИЛ)
-    const irpPart    = wp * (irp / 100);            // ИРП
-    logKtr = (forward + irpPart + returnLog) / buyoutRate;
+    logKtr = (forward + returnLog) / buyoutRate;
   } else {
     logKtr = 0;
   }
@@ -1227,11 +1223,10 @@ function rowHTML(r) {
       <option value="">—</option>${warehouseOptions(r.warehouse||'')}
     </select>
   </td>
-  <td class="ed">${n(r.irp||1,'irp','','1.0')}</td>
   <td class="ed">${n(r.il??1,'il','','1.0')}</td>
   ${r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
     ? `<td class="ed">${n(+r.logistics_ktr,'logistics_ktr','','авто')}</td>`
-    : `<td class="comp cv-logtgtr" title="Авто: (base×коэф×ИЛ + цена×ИРП% + возврат×base) ÷ выкуп%">${fmtR(c.logKtr)}</td>`}
+    : `<td class="comp cv-logtgtr" title="Авто: (base×коэф×ИЛ + возврат×base) ÷ выкуп%">${fmtR(c.logKtr)}</td>`}
   <td class="comp cv-stor30">${fmtR(c.storage30)}</td>
   <td class="comp cv-stor-total" title="Хранение × Остаток">${fmtR(c.storTotal)}</td>
   <td class="ed">${n(r.commission_pct,'commission_pct','','36')}</td>
@@ -1313,7 +1308,6 @@ function renderContent(state) {
       ${thSF('liters','Литраж')}
       ${thSF('redemption_pct','%выкупа')}
       ${thSF('warehouse','Склад','left')}
-      ${thSF('irp','ИРП')}
       ${thSF('il','ИЛ','','Индекс локализации')}
       ${thSF('logKtr','Лог+КТР','','Логистика + КТР (авто если пусто)')}
       ${thSF('storage30','Хран/30д','comp','Хранение за 30 дней')}
@@ -1386,7 +1380,7 @@ function updateFooter() {
   const avgRoi    = avg(sumRoi);
 
   // Колонки: sc0 sc1 sc2+sc3+sc4(colspan=3) | cp pkg ltwb ovh def | totalCost
-  //          | lit red wh irp il | logKtr | stor30 storTotal
+  //          | lit red wh il | logKtr | stor30 storTotal
   //          | com% wbp spp | clientPrice | tax | usn | drr% | drrRub
   //          | stock | capital | capitalCost | commission | profit | margin | roi | batchProfit
   tfoot.innerHTML = `<tr>
@@ -1397,7 +1391,7 @@ function updateFooter() {
     <td class="fcomp" title="Σ Ит.себест.">${fmtR(sumTotalCost)}</td>
     <td></td>
     <td class="fcomp" title="Ø % выкупа">${fmtP(avgRed)}</td>
-    <td class="left"></td><td></td><td></td>
+    <td class="left"></td><td></td>
     <td class="fcomp" title="Ø Лог+КТР">${fmtR(avgLogKtr)}</td>
     <td></td>
     <td class="fcomp" title="Σ Хран×Ост">${fmtR(sumStorTotal)}</td>
@@ -1472,7 +1466,6 @@ const EXPORT_COLS = [
   {k:'liters',           label:'Литраж',              fmt:'num'},
   {k:'redemption_pct',   label:'Выкуп, %',            fmt:'pct',   foot:'avg'},
   {k:'warehouse',        label:'Склад',               fmt:'text'},
-  {k:'irp',              label:'ИРП',                 fmt:'num'},
   {k:'il',               label:'ИЛ',                  fmt:'num'},
   {k:'logKtr',           label:'Лог+КТР, ₽',          fmt:'money', foot:'avg'},
   {k:'storage30',        label:'Хранение/30д, ₽',     fmt:'money'},
@@ -1513,7 +1506,6 @@ function exportVal(r, k, c) {
     case 'liters':          return +r.liters || exportRound1(c.liters);
     case 'redemption_pct':  return +r.redemption_pct || 100;
     case 'warehouse':       return r.warehouse || '';
-    case 'irp':             return +r.irp || 1;
     case 'il':              return +r.il || 1;
     case 'logKtr':          return exportRound0(c.logKtr);
     case 'storage30':       return exportRound0(c.storage30);
@@ -1665,7 +1657,7 @@ async function reloadRowsFromServer() {
 
 // ─── Массовое редактирование ─────────────────────────────────────────────────
 const BULK_NUM_FIELDS = new Set([
-  'commission_pct','redemption_pct','irp','il','drr_pct','drr_external_rub',
+  'commission_pct','redemption_pct','il','drr_pct','drr_external_rub',
   'logistics_to_wb','overhead','packaging','defect_pct','wb_price','cost_price',
   'spp_pct','liters','logistics_ktr','stock','tax_pct'
 ]);
