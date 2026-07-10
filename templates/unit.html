@@ -492,7 +492,14 @@ let WAREHOUSE_COEFS = loadWCoefs();
 let WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
 
 // ─── Системы налогообложения ──────────────────────────────────────────────────
-const USN_DR_LABEL = 'УСН Доход-Расход (15%) + НДС 5%';
+const USN_DR_LABEL    = 'УСН Доход-Расход (15%) + НДС 5%';
+const USN_DR_LABEL_7  = 'УСН Доход-Расход (7%) + НДС 5%';
+// Ставка УСН Доход-Расход по label (null = не Доход-Расход)
+function usnDrRate(label) {
+  if (label === USN_DR_LABEL)   return 0.15;
+  if (label === USN_DR_LABEL_7) return 0.07;
+  return null;
+}
 const TAX_PRESETS_DEFAULT = [
   {label:'УСН 6%',   pct:6},
   {label:'УСН 7%',   pct:7},
@@ -502,16 +509,18 @@ const TAX_PRESETS_DEFAULT = [
   {label:'УСН 6% + НДС 5%', pct:11},
   {label:'УСН 6% + НДС 20%',pct:26},
   {label:'ОСНО НДС 20%',    pct:20},
-  {label:USN_DR_LABEL, pct:15},
+  {label:USN_DR_LABEL,   pct:15},
+  {label:USN_DR_LABEL_7, pct:7},
 ];
 function loadTaxPresets() {
   let list;
   try { list = JSON.parse(localStorage.getItem('taxPresets') || 'null') || TAX_PRESETS_DEFAULT; }
   catch { list = TAX_PRESETS_DEFAULT; }
-  if (!list.some(t => t.label === USN_DR_LABEL)) {
-    list = [...list, {label: USN_DR_LABEL, pct: 15}];
-    saveTaxPresets(list);
-  }
+  let changed = false;
+  [{label:USN_DR_LABEL, pct:15}, {label:USN_DR_LABEL_7, pct:7}].forEach(dr => {
+    if (!list.some(t => t.label === dr.label)) { list = [...list, dr]; changed = true; }
+  });
+  if (changed) saveTaxPresets(list);
   return list;
 }
 function saveTaxPresets(list) { localStorage.setItem('taxPresets', JSON.stringify(list)); }
@@ -946,11 +955,12 @@ function compute(r) {
   const drrRub      = wp * dp / 100;
 
   let usn;
-  if (r.tax_system === USN_DR_LABEL) {
+  const drRate = usnDrRate(r.tax_system);
+  if (drRate !== null) {
     const ndsAmount = wp / 105 * 5;
     const expenses  = logKtr + commission + totalCost + storage30 + drrRub;
     const usnBase   = Math.max(0, wp - ndsAmount - expenses);
-    usn = usnBase * 0.15 + ndsAmount;
+    usn = usnBase * drRate + ndsAmount;
   } else {
     usn = wp * taxPct / 100;
   }
@@ -1240,7 +1250,7 @@ function rowHTML(r) {
         oninput="onInput('${key}','tax_pct',this.value)">%
     </div>
   </td>
-  <td class="comp cv-usn"${r.tax_system === USN_DR_LABEL ? ` title="НДС 5% от цены ВБ + 15% от (Цена − НДС − Лог − Комиссия − Себест/доп.расходы − Хранение − ДРР)"` : ''}>${fmtR(c.usn)}</td>
+  <td class="comp cv-usn"${usnDrRate(r.tax_system) !== null ? ` title="НДС 5% от цены ВБ + ${usnDrRate(r.tax_system)*100}% от (Цена − НДС − Лог − Комиссия − Себест/доп.расходы − Хранение − ДРР)"` : ''}>${fmtR(c.usn)}</td>
   <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
   <td class="comp cv-drrrub" title="Авто: Цена ВБ × ДРР%">${fmtR(c.drrRub)}</td>
   <td class="comp cv-stock" title="Авто: обновляется из WB">${(+r.stock||0).toLocaleString('ru-RU')}</td>
