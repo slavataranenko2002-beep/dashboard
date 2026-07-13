@@ -70,22 +70,38 @@ try{applyTheme(localStorage.getItem('theme')||'dark');}catch(e){applyTheme('dark
   var t = document.getElementById('step-text');
   setInterval(function(){ i = (i+1) % steps.length; t.textContent = steps[i]; }, 5000);
 
-  // Тянем готовый отчёт. По готовности — подменяем всю страницу.
-  var url = "{{ report_url }}";
-  fetch(url, {headers: {"Accept": "text/html"}}).then(function(r){
-    if (!r.ok) {
-      return r.text().then(function(text){ throw new Error(r.status + ": " + text.slice(0,300)); });
-    }
-    return r.text();
-  }).then(function(html){
-    document.open(); document.write(html); document.close();
-  }).catch(function(e){
+  function showError(msg){
     document.getElementById('err').innerHTML =
       '<div class="err">⚠ Не удалось сформировать отчёт.<br><br>' +
-      String(e).replace(/</g,'&lt;') + '<br><br>' +
+      String(msg).replace(/</g,'&lt;').slice(0,400) + '<br><br>' +
       '<a href="/wb">← Вернуться на главную</a></div>';
     document.querySelector('.spinner').style.borderTopColor = '#fc5c65';
-  });
+  }
+
+  // Отчёт готовится в фоне (WB rate-limit — до нескольких минут). Запускаем задачу,
+  // опрашиваем статус и по готовности открываем готовый отчёт (быстрый GET из БД).
+  fetch("{{ start_url }}").then(function(r){
+    return r.json().then(function(d){ if(!r.ok) throw new Error(d.error||('HTTP '+r.status)); return d; });
+  }).then(function(d){
+    var job = d.job_id;
+    if(!job) throw new Error("Не получен идентификатор задачи");
+    var tries = 0;
+    var poll = setInterval(function(){
+      tries++;
+      if(tries > 150){ clearInterval(poll); showError("Превышено время ожидания (5 мин)."); return; }
+      fetch("/wb/report/status?job=" + encodeURIComponent(job)).then(function(r){ return r.json(); })
+        .then(function(s){
+          if(s.status === "done"){
+            clearInterval(poll);
+            window.location = "/wb/report/result?job=" + encodeURIComponent(job);
+          } else if(s.status === "error"){
+            clearInterval(poll);
+            showError(s.error || "Ошибка при формировании отчёта");
+          }
+          // status === "running" → продолжаем опрос
+        }).catch(function(){ /* сетевой сбой опроса — попробуем на следующем тике */ });
+    }, 2000);
+  }).catch(function(e){ showError(e); });
 })();
 </script>
 </body></html>

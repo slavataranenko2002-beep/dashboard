@@ -291,6 +291,21 @@ def _ensure_design_tables():
                         UNIQUE (backup_date, project)
                     )
                 """)
+                # Фоновые задачи генерации WB-отчёта (отчёт долгий из-за rate-limit
+                # WB — HTTP-запрос не держим открытым, чтобы не ловить edge-timeout 502)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS wb_report_jobs (
+                        id          TEXT PRIMARY KEY,
+                        cabinet     TEXT NOT NULL,
+                        date_from   DATE,
+                        date_to     DATE,
+                        status      TEXT NOT NULL DEFAULT 'running',  -- running|done|error
+                        html        TEXT,
+                        error       TEXT,
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
                 # Подзадачи
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS subtasks (
@@ -2284,7 +2299,7 @@ def wb_loading():
     if not cabinet:
         return Response("?cabinet= обязателен", status=400)
     d_from, d_to = _parse_period(request.args)
-    report_url = f"/wb/report?cabinet={cabinet}&from={d_from}&to={d_to}"
+    start_url = f"/wb/report/start?cabinet={cabinet}&from={d_from}&to={d_to}"
     months = ["января","февраля","марта","апреля","мая","июня",
               "июля","августа","сентября","октября","ноября","декабря"]
     if d_from.month == d_to.month:
@@ -2293,11 +2308,163 @@ def wb_loading():
         period = (f"{d_from.day:02d} {months[d_from.month-1]} — "
                   f"{d_to.day:02d} {months[d_to.month-1]} {d_to.year}")
     return render_template(
-        "wb_loading.html", cabinet=cabinet, period=period, report_url=report_url
+        "wb_loading.html", cabinet=cabinet, period=period, start_url=start_url
     )
+
+def _build_wb_report_html(cabinet, d_from, d_to):
+    """Собирает полный HTML WB-отчёта (WB API + задачи + юнит). Чистая функция —
+    можно вызывать как из HTTP-запроса, так и из фонового потока."""
+    from wb_api import collect_report_data
+    from wb_report import render_html
+    data = collect_report_data(cabinet, d_from, d_to)
+    # Выполненные задачи проекта за период отчёта
+    done_tasks = []
+    try:
+        import datetime as _dt2
+        d_to_dt = _dt2.datetime.combine(d_to, _dt2.time.max)
+        d_from_dt = _dt2.datetime.combine(d_from, _dt2.time.min)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT title, assignee, done_at FROM tasks "
+                    "WHERE project = %s AND done = TRUE "
+                    "  AND done_at >= %s AND done_at <= %s "
+                    "ORDER BY done_at DESC",
+                    (cabinet, d_from_dt, d_to_dt)
+                )
+                done_tasks = [
+                    {"title": r["title"], "assignee": r["assignee"],
+                     "done_at": r["done_at"].strftime("%d.%m") if r["done_at"] else ""}
+                    for r in cur.fetchall()
+                ]
+    except Exception:
+        done_tasks = []
+    unit_data = []
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT wb_article, seller_article, brand, cost_price, "
+                    "logistics_to_wb, packaging, overhead, defect_pct, liters, "
+                    "redemption_pct, warehouse, irp, il, logistics_ktr, "
+                    "reception_coef, storage_per_day, commission_pct, "
+                    "wb_price, drr_pct, drr_external_rub, stock, spp_pct, "
+                    "tax_system, tax_pct, status "
+                    "FROM unit_economics WHERE project=%s ORDER BY id ASC",
+                    (cabinet,)
+                )
+                unit_data = [dict(r) for r in cur.fetchall()]
+        for row in unit_data:
+            for k, v in row.items():
+                if hasattr(v, '__float__') and not isinstance(v, (int, bool)):
+                    row[k] = float(v) if v is not None else None
+    except Exception:
+        unit_data = []
+    return render_html(data, done_tasks=done_tasks, unit_data=unit_data)
+
+
+def _run_wb_report_job(job_id, cabinet, d_from, d_to):
+    """Фоновая генерация отчёта — пишет результат/ошибку в wb_report_jobs."""
+    try:
+        html_out = _build_wb_report_html(cabinet, d_from, d_to)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE wb_report_jobs SET status='done', html=%s, updated_at=NOW() WHERE id=%s",
+                    (html_out, job_id)
+                )
+            conn.commit()
+    except Exception as e:
+        logging.exception("wb report job %s failed", job_id)
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE wb_report_jobs SET status='error', error=%s, updated_at=NOW() WHERE id=%s",
+                        (str(e)[:2000], job_id)
+                    )
+                conn.commit()
+        except Exception:
+            logging.exception("wb report job %s: failed to record error", job_id)
+
+
+@app.route("/wb/report/start")
+def wb_report_start():
+    """Запускает фоновую генерацию отчёта, сразу возвращает job_id."""
+    err = _check_wb_access()
+    if err:
+        return err
+    cabinet = request.args.get("cabinet", "").strip()
+    if not cabinet:
+        return jsonify({"error": "cabinet required"}), 400
+    d_from, d_to = _parse_period(request.args)
+    if (d_to - d_from).days < 0:
+        return jsonify({"error": "Неверный период: to < from"}), 400
+    if (d_to - d_from).days > 31:
+        return jsonify({"error": "Период не более 31 дня (ограничение WB API)"}), 400
+    import uuid, threading
+    job_id = uuid.uuid4().hex
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM wb_report_jobs WHERE created_at < NOW() - INTERVAL '1 day'")
+                cur.execute(
+                    "INSERT INTO wb_report_jobs (id, cabinet, date_from, date_to, status) "
+                    "VALUES (%s,%s,%s,%s,'running')",
+                    (job_id, cabinet, d_from, d_to)
+                )
+            conn.commit()
+    except Exception as e:
+        logging.exception("wb_report_start failed")
+        return jsonify({"error": str(e)}), 500
+    threading.Thread(
+        target=_run_wb_report_job, args=(job_id, cabinet, d_from, d_to), daemon=True
+    ).start()
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/wb/report/status")
+def wb_report_status():
+    err = _check_wb_access()
+    if err:
+        return err
+    job_id = request.args.get("job", "").strip()
+    if not job_id:
+        return jsonify({"error": "job required"}), 400
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status, error FROM wb_report_jobs WHERE id=%s", (job_id,))
+            row = cur.fetchone()
+    if not row:
+        return jsonify({"status": "error", "error": "Задача не найдена (устарела?)"}), 404
+    return jsonify({"status": row["status"], "error": row["error"]})
+
+
+@app.route("/wb/report/result")
+def wb_report_result():
+    err = _check_wb_access()
+    if err:
+        return err
+    job_id = request.args.get("job", "").strip()
+    if not job_id:
+        return Response("job required", status=400)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status, html, error FROM wb_report_jobs WHERE id=%s", (job_id,))
+            row = cur.fetchone()
+    if not row:
+        return Response("Отчёт не найден", status=404)
+    if row["status"] == "done" and row["html"]:
+        return Response(row["html"], mimetype="text/html")
+    if row["status"] == "error":
+        return Response(f"Ошибка: {row['error']}", status=500)
+    return Response("Отчёт ещё готовится", status=425)
+
 
 @app.route("/wb/report")
 def wb_report():
+    """Синхронный рендер (прямая ссылка). Для UI используется фоновый /wb/report/start —
+    длинный HTTP-запрос режется edge-timeout'ом Railway (502)."""
     err = _check_wb_access()
     if err:
         return err
@@ -2310,54 +2477,7 @@ def wb_report():
     if (d_to - d_from).days > 31:
         return Response("Период не более 31 дня (ограничение WB API)", status=400)
     try:
-        from wb_api import collect_report_data
-        from wb_report import render_html
-        data = collect_report_data(cabinet, d_from, d_to)
-        # Выполненные задачи проекта за период отчёта
-        done_tasks = []
-        try:
-            import datetime as _dt2
-            d_to_dt = _dt2.datetime.combine(d_to, _dt2.time.max)
-            d_from_dt = _dt2.datetime.combine(d_from, _dt2.time.min)
-            with get_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT title, assignee, done_at FROM tasks "
-                        "WHERE project = %s AND done = TRUE "
-                        "  AND done_at >= %s AND done_at <= %s "
-                        "ORDER BY done_at DESC",
-                        (cabinet, d_from_dt, d_to_dt)
-                    )
-                    done_tasks = [
-                        {"title": r["title"], "assignee": r["assignee"],
-                         "done_at": r["done_at"].strftime("%d.%m") if r["done_at"] else ""}
-                        for r in cur.fetchall()
-                    ]
-        except Exception:
-            done_tasks = []
-        unit_data = []
-        try:
-            with get_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT wb_article, seller_article, brand, cost_price, "
-                        "logistics_to_wb, packaging, overhead, defect_pct, liters, "
-                        "redemption_pct, warehouse, irp, il, logistics_ktr, "
-                        "reception_coef, storage_per_day, commission_pct, "
-                        "wb_price, drr_pct, drr_external_rub, stock, spp_pct, "
-                        "tax_system, tax_pct, status "
-                        "FROM unit_economics WHERE project=%s ORDER BY id ASC",
-                        (cabinet,)
-                    )
-                    unit_data = [dict(r) for r in cur.fetchall()]
-            for row in unit_data:
-                for k, v in row.items():
-                    if hasattr(v, '__float__') and not isinstance(v, (int, bool)):
-                        row[k] = float(v) if v is not None else None
-        except Exception:
-            unit_data = []
-        html_out = render_html(data, done_tasks=done_tasks, unit_data=unit_data)
-        return Response(html_out, mimetype="text/html")
+        return Response(_build_wb_report_html(cabinet, d_from, d_to), mimetype="text/html")
     except RuntimeError as e:
         return Response(f"Ошибка: {e}", status=400)
     except Exception as e:
