@@ -2433,10 +2433,19 @@ def wb_report_status():
         return jsonify({"error": "job required"}), 400
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT status, error FROM wb_report_jobs WHERE id=%s", (job_id,))
+            cur.execute(
+                "SELECT status, error, EXTRACT(EPOCH FROM (NOW()-created_at)) AS age "
+                "FROM wb_report_jobs WHERE id=%s", (job_id,)
+            )
             row = cur.fetchone()
     if not row:
         return jsonify({"status": "error", "error": "Задача не найдена (устарела?)"}), 404
+    # Защита от «зависших» задач (перезапуск воркера, бан WB на часы): считаем
+    # задачу провалившейся, если она в статусе running дольше 8 минут.
+    if row["status"] == "running" and (row["age"] or 0) > 480:
+        return jsonify({"status": "error",
+                        "error": "Превышено время на сервере (>8 мин). Вероятно, WB API "
+                                 "ограничил доступ по rate-limit — попробуйте через 10–15 минут."})
     return jsonify({"status": row["status"], "error": row["error"]})
 
 

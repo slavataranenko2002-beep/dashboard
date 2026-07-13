@@ -185,12 +185,24 @@ class WBClient:
         self.close()
 
     # ── HTTP helper с уважением к 429 ──
+    # Максимальное ожидание по одному запросу. WB иногда отдаёт X-Ratelimit-Retry
+    # в тысячи секунд (фактически бан на часы) — спать столько нельзя, иначе отчёт
+    # висит бесконечно. Если бэкофф больше лимита — не ждём, отдаём 429 наверх
+    # (вызывающий деградирует: get_stocks/get_sales вернут [], отчёт соберётся без них).
+    MAX_429_WAIT = 45
+
     def _request(self, method: str, url: str, **kw):
-        for attempt in range(5):
+        for attempt in range(4):
             r = self._client.request(method, url, **kw)
             if r.status_code == 429:
                 wait = float(r.headers.get("X-Ratelimit-Retry", "5"))
-                logger.warning(f"[WB:{self.cabinet}] 429 — ждём {wait}с")
+                if wait > self.MAX_429_WAIT:
+                    logger.warning(
+                        f"[WB:{self.cabinet}] 429, retry-after {wait:.0f}с > "
+                        f"{self.MAX_429_WAIT}с — пропускаем запрос {url.rsplit('/',1)[-1]}"
+                    )
+                    return r
+                logger.warning(f"[WB:{self.cabinet}] 429 — ждём {wait:.0f}с (попытка {attempt+1})")
                 time.sleep(wait)
                 continue
             if r.status_code >= 500:
