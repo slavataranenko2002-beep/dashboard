@@ -291,6 +291,17 @@ def _ensure_design_tables():
                         UNIQUE (backup_date, project)
                     )
                 """)
+                # Цели кабинета на месяц (план-факт), напр. план ДРР по заказам.
+                # Одна строка на кабинет+месяц (общий, не по артикулам).
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS planfact_targets (
+                        project          TEXT NOT NULL,
+                        month            DATE NOT NULL,
+                        drr_orders_plan  NUMERIC(6,2),
+                        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        PRIMARY KEY (project, month)
+                    )
+                """)
                 # Фоновые задачи генерации WB-отчёта (отчёт долгий из-за rate-limit
                 # WB — HTTP-запрос не держим открытым, чтобы не ловить edge-timeout 502)
                 cur.execute("""
@@ -2849,6 +2860,13 @@ def api_plan_fact_get():
                         "ff_stock":       int(r["ff_stock"] or 0),
                         "expected_stock": int(r["expected_stock"] or 0),
                     }
+                # Цель кабинета на месяц — план ДРР по заказам
+                cur.execute(
+                    "SELECT drr_orders_plan FROM planfact_targets WHERE project=%s AND month=%s",
+                    (cabinet, month_date)
+                )
+                _tr = cur.fetchone()
+                drr_orders_plan = float(_tr["drr_orders_plan"]) if _tr and _tr["drr_orders_plan"] is not None else None
         today        = date.today()
         days_elapsed = max(1, (d_to - d_from).days + 1)
         days_remaining = max(0, last_day - today.day)
@@ -2889,6 +2907,7 @@ def api_plan_fact_get():
             "adv_spend":       t.get("adv_spend", 0),
             "drr_orders":      t.get("drr_orders"),
             "drr_sales":       t.get("drr_sales"),
+            "drr_orders_plan": drr_orders_plan,
             "from_cache":      from_cache,
             "fetched_at":      fetched_at.isoformat() if fetched_at else None,
         }
@@ -2945,6 +2964,21 @@ def api_plan_fact_save():
                         float(p.get("sales_rub_plan") or 0),
                         int(p.get("sales_qty_plan") or 0),
                     ))
+                # Цель кабинета — план ДРР по заказам (общий на месяц)
+                if "drr_orders_plan" in d:
+                    drr_val = d.get("drr_orders_plan")
+                    if drr_val in (None, ""):
+                        cur.execute(
+                            "DELETE FROM planfact_targets WHERE project=%s AND month=%s",
+                            (cabinet, month_date)
+                        )
+                    else:
+                        cur.execute("""
+                            INSERT INTO planfact_targets (project, month, drr_orders_plan, updated_at)
+                            VALUES (%s, %s, %s, NOW())
+                            ON CONFLICT (project, month) DO UPDATE SET
+                                drr_orders_plan = EXCLUDED.drr_orders_plan, updated_at = NOW()
+                        """, (cabinet, month_date, float(drr_val)))
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -2979,6 +3013,10 @@ def api_plan_fact_clear():
                     (cabinet, month_date)
                 )
                 n = cur.rowcount
+                cur.execute(
+                    "DELETE FROM planfact_targets WHERE project=%s AND month=%s",
+                    (cabinet, month_date)
+                )
             conn.commit()
         return jsonify({"ok": True, "deleted": n})
     except Exception as e:

@@ -75,6 +75,8 @@ a{color:var(--blue);text-decoration:none}
 .kpi-pct.bad{background:rgba(248,81,73,.15);color:var(--red)}
 .kpi-pct.none{background:var(--bg3);color:var(--text3)}
 .kpi-status{font-size:12px;margin-top:4px;color:var(--text2)}
+.drr-plan-inp{width:48px;background:var(--bg2);border:1px solid var(--blue);color:var(--text);border-radius:5px;padding:1px 5px;font-size:12px;font-weight:600;outline:none;text-align:right}
+.drr-plan-inp::-webkit-outer-spin-button,.drr-plan-inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 
 /* Table wrap */
 .table-wrap{padding:0 24px 8px}
@@ -406,6 +408,10 @@ let currentMonth = '';
 let planEdits = {};
 let currentPage = 0;
 let seasonList = []; // [{name, coeff}]
+let drrOrdersPlan = null; // план ДРР по заказам (общий на месяц, %)
+
+// Среднее без нулей (для % выкупа кабинета в KPI)
+function _nzAvg(arr){ const v=arr.filter(x=>x>0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; }
 
 // ── Load data ─────────────────────────────────────────────────────────────────
 // force=false → отдать из кэша БД мгновенно (сервер сам сходит в WB, если кэша
@@ -438,6 +444,7 @@ async function loadData(force){
     const data = await r.json();
     if(data.error){ showError(data.error); return; }
     currentData = data;
+    drrOrdersPlan = (data.meta && data.meta.drr_orders_plan != null) ? Number(data.meta.drr_orders_plan) : null;
     buildSeasonList(data);
     applySort();
     renderKpi(data);
@@ -508,11 +515,32 @@ function drrSalStyle(v){
   return 'color:var(--red);font-weight:800;text-shadow:0 0 8px rgba(248,81,73,.5)'; // очень плохо
 }
 
+// Сверка ДРР с планом (для ДРР меньше = лучше): факт ≤ план → ✓, иначе ▲
+function drrBadge(fact, plan){
+  if(plan===null || plan===undefined || fact===null || fact===undefined) return '';
+  return fact <= plan
+    ? '<span class="kpi-pct ok" title="В пределах плана">✓</span>'
+    : '<span class="kpi-pct bad" title="Выше плана">▲</span>';
+}
+
+// Изменили план ДРР заказы → сохраняем в переменную и перерисовываем KPI
+function onDrrPlanChange(val){
+  drrOrdersPlan = (val === '' || val === null) ? null : parseFloat(val);
+  if(isNaN(drrOrdersPlan)) drrOrdersPlan = null;
+  if(currentData) renderKpi(currentData);
+}
+
 // ── KPI bar ───────────────────────────────────────────────────────────────────
 const MONTHS_RU = ['ЯНВАРЬ','ФЕВРАЛЬ','МАРТ','АПРЕЛЬ','МАЙ','ИЮНЬ','ИЮЛЬ','АВГУСТ','СЕНТЯБРЬ','ОКТЯБРЬ','НОЯБРЬ','ДЕКАБРЬ'];
 
 function renderKpi(data){
   const t = data.totals, m = data.meta;
+
+  // План ДРР: заказы задаётся вручную; продажи = ДРР заказы / (выкуп% / 100)
+  const drrPlanOrd = (drrOrdersPlan !== null && drrOrdersPlan !== '' && !isNaN(drrOrdersPlan)) ? Number(drrOrdersPlan) : null;
+  const buyoutCab  = _nzAvg((data.articles||[]).map(a=>parseFloat(a.buyout_pct)||0));
+  const drrPlanSal = (drrPlanOrd !== null && buyoutCab) ? drrPlanOrd / (buyoutCab/100) : null;
+
   const status = m.pct_orders===null ? '—' :
                  m.pct_orders>=100 ? '✅ План выполнен' :
                  m.pct_orders>=70  ? '🟡 В работе' : '🔴 Отстаём от плана';
@@ -571,13 +599,21 @@ function renderKpi(data){
     </div>
     <div class="kpi-card">
       <div class="kpi-label">ДРР по заказам</div>
-      <div class="kpi-row"><div class="kpi-fact" style="${drrOrdStyle(m.drr_orders)}">${m.drr_orders !== null ? m.drr_orders+'%' : '—'}</div></div>
-      <div class="kpi-status">расход / заказы</div>
+      <div class="kpi-row">
+        <div class="kpi-fact" style="${drrOrdStyle(m.drr_orders)}">${m.drr_orders !== null ? m.drr_orders+'%' : '—'}</div>
+        ${drrBadge(m.drr_orders, drrPlanOrd)}
+      </div>
+      <div class="kpi-status">план: ${CAN_EDIT
+        ? `<input type="number" min="0" step="0.1" class="drr-plan-inp" value="${drrPlanOrd!==null?drrPlanOrd:''}" placeholder="—" onchange="onDrrPlanChange(this.value)">`
+        : (drrPlanOrd!==null?drrPlanOrd+'%':'—')}<span style="margin-left:4px">%</span> · расход / заказы</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">ДРР по продажам</div>
-      <div class="kpi-row"><div class="kpi-fact" style="${drrSalStyle(m.drr_sales)}">${m.drr_sales !== null ? m.drr_sales+'%' : '—'}</div></div>
-      <div class="kpi-status">расход / продажи</div>
+      <div class="kpi-row">
+        <div class="kpi-fact" style="${drrSalStyle(m.drr_sales)}">${m.drr_sales !== null ? m.drr_sales+'%' : '—'}</div>
+        ${drrBadge(m.drr_sales, drrPlanSal)}
+      </div>
+      <div class="kpi-status">план: ${drrPlanSal!==null?drrPlanSal.toFixed(1)+'%':'—'} · от выкупа ${buyoutCab!==null?Math.round(buyoutCab)+'%':'—'}</div>
     </div>
     <div class="kpi-card" style="border-color:rgba(240,136,62,.4)">
       <div class="kpi-label" style="color:var(--orange)">📈 Прогноз заказы</div>
@@ -1184,7 +1220,7 @@ async function savePlan(){
     const r = await fetch('/api/plan-fact', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({cabinet: currentCabinet, month: currentMonth, plans})
+      body: JSON.stringify({cabinet: currentCabinet, month: currentMonth, plans, drr_orders_plan: drrOrdersPlan})
     });
     const d = await r.json();
     if(d.ok){
@@ -1217,6 +1253,7 @@ async function clearPlan(){
     if(d.error){ alert('Ошибка: '+d.error); btn.disabled=false; btn.textContent='🧹 Очистить план'; return; }
     // Обнуляем план локально и перерисовываем
     planEdits={};
+    drrOrdersPlan = null;
     currentData.articles.forEach(a=>{
       a.orders_rub_plan=0; a.orders_qty_plan=0; a.sales_rub_plan=0; a.sales_qty_plan=0;
     });
