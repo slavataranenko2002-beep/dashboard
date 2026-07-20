@@ -77,6 +77,9 @@ a{color:var(--blue);text-decoration:none}
 .kpi-status{font-size:12px;margin-top:4px;color:var(--text2)}
 .drr-plan-inp{width:48px;background:var(--bg2);border:1px solid var(--blue);color:var(--text);border-radius:5px;padding:1px 5px;font-size:12px;font-weight:600;outline:none;text-align:right}
 .drr-plan-inp::-webkit-outer-spin-button,.drr-plan-inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.drr-plan-val{font-weight:700;color:var(--text)}
+.drr-edit-btn{background:none;border:none;cursor:pointer;font-size:11px;padding:0 2px;margin-left:3px;opacity:.65;line-height:1}
+.drr-edit-btn:hover{opacity:1}
 
 /* Table wrap */
 .table-wrap{padding:0 24px 8px}
@@ -409,6 +412,7 @@ let planEdits = {};
 let currentPage = 0;
 let seasonList = []; // [{name, coeff}]
 let drrOrdersPlan = null; // план ДРР по заказам (общий на месяц, %)
+let drrEditMode = false;  // режим редактирования поля плана ДРР
 
 // Среднее без нулей (для % выкупа кабинета в KPI)
 function _nzAvg(arr){ const v=arr.filter(x=>x>0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; }
@@ -445,6 +449,7 @@ async function loadData(force){
     if(data.error){ showError(data.error); return; }
     currentData = data;
     drrOrdersPlan = (data.meta && data.meta.drr_orders_plan != null) ? Number(data.meta.drr_orders_plan) : null;
+    drrEditMode = false;
     buildSeasonList(data);
     applySort();
     renderKpi(data);
@@ -523,11 +528,19 @@ function drrBadge(fact, plan){
     : '<span class="kpi-pct bad" title="Выше плана">▲</span>';
 }
 
-// Изменили план ДРР заказы → сохраняем в переменную и перерисовываем KPI
-function onDrrPlanChange(val){
+// Ввод плана ДРР заказы завершён (blur/Enter) → сохраняем и блокируем поле
+function onDrrPlanCommit(val){
   drrOrdersPlan = (val === '' || val === null) ? null : parseFloat(val);
   if(isNaN(drrOrdersPlan)) drrOrdersPlan = null;
+  drrEditMode = false;
   if(currentData) renderKpi(currentData);
+}
+
+// Клик по карандашику → снова открываем поле для редактирования
+function editDrrPlan(){
+  drrEditMode = true;
+  if(currentData) renderKpi(currentData);
+  setTimeout(function(){ const i=document.querySelector('.drr-plan-inp'); if(i){ i.focus(); i.select(); } }, 0);
 }
 
 // ── KPI bar ───────────────────────────────────────────────────────────────────
@@ -603,9 +616,13 @@ function renderKpi(data){
         <div class="kpi-fact" style="${drrOrdStyle(m.drr_orders)}">${m.drr_orders !== null ? m.drr_orders+'%' : '—'}</div>
         ${drrBadge(m.drr_orders, drrPlanOrd)}
       </div>
-      <div class="kpi-status">план: ${CAN_EDIT
-        ? `<input type="number" min="0" step="0.1" class="drr-plan-inp" value="${drrPlanOrd!==null?drrPlanOrd:''}" placeholder="—" onchange="onDrrPlanChange(this.value)">`
-        : (drrPlanOrd!==null?drrPlanOrd+'%':'—')}<span style="margin-left:4px">%</span> · расход / заказы</div>
+      <div class="kpi-status">план: ${
+        !CAN_EDIT
+          ? (drrPlanOrd!==null?drrPlanOrd+'%':'—')
+          : (drrPlanOrd===null || drrEditMode)
+            ? `<input type="number" min="0" step="0.1" class="drr-plan-inp" value="${drrPlanOrd!==null?drrPlanOrd:''}" placeholder="—" onblur="onDrrPlanCommit(this.value)" onkeydown="if(event.key==='Enter')this.blur()"><span style="margin-left:2px">%</span>`
+            : `<span class="drr-plan-val">${drrPlanOrd}%</span><button class="drr-edit-btn" onclick="editDrrPlan()" title="Изменить план ДРР">✏️</button>`
+      } · расход / заказы</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">ДРР по продажам</div>
@@ -1254,6 +1271,7 @@ async function clearPlan(){
     // Обнуляем план локально и перерисовываем
     planEdits={};
     drrOrdersPlan = null;
+    drrEditMode = false;
     currentData.articles.forEach(a=>{
       a.orders_rub_plan=0; a.orders_qty_plan=0; a.sales_rub_plan=0; a.sales_qty_plan=0;
     });
