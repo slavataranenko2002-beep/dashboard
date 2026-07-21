@@ -1195,7 +1195,14 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
             "buyout_pct_is_prev": buyout_pct_is_prev,
         }
 
-    # Проход 1: артикулы из воронки у которых есть остаток (как было раньше — надёжно).
+    # Доступны ли данные по остаткам. WB отключил метод остатков (404) — тогда
+    # stock_by_vc пуст. В этом случае НЕЛЬЗЯ фильтровать артикулы по остатку > 0,
+    # иначе отфильтруется вообще всё и план-факт покажет «нет данных».
+    stocks_available = bool(stock_by_vc)
+
+    # Проход 1: артикулы из воронки. Если данные по остаткам есть — берём только с
+    # остатком > 0 (как раньше). Если остатков нет (метод WB отключён) — берём все
+    # артикулы воронки, чтобы страница не была пустой.
     articles = []
     seen_vcs: set[str] = set()
     for p in products:
@@ -1203,13 +1210,13 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         if not vc:
             continue
         stocks = int(stock_by_vc.get(vc, 0))
-        if stocks == 0:
+        if stocks_available and stocks == 0:
             continue
         seen_vcs.add(vc)
         articles.append(_build_article(vc, p, stocks))
 
-    # Проход 2: артикулы с остатком > 0, которых нет в воронке.
-    # Это артикулы без заказов в выбранном периоде — нужны для планирования.
+    # Проход 2: артикулы с остатком > 0, которых нет в воронке (без заказов в периоде,
+    # но нужны для планирования). Работает только когда данные по остаткам доступны.
     for vc, stocks in stock_by_vc.items():
         if vc in seen_vcs or stocks <= 0:
             continue
