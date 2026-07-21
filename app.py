@@ -2414,11 +2414,25 @@ def wb_report_start():
     if (d_to - d_from).days > 31:
         return jsonify({"error": "Период не более 31 дня (ограничение WB API)"}), 400
     import uuid, threading
-    job_id = uuid.uuid4().hex
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM wb_report_jobs WHERE created_at < NOW() - INTERVAL '1 day'")
+                # Дедуп: если по этому кабинету+периоду уже есть свежая задача
+                # (выполняется или готова < 5 мин назад) — переиспользуем её, а не
+                # плодим фоновые потоки (иначе повторные клики/перезагрузки страницы
+                # запускают десятки параллельных генераций и жрут WB rate-limit + CPU).
+                cur.execute("""
+                    SELECT id FROM wb_report_jobs
+                    WHERE cabinet=%s AND date_from=%s AND date_to=%s
+                      AND status IN ('running','done')
+                      AND created_at > NOW() - INTERVAL '5 minutes'
+                    ORDER BY created_at DESC LIMIT 1
+                """, (cabinet, d_from, d_to))
+                existing = cur.fetchone()
+                if existing:
+                    return jsonify({"job_id": existing["id"], "reused": True})
+                job_id = uuid.uuid4().hex
                 cur.execute(
                     "INSERT INTO wb_report_jobs (id, cabinet, date_from, date_to, status) "
                     "VALUES (%s,%s,%s,%s,'running')",

@@ -440,8 +440,13 @@ class WBClient:
             f"{STATISTICS_BASE}/api/v1/supplier/stocks",
             params={"dateFrom": date_from},
         )
+        if r.status_code == 404:
+            # WB отключил этот метод 2026-07-20 (PLUG-404). Остатки временно
+            # недоступны, пока не переедем на /api/analytics/v1/stocks-report/wb-warehouses.
+            logger.warning(f"[WB:{self.cabinet}] stocks endpoint deprecated (404) — остатки пропущены")
+            return []
         if not r.is_success:
-            logger.error(f"[WB:{self.cabinet}] stocks {r.status_code}: {r.text[:300]}")
+            logger.error(f"[WB:{self.cabinet}] stocks {r.status_code}: {r.text[:200]}")
             return []
         try:
             return r.json() or []
