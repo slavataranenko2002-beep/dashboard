@@ -427,31 +427,78 @@ class WBClient:
         return all_rows
 
     # ── 6. Складские остатки ────────────────────────────────────────────
+    @staticmethod
+    def _normalize_stock_row(x: dict) -> dict:
+        """Приводит строку нового метода wb-warehouses к формату старого stocks
+        (supplierArticle, quantityFull, nmId, subject, brand) — под
+        aggregate_stocks_by_article. Имена полей берём с запасом (WB могли назвать
+        по-разному), реальные ключи видно в логе при первом запросе."""
+        def g(*names, default=None):
+            for n in names:
+                v = x.get(n)
+                if v is not None:
+                    return v
+            return default
+        wh_qty  = float(g("quantity", "qty", "amount", "warehouseQuantity", default=0) or 0)
+        in_to   = float(g("inWayToClient", "in_way_to_client", default=0) or 0)
+        in_from = float(g("inWayFromClient", "in_way_from_client", default=0) or 0)
+        qty_full = g("quantityFull", "quantityWbTotal", default=None)
+        if qty_full is None:
+            qty_full = wh_qty + in_to + in_from
+        return {
+            "supplierArticle": g("vendorCode", "supplierArticle", "article", default=""),
+            "nmId":            g("nmID", "nmId", default=None),
+            "quantity":        wh_qty,
+            "quantityFull":    float(qty_full or 0),
+            "warehouseName":   g("warehouseName", "warehouse", "officeName", default=""),
+            "subject":         g("subjectName", "subject", "category", default=""),
+            "brand":           g("brandName", "brand", default=""),
+            "techSize":        g("techSize", "size", default=""),
+        }
+
     def get_stocks(self, date_from: str) -> list[dict]:
         """
         Текущие остатки на складах WB.
-        GET /api/v1/supplier/stocks?dateFrom=YYYY-MM-DD
-        Поля: nmId, supplierArticle, techSize, warehouseName,
-              quantity, inWayToClient, inWayFromClient, quantityFull
-        quantityFull = на складе + в пути к клиенту + в пути от клиента (общий остаток)
+        Старый GET /api/v1/supplier/stocks отключён WB (404, 2026-07-20).
+        Новый метод: POST /api/analytics/v1/stocks-report/wb-warehouses
+        (seller-analytics-api, категория «Аналитика», offset-пагинация, ~1 req/20с,
+        обновление раз в 30 мин). Строка = один размер товара на одном складе.
+        Нормализуем к формату старого метода. date_from не используется (метод отдаёт
+        текущий срез), оставлен для совместимости сигнатуры.
         """
-        r = self._request(
-            "GET",
-            f"{STATISTICS_BASE}/api/v1/supplier/stocks",
-            params={"dateFrom": date_from},
-        )
-        if r.status_code == 404:
-            # WB отключил этот метод 2026-07-20 (PLUG-404). Остатки временно
-            # недоступны, пока не переедем на /api/analytics/v1/stocks-report/wb-warehouses.
-            logger.warning(f"[WB:{self.cabinet}] stocks endpoint deprecated (404) — остатки пропущены")
-            return []
-        if not r.is_success:
-            logger.error(f"[WB:{self.cabinet}] stocks {r.status_code}: {r.text[:200]}")
-            return []
-        try:
-            return r.json() or []
-        except Exception:
-            return []
+        url = f"{STATS_BASE}/api/analytics/v1/stocks-report/wb-warehouses"
+        raw_rows: list[dict] = []
+        limit = 100_000
+        offset = 0
+        for _ in range(50):
+            r = self._request("POST", url, json={"limit": limit, "offset": offset})
+            if not r.is_success:
+                logger.error(f"[WB:{self.cabinet}] wb-warehouses {r.status_code}: {r.text[:400]}")
+                break
+            try:
+                payload = r.json()
+            except Exception:
+                logger.error(f"[WB:{self.cabinet}] wb-warehouses: ответ не JSON: {r.text[:200]}")
+                break
+            # Ответ может быть [...], {"data":[...]} или {"data":{"rows":[...]}}
+            rows = payload.get("data") if isinstance(payload, dict) else payload
+            if isinstance(rows, dict):
+                rows = rows.get("rows") or rows.get("list") or rows.get("items") or rows.get("stocks") or []
+            if not isinstance(rows, list):
+                rows = []
+            if offset == 0:
+                top = list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload) if isinstance(payload, list) else '?'}]"
+                logger.info(
+                    f"[WB:{self.cabinet}] wb-warehouses: envelope={top}; строк={len(rows)}; "
+                    f"ключи первой строки={list(rows[0].keys()) if rows else '—'}"
+                )
+            if not rows:
+                break
+            raw_rows.extend(rows)
+            if len(rows) < limit:
+                break
+            offset += limit
+        return [self._normalize_stock_row(x) for x in raw_rows]
 
     # ── 7. Цены и скидки ────────────────────────────────────────────────
     def get_goods_prices(self, nm_id: int | None = None) -> list[dict]:
