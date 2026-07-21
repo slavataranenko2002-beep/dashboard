@@ -844,8 +844,15 @@ def collect_report_data(
         sales_raw, prev_from, prev_to
     )
 
-    # Агрегация складских остатков
-    stock_by_vendor, stock_total, _stock_meta = aggregate_stocks_by_article(stocks_raw)
+    # Агрегация складских остатков. Новый метод остатков отдаёт nmId без vendorCode —
+    # строим карту nmId→vendorCode из воронки для сопоставления.
+    nmid_to_vc = {}
+    for p in products:
+        nm = get_product_field(p, "nmId")
+        vc = get_product_field(p, "vendorCode")
+        if nm and vc:
+            nmid_to_vc[str(nm)] = str(vc)
+    stock_by_vendor, stock_total, _stock_meta = aggregate_stocks_by_article(stocks_raw, nmid_to_vc)
 
     # Агрегаты кабинета — текущий период (воронка)
     cur_views   = sum(_funnel_metric(p, "openCount",  "selected") for p in products)
@@ -1029,17 +1036,28 @@ def aggregate_sales_by_article(
     return by_article, total_count, total_for_pay, by_article_for_pay
 
 
-def aggregate_stocks_by_article(stocks: list[dict]) -> tuple[dict[str, int], int, dict[str, dict]]:
+def aggregate_stocks_by_article(
+    stocks: list[dict], nmid_to_vc: dict | None = None
+) -> tuple[dict[str, int], int, dict[str, dict]]:
     """
-    Агрегирует складские остатки по артикулу.
+    Агрегирует складские остатки по vendorCode (артикулу продавца).
     Возвращает: ({supplierArticle: quantityFull}, total_quantity_full, {supplierArticle: {nmId, title}})
+
+    Новый метод WB (wb-warehouses) отдаёт остатки по nmId и БЕЗ vendorCode, поэтому
+    для сопоставления передаём nmid_to_vc = {nmId: vendorCode} (из воронки/карточек).
+    Если vendorCode так и не нашёлся — остаток учитывается в total, но не привязывается
+    к артикулу (в разбивке по артикулам его не будет).
     """
+    nmid_to_vc = nmid_to_vc or {}
     by_article: dict[str, int] = {}
     meta: dict[str, dict] = {}
     total = 0
     for s in stocks:
         qty = int(s.get("quantityFull") or 0)
         key = str(s.get("supplierArticle") or "").strip()
+        if not key:
+            nm = s.get("nmId")
+            key = str(nmid_to_vc.get(nm) or nmid_to_vc.get(str(nm)) or "").strip()
         if key:
             by_article[key] = by_article.get(key, 0) + qty
             if key not in meta:
@@ -1183,7 +1201,14 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
     sales_by_vc, _, _, sales_rub_by_vc = aggregate_sales_by_article(
         sales_raw, date_from, date_to
     )
-    stock_by_vc, stock_total, stock_meta = aggregate_stocks_by_article(stocks_raw)
+    # Новый метод остатков отдаёт nmId без vendorCode — карта nmId→vendorCode из воронки
+    nmid_to_vc = {}
+    for p in products:
+        nm = get_product_field(p, "nmId")
+        vc = get_product_field(p, "vendorCode")
+        if nm and vc:
+            nmid_to_vc[str(nm)] = str(vc)
+    stock_by_vc, stock_total, stock_meta = aggregate_stocks_by_article(stocks_raw, nmid_to_vc)
 
     from datetime import date as _today_cls
     _today = _today_cls.today()
