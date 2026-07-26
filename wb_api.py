@@ -449,6 +449,8 @@ class WBClient:
             "supplierArticle": g("vendorCode", "supplierArticle", "article", default=""),
             "nmId":            g("nmID", "nmId", default=None),
             "quantity":        wh_qty,
+            "inWayToClient":   in_to,
+            "inWayFromClient": in_from,
             "quantityFull":    float(qty_full or 0),
             "warehouseName":   g("warehouseName", "warehouse", "officeName", default=""),
             "subject":         g("subjectName", "subject", "category", default=""),
