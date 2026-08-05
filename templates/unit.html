@@ -755,6 +755,21 @@ const COL_DEFS = [
   {k:'batchProfit',      get:r=>Math.round(compute(r).batchProfit),           type:'num'},
   {k:'capital',          get:r=>Math.round((+r.wb_price||0)*(+r.stock||0)),  type:'num'},
   {k:'capitalCost',      get:r=>Math.round((+r.cost_price||0)*(+r.stock||0)),type:'num'},
+  // ФБС (свой склад)
+  {k:'fbs_point',          get:r=>r.fbs_point||'ПВЗ',                          type:'text'},
+  {k:'fbs_sc_coef',        get:r=>+r.fbs_sc_coef||0,                           type:'num'},
+  {k:'fbs_commission_pct', get:r=>+r.fbs_commission_pct||0,                    type:'num'},
+  {k:'fbs_assembly_coef',  get:r=>+r.fbs_assembly_coef||0,                     type:'num'},
+  {k:'fbs_own_cost',       get:r=>+r.fbs_own_cost||0,                          type:'num'},
+  {k:'fbs_return_days',    get:r=>+r.fbs_return_days||0,                       type:'num'},
+  {k:'fbsLog',             get:r=>Math.round(compute(r).fbsLog),               type:'num'},
+  {k:'fbsExpenses',        get:r=>Math.round(compute(r).fbsExpenses),          type:'num'},
+  {k:'profitFbs',          get:r=>Math.round(compute(r).profitFbs),            type:'num'},
+  {k:'marginFbs',          get:r=>Math.round(compute(r).marginFbs*10)/10,      type:'num'},
+  {k:'roiFbs',             get:r=>Math.round(compute(r).roiFbs*10)/10,         type:'num'},
+  {k:'deltaProfit',        get:r=>Math.round(compute(r).deltaProfit),          type:'num'},
+  {k:'betterScheme',       get:r=>compute(r).betterScheme,                     type:'text'},
+  {k:'batchProfitFbs',     get:r=>Math.round(compute(r).batchProfitFbs),       type:'num'},
 ];
 const COL_MAP = Object.fromEntries(COL_DEFS.map(c => [c.k, c]));
 
@@ -978,10 +993,48 @@ function compute(r) {
 
   const storTotal   = storage30 * qty;
 
+  // ─── ФБС (свой склад) — параллельный расчёт ──────────────────────────────
+  const ilFbs   = +r.il || 1;
+  const scCoef  = +r.fbs_sc_coef || 0;          // % склада/СЦ (напр. 130)
+  const fbsCom  = +r.fbs_commission_pct || 0;   // %
+  const asmCoef = +r.fbs_assembly_coef || 0;    // % (может быть минус)
+  const ownCost = +r.fbs_own_cost || 0;         // ₽/ед
+  const retDays = +r.fbs_return_days || 0;
+  const isPvz   = (r.fbs_point || 'ПВЗ') === 'ПВЗ';
+  const buyoutR = red / 100;
+  const returnR = (100 - red) / 100;
+
+  let fbsLog = 0;
+  if (liters && scCoef && red > 0) {
+    const baseF = baseLogTariff(liters);
+    fbsLog = (baseF * (scCoef / 100) * ilFbs + returnR * baseF) / buyoutR;
+  }
+  const fbsShip      = (isPvz && buyoutR > 0) ? 10 / buyoutR : 0;              // обработка отгрузки ПВЗ 10₽/шт
+  const fbsRetSt     = buyoutR > 0 ? retDays * 10 * (1 / buyoutR - 1) : 0;      // хранение автовозвратов 10₽/шт/день
+  const fbsCommission = wp * (fbsCom + asmCoef) / 100;
+  const fbsExpenses   = fbsLog + fbsShip + fbsRetSt + fbsCommission + ownCost;
+
+  let usnFbs;
+  if (drRate !== null) {
+    const ndsAmountF = wp / 105 * 5;
+    const usnBaseF   = Math.max(0, wp - ndsAmountF - (fbsExpenses + totalCost + drrRub));
+    usnFbs = usnBaseF * drRate + ndsAmountF;
+  } else {
+    usnFbs = wp * taxPct / 100;
+  }
+  const profitFbs      = wp - fbsExpenses - usnFbs - drrRub - totalCost - brakCost;
+  const marginFbs      = wp > 0 ? profitFbs / wp * 100 : 0;
+  const roiFbs         = totalCost > 0 ? profitFbs / totalCost * 100 : 0;
+  const batchProfitFbs = profitFbs * qty;
+  const deltaProfit    = profitFbs - profit;
+  const betterScheme   = deltaProfit > 0 ? 'ФБС' : deltaProfit < 0 ? 'ФБО' : '—';
+
   return {totalCost, liters, wCoef, storageDay, storage30, storTotal,
           logKtr, commission, wbClub, usn, taxPct, drrRub, brakCost,
           revenue, profit, margin, roi, batchProfit, batchMargin, invested,
-          clientPrice};
+          clientPrice,
+          fbsLog, fbsExpenses, profitFbs, marginFbs, roiFbs, batchProfitFbs,
+          deltaProfit, betterScheme};
 }
 
 // ─── Форматирование ──────────────────────────────────────────────────────────
@@ -1096,7 +1149,8 @@ function onInput(key, field, val) {
   if (!r) return;
   const numFields = ['cost_price','logistics_to_wb','packaging','overhead','defect_pct',
     'width_cm','length_cm','height_cm','liters','redemption_pct','irp','il','logistics_ktr',
-    'commission_pct','wb_price','drr_pct','drr_external_rub','stock'];
+    'commission_pct','wb_price','drr_pct','drr_external_rub','stock',
+    'fbs_sc_coef','fbs_commission_pct','fbs_assembly_coef','fbs_own_cost','fbs_return_days'];
   r[field] = numFields.includes(field) ? (val === '' ? (field === 'logistics_ktr' || field === 'liters' ? null : 0) : +val) : val;
   r._dirty = true;
   updateComputedCells(key);
@@ -1135,6 +1189,20 @@ function updateComputedCells(key) {
   if (rm) { rm.textContent = fmtP(c.roi); rm.className = 'comp cv-roi ' + profitCls(c.roi); }
   const bp = tr.querySelector('.cv-bprofit');
   if (bp) { bp.textContent = fmtR(c.batchProfit); bp.className = 'comp cv-bprofit ' + profitCls(c.batchProfit); }
+  set('cv-fbslog', fmtR(c.fbsLog));
+  set('cv-fbsexp', fmtR(c.fbsExpenses));
+  const pf = tr.querySelector('.cv-profitfbs');
+  if (pf) { pf.textContent = fmtR(c.profitFbs); pf.className = 'comp cv-profitfbs ' + profitCls(c.profitFbs); }
+  const mf = tr.querySelector('.cv-marginfbs');
+  if (mf) { mf.innerHTML = `<span class="mbadge ${mClass(c.marginFbs)}">${fmtP(c.marginFbs)}</span>`; }
+  const rf = tr.querySelector('.cv-roifbs');
+  if (rf) { rf.textContent = fmtP(c.roiFbs); rf.className = 'comp cv-roifbs ' + profitCls(c.roiFbs); }
+  const dp2 = tr.querySelector('.cv-deltaprofit');
+  if (dp2) { dp2.textContent = fmtR(c.deltaProfit); dp2.className = 'comp cv-deltaprofit ' + profitCls(c.deltaProfit); }
+  const bt = tr.querySelector('.cv-better');
+  if (bt) { bt.textContent = c.betterScheme; }
+  const bpf = tr.querySelector('.cv-bprofitfbs');
+  if (bpf) { bpf.textContent = fmtR(c.batchProfitFbs); bpf.className = 'comp cv-bprofitfbs ' + profitCls(c.batchProfitFbs); }
   updateFooter();
 }
 
@@ -1149,6 +1217,8 @@ function makeEmptyRow(overrides = {}) {
     reception_coef: 'x0', storage_per_day: 0,
     commission_pct: 36, wb_price: 0, spp_pct: 0, drr_pct: 0, drr_external_rub: 0, stock: 0,
     tax_system: 'УСН 7%', tax_pct: 7,
+    fbs_point: 'ПВЗ', fbs_sc_coef: 100, fbs_commission_pct: 0,
+    fbs_assembly_coef: 0, fbs_own_cost: 0, fbs_return_days: 0,
     ...overrides
   };
 }
@@ -1260,7 +1330,25 @@ function rowHTML(r) {
   <td class="comp cv-profit ${profitCls(c.profit)}">${fmtR(c.profit)}</td>
   <td class="comp cv-margin"><span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span></td>
   <td class="comp cv-roi ${profitCls(c.roi)}">${fmtP(c.roi)}</td>
-  <td class="comp cv-bprofit ${profitCls(c.batchProfit)}" title="Прибыль × Остаток">${fmtR(c.batchProfit)}</td>`;
+  <td class="comp cv-bprofit ${profitCls(c.batchProfit)}" title="Прибыль × Остаток">${fmtR(c.batchProfit)}</td>
+  <td class="ed" style="padding:3px 4px">
+    <select onchange="onInput('${key}','fbs_point',this.value)">
+      ${['ПВЗ','СЦ','Склад'].map(o=>`<option value="${o}" ${((r.fbs_point||'ПВЗ')===o)?'selected':''}>${o}</option>`).join('')}
+    </select>
+  </td>
+  <td class="ed">${n(r.fbs_sc_coef??100,'fbs_sc_coef','','100')}</td>
+  <td class="ed">${n(r.fbs_commission_pct??0,'fbs_commission_pct','','0')}</td>
+  <td class="ed">${n(r.fbs_assembly_coef??0,'fbs_assembly_coef','','0')}</td>
+  <td class="ed">${n(r.fbs_own_cost??0,'fbs_own_cost','','0')}</td>
+  <td class="ed">${n(r.fbs_return_days??0,'fbs_return_days','','0')}</td>
+  <td class="comp cv-fbslog" title="ФБС: (base×коэф.СЦ×ИЛ + возврат×base) ÷ выкуп%">${fmtR(c.fbsLog)}</td>
+  <td class="comp cv-fbsexp" title="ФБС: логистика + обработка + автовозвраты + комиссия + свой склад">${fmtR(c.fbsExpenses)}</td>
+  <td class="comp cv-profitfbs ${profitCls(c.profitFbs)}">${fmtR(c.profitFbs)}</td>
+  <td class="comp cv-marginfbs"><span class="mbadge ${mClass(c.marginFbs)}">${fmtP(c.marginFbs)}</span></td>
+  <td class="comp cv-roifbs ${profitCls(c.roiFbs)}">${fmtP(c.roiFbs)}</td>
+  <td class="comp cv-deltaprofit ${profitCls(c.deltaProfit)}">${fmtR(c.deltaProfit)}</td>
+  <td class="comp cv-better">${esc(c.betterScheme)}</td>
+  <td class="comp cv-bprofitfbs ${profitCls(c.batchProfitFbs)}" title="Прибыль ФБС × Остаток">${fmtR(c.batchProfitFbs)}</td>`;
 }
 
 function renderContent(state) {
@@ -1298,10 +1386,11 @@ function renderContent(state) {
       <th colspan="3" class="left sc2">Идентификация</th>
       <th colspan="5">Себестоимость</th>
       <th class="grp-comp">↓</th>
-      <th colspan="6">Параметры ВБ</th>
+      <th colspan="5">Параметры ВБ</th>
       <th class="grp-comp" colspan="2">↓ Хранение</th>
       <th colspan="8">Цена и реклама</th>
-      <th class="grp-results" colspan="8">Результаты расчёта</th>
+      <th class="grp-results" colspan="8">Результаты (ФБО)</th>
+      <th class="grp-results" colspan="14">ФБС · свой склад</th>
     </tr>
     <tr class="col-row">
       <th class="cb-cell sc0"><input type="checkbox" id="cbAll" onchange="toggleSelectAll(this.checked)" title="Выбрать все"></th>
@@ -1338,6 +1427,20 @@ function renderContent(state) {
       ${thSF('margin','Маржа','comp')}
       ${thSF('roi','ROI','comp')}
       ${thSF('batchProfit','Прибыль пар.','comp','Прибыль партии = Прибыль × Остаток')}
+      ${thSF('fbs_point','Точка сдачи','left','ФБС: ПВЗ / другое')}
+      ${thSF('fbs_sc_coef','Коэф.СЦ%','','ФБС: коэф. СЦ/склада, %')}
+      ${thSF('fbs_commission_pct','Комис.ФБС%','','ФБС: комиссия, %')}
+      ${thSF('fbs_assembly_coef','Сборка%','','ФБС: коэф. скорости сборки, % (может быть минус)')}
+      ${thSF('fbs_own_cost','Свой склад₽','','ФБС: свой склад и сборка, ₽/ед')}
+      ${thSF('fbs_return_days','Дн.возвр.','','ФБС: дней хранения возврата')}
+      ${thSF('fbsLog','Лог.ФБС','comp','ФБС: логистика')}
+      ${thSF('fbsExpenses','Расходы ФБС','comp','ФБС: логистика + обработка + автовозвраты + комиссия + свой склад')}
+      ${thSF('profitFbs','Прибыль ФБС','comp')}
+      ${thSF('marginFbs','Маржа ФБС','comp')}
+      ${thSF('roiFbs','ROI ФБС','comp')}
+      ${thSF('deltaProfit','Δ ФБС−ФБО','comp','Прибыль ФБС − Прибыль ФБО')}
+      ${thSF('betterScheme','Выгоднее','left','Что выгоднее: ФБО или ФБС')}
+      ${thSF('batchProfitFbs','Приб.пар.ФБС','comp','Прибыль партии ФБС = Прибыль ФБС × Остаток')}
     </tr>
   </thead>
   <tbody id="unit-tbody">
@@ -1361,6 +1464,9 @@ function updateFooter() {
   // Средние (накопитель)
   let sumRed = 0, sumLogKtr = 0, sumClientPrice = 0, sumWbPrice = 0;
   let sumMargin = 0, sumRoi = 0;
+  // ФБС
+  let sumFbsLog = 0, sumProfitFbs = 0, sumMarginFbs = 0, sumRoiFbs = 0;
+  let sumDeltaProfit = 0, sumBatchProfitFbs = 0;
 
   dr.forEach(r => {
     const c = compute(r);
@@ -1379,6 +1485,12 @@ function updateFooter() {
     sumWbPrice     += (+r.wb_price || 0);
     sumMargin      += c.margin;
     sumRoi         += c.roi;
+    sumFbsLog         += c.fbsLog;
+    sumProfitFbs      += c.profitFbs;
+    sumMarginFbs      += c.marginFbs;
+    sumRoiFbs         += c.roiFbs;
+    sumDeltaProfit    += c.deltaProfit;
+    sumBatchProfitFbs += c.batchProfitFbs;
   });
 
   const avg = (s) => s / n;
@@ -1388,6 +1500,9 @@ function updateFooter() {
   const avgWbP    = avg(sumWbPrice);
   const avgM      = avg(sumMargin);
   const avgRoi    = avg(sumRoi);
+  const avgFbsLog = avg(sumFbsLog);
+  const avgMFbs   = avg(sumMarginFbs);
+  const avgRoiFbs = avg(sumRoiFbs);
 
   // Колонки: sc0 sc1 sc2+sc3+sc4(colspan=3) | cp pkg ltwb ovh def | totalCost
   //          | lit red wh il | logKtr | stor30 storTotal
@@ -1421,6 +1536,15 @@ function updateFooter() {
     <td class="fcomp" title="Ø Маржа"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
     <td class="fcomp" title="Ø ROI">${fmtP(avgRoi)}</td>
     <td class="fcomp ${profitCls(sumBatchProfit)}" title="Σ Прибыль партии">${fmtR(sumBatchProfit)}</td>
+    <td class="left"></td><td></td><td></td><td></td><td></td><td></td>
+    <td class="fcomp" title="Ø Лог.ФБС">${fmtR(avgFbsLog)}</td>
+    <td></td>
+    <td class="fcomp ${profitCls(sumProfitFbs)}" title="Σ Прибыль ФБС">${fmtR(sumProfitFbs)}</td>
+    <td class="fcomp" title="Ø Маржа ФБС"><span class="mbadge ${mClass(avgMFbs)}">${fmtP(avgMFbs)}</span></td>
+    <td class="fcomp" title="Ø ROI ФБС">${fmtP(avgRoiFbs)}</td>
+    <td class="fcomp ${profitCls(sumDeltaProfit)}" title="Σ Δ ФБС−ФБО">${fmtR(sumDeltaProfit)}</td>
+    <td></td>
+    <td class="fcomp ${profitCls(sumBatchProfitFbs)}" title="Σ Прибыль партии ФБС">${fmtR(sumBatchProfitFbs)}</td>
   </tr>`;
 }
 
@@ -1496,6 +1620,20 @@ const EXPORT_COLS = [
   {k:'margin',           label:'Маржа, %',            fmt:'pct',   foot:'avg'},
   {k:'roi',              label:'ROI, %',              fmt:'pct',   foot:'avg'},
   {k:'batchProfit',      label:'Прибыль партии, ₽',   fmt:'money', foot:'sum'},
+  {k:'fbs_point',          label:'ФБС: Точка сдачи',   fmt:'text'},
+  {k:'fbs_sc_coef',        label:'ФБС: Коэф.СЦ, %',    fmt:'num'},
+  {k:'fbs_commission_pct', label:'ФБС: Комиссия, %',   fmt:'pct'},
+  {k:'fbs_assembly_coef',  label:'ФБС: Сборка, %',     fmt:'pct'},
+  {k:'fbs_own_cost',       label:'ФБС: Свой склад, ₽', fmt:'money'},
+  {k:'fbs_return_days',    label:'ФБС: Дней возврата', fmt:'num'},
+  {k:'fbsLog',             label:'ФБС: Логистика, ₽',  fmt:'money', foot:'avg'},
+  {k:'fbsExpenses',        label:'ФБС: Расходы, ₽',    fmt:'money'},
+  {k:'profitFbs',          label:'ФБС: Прибыль, ₽',    fmt:'money', foot:'sum'},
+  {k:'marginFbs',          label:'ФБС: Маржа, %',      fmt:'pct',   foot:'avg'},
+  {k:'roiFbs',             label:'ФБС: ROI, %',        fmt:'pct',   foot:'avg'},
+  {k:'deltaProfit',        label:'Δ ФБС−ФБО, ₽',       fmt:'money', foot:'sum'},
+  {k:'betterScheme',       label:'Что выгоднее',       fmt:'text'},
+  {k:'batchProfitFbs',     label:'ФБС: Прибыль партии, ₽', fmt:'money', foot:'sum'},
 ];
 
 function exportRound0(v){ return Math.round(v || 0); }
@@ -1536,6 +1674,20 @@ function exportVal(r, k, c) {
     case 'margin':          return exportRound1(c.margin);
     case 'roi':             return exportRound1(c.roi);
     case 'batchProfit':     return exportRound0(c.batchProfit);
+    case 'fbs_point':          return r.fbs_point || 'ПВЗ';
+    case 'fbs_sc_coef':        return +r.fbs_sc_coef || 0;
+    case 'fbs_commission_pct': return +r.fbs_commission_pct || 0;
+    case 'fbs_assembly_coef':  return +r.fbs_assembly_coef || 0;
+    case 'fbs_own_cost':       return +r.fbs_own_cost || 0;
+    case 'fbs_return_days':    return +r.fbs_return_days || 0;
+    case 'fbsLog':             return exportRound0(c.fbsLog);
+    case 'fbsExpenses':        return exportRound0(c.fbsExpenses);
+    case 'profitFbs':          return exportRound0(c.profitFbs);
+    case 'marginFbs':          return exportRound1(c.marginFbs);
+    case 'roiFbs':             return exportRound1(c.roiFbs);
+    case 'deltaProfit':        return exportRound0(c.deltaProfit);
+    case 'betterScheme':       return c.betterScheme;
+    case 'batchProfitFbs':     return exportRound0(c.batchProfitFbs);
     default:                return '';
   }
 }
