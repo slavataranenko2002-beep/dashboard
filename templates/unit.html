@@ -347,7 +347,6 @@ tfoot td.fcomp{background:var(--comp-bg)}
   <div class="tsep"></div>
   <select class="bulk-field" id="bulkField" onchange="onBulkFieldChange()">
     <optgroup label="Идентификация">
-      <option value="brand">Бренд</option>
       <option value="status">Статус</option>
     </optgroup>
     <optgroup label="Себестоимость">
@@ -372,6 +371,12 @@ tfoot td.fcomp{background:var(--comp-bg)}
     <optgroup label="Налог">
       <option value="tax_system">Система налогообложения</option>
       <option value="tax_pct">Налог %</option>
+    </optgroup>
+    <optgroup label="ФБС">
+      <option value="fbs_sc_coef">Коэф. СЦ %</option>
+      <option value="fbs_assembly_coef">Сборка %</option>
+      <option value="fbs_own_cost">Свой склад ₽</option>
+      <option value="fbs_return_days">Дн. возврата</option>
     </optgroup>
   </select>
   <select class="bulk-val" id="bulkWarehouseVal" style="display:none">
@@ -1821,7 +1826,8 @@ async function reloadRowsFromServer() {
 const BULK_NUM_FIELDS = new Set([
   'commission_pct','redemption_pct','il','drr_pct','drr_external_rub',
   'logistics_to_wb','overhead','packaging','defect_pct','wb_price','cost_price',
-  'spp_pct','liters','logistics_ktr','stock','tax_pct'
+  'spp_pct','liters','logistics_ktr','stock','tax_pct',
+  'fbs_sc_coef','fbs_assembly_coef','fbs_own_cost','fbs_return_days'
 ]);
 const BULK_TEXT_FIELDS = new Set(['brand','tax_system']);
 
