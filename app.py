@@ -902,6 +902,18 @@ def serialize_comment(c):
         d["created_at"] = d["created_at"].isoformat()
     return d
 
+def _anon_comments(rows, user):
+    """Для селлера полностью обезличиваем автора комментариев.
+    Селлер не должен видеть/знать, кто из команды писал (имя остаётся в БД)."""
+    seller = bool(user) and user.get("role") == "seller"
+    out = []
+    for c in rows:
+        d = serialize_comment(c)
+        if seller:
+            d["author"] = ""
+        out.append(d)
+    return out
+
 # ─── Auth helpers ─────────────────────────────────────────────────────────────
 def _session_user() -> dict | None:
     return session.get("user")
@@ -1527,6 +1539,100 @@ def api_admin_activity():
 def admin_activity():
     return render_template("activity.html")
 
+
+def _parse_day(s, default):
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except Exception:
+        return default
+
+@app.route("/api/admin/completed-summary")
+@require_admin_api
+def api_admin_completed_summary():
+    """Сводка выполненных задач: в какой день кто что закрыл (обе доски).
+    Виден только админу."""
+    try:
+        today_msk = (datetime.utcnow() + timedelta(hours=3)).date()
+        to_day    = _parse_day(request.args.get("to", ""),   today_msk)
+        from_day  = _parse_day(request.args.get("from", ""), to_day - timedelta(days=29))
+
+        items = []  # {day, who, title, project, board}
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                # ── Основные задачи ──
+                cur.execute("""
+                    SELECT t.id, t.title, t.project, t.done_at,
+                           (t.done_at + INTERVAL '3 hours')::date AS day,
+                           COALESCE((
+                               SELECT h.changed_by FROM task_history h
+                               WHERE h.task_id = t.id AND h.field='Статус' AND h.new_value='Готово'
+                               ORDER BY h.changed_at DESC LIMIT 1
+                           ), t.assignee, '—') AS who
+                    FROM tasks t
+                    WHERE t.done = TRUE AND t.done_at IS NOT NULL
+                      AND (t.done_at + INTERVAL '3 hours')::date BETWEEN %s AND %s
+                """, (from_day, to_day))
+                for r in cur.fetchall():
+                    items.append({"day": r["day"].isoformat(), "who": r["who"] or "—",
+                                  "title": r["title"], "project": r["project"] or "",
+                                  "board": "main"})
+                # ── Задачи дизайнеру ──
+                cur.execute("""
+                    SELECT d.id, d.title, d.project, d.done_at,
+                           (d.done_at + INTERVAL '3 hours')::date AS day,
+                           COALESCE((
+                               SELECT h.changed_by FROM design_task_history h
+                               WHERE h.task_id = d.id AND h.field='Статус' AND h.new_value='Готово'
+                               ORDER BY h.changed_at DESC LIMIT 1
+                           ), d.assignee, '—') AS who
+                    FROM design_tasks d
+                    WHERE d.done = TRUE AND d.done_at IS NOT NULL
+                      AND (d.done_at + INTERVAL '3 hours')::date BETWEEN %s AND %s
+                """, (from_day, to_day))
+                for r in cur.fetchall():
+                    items.append({"day": r["day"].isoformat(), "who": r["who"] or "—",
+                                  "title": r["title"], "project": r["project"] or "",
+                                  "board": "design"})
+
+        # Группируем: день → человек. Ключ человека — по имени (первое слово),
+        # чтобы объединить полное имя (основные) и имя (дизайнеру).
+        def norm(who):
+            who = (who or "—").strip()
+            return who.split()[0] if who and who != "—" else "—"
+
+        by_day = {}
+        totals = {}
+        for it in items:
+            who = norm(it["who"])
+            d = by_day.setdefault(it["day"], {})
+            p = d.setdefault(who, [])
+            p.append({"title": it["title"], "project": it["project"], "board": it["board"]})
+            totals[who] = totals.get(who, 0) + 1
+
+        days = []
+        for day in sorted(by_day.keys(), reverse=True):
+            people = [{"who": who, "count": len(tasks), "tasks": tasks}
+                      for who, tasks in sorted(by_day[day].items(), key=lambda kv: -len(kv[1]))]
+            days.append({"date": day, "total": sum(p["count"] for p in people), "people": people})
+
+        totals_by_person = [{"who": w, "count": c}
+                            for w, c in sorted(totals.items(), key=lambda kv: -kv[1])]
+
+        return jsonify({
+            "from": from_day.isoformat(),
+            "to": to_day.isoformat(),
+            "days": days,
+            "totals_by_person": totals_by_person,
+            "grand_total": len(items),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/admin/completed")
+@require_admin
+def admin_completed():
+    return render_template("completed.html")
+
 # ─── Управление проектами (кабинетами) ────────────────────────────────────────
 
 @app.route("/api/admin/projects")
@@ -2036,7 +2142,7 @@ def api_get_comments(task_id):
                     "SELECT * FROM comments WHERE task_id=%s ORDER BY created_at ASC",
                     (task_id,),
                 )
-                return jsonify([serialize_comment(c) for c in cur.fetchall()])
+                return jsonify(_anon_comments(cur.fetchall(), _session_user()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3359,6 +3465,12 @@ def api_design_tasks_done(task_id):
                 )
                 row = cur.fetchone()
                 if row:
+                    # История: кто и когда закрыл (нужно для сводки по выполненным)
+                    cur.execute(
+                        "INSERT INTO design_task_history (task_id, changed_by, field, old_value, new_value) "
+                        "VALUES (%s,%s,%s,%s,%s)",
+                        (task_id, changed_by, "Статус", "В работе", "Готово")
+                    )
                     # Сохраняем комментарий закрытия
                     text = comment
                     if url:
@@ -3422,7 +3534,7 @@ def api_design_get_comments(task_id):
                     "SELECT id, task_id, author, text, created_at FROM design_comments "
                     "WHERE task_id=%s ORDER BY created_at ASC", (task_id,)
                 )
-                return jsonify([serialize_comment(dict(r)) for r in cur.fetchall()])
+                return jsonify(_anon_comments(cur.fetchall(), _session_user()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

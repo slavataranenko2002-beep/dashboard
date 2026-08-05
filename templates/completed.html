@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Выполненные задачи · Wblions</title>
+<style>
+  :root {
+    --bg:     #0f1117; --bg2: #181c27; --bg3: #1e2336; --bg4: #252a3a;
+    --border: #2a3050; --text: #e0e6f0; --text2: #8892a4; --text3: #4a5570;
+    --purple: #a78bfa; --green: #34d399; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+    --tr: all .18s ease;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh }
+  .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px; display: flex; align-items: center; gap: 16px }
+  .logo { font-size: 18px; font-weight: 700; color: var(--text) }
+  .logo em { color: var(--purple); font-style: normal }
+  .hbtn { color: var(--text2); text-decoration: none; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); transition: var(--tr) }
+  .hbtn:hover { background: var(--bg3); color: var(--text) }
+  .sp { flex: 1 }
+  .main { max-width: 1100px; margin: 0 auto; padding: 28px 20px }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px }
+  .subtitle { color: var(--text2); font-size: 13px; margin-bottom: 24px }
+  .stat-row { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap }
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; min-width: 150px; flex: 1 }
+  .stat-label { font-size: 12px; color: var(--text3); margin-bottom: 4px }
+  .stat-value { font-size: 24px; font-weight: 700; color: var(--text) }
+  .filters { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center }
+  .ftabs { display: flex; gap: 4px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 4px }
+  .tab { background: none; border: none; padding: 6px 14px; border-radius: 7px; cursor: pointer; font-size: 13px; color: var(--text2); transition: var(--tr) }
+  .tab.active { background: var(--bg4); color: var(--text); font-weight: 500 }
+  select.psel, input.dinp { background: var(--bg2); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer }
+  input.dinp { cursor: text }
+  .who-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px }
+  .who-chip { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 13px; display: flex; align-items: center; gap: 8px }
+  .who-chip b { color: var(--purple); font-weight: 700 }
+  /* Day groups */
+  .day { margin-bottom: 22px }
+  .day-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border) }
+  .day-date { font-size: 16px; font-weight: 700 }
+  .day-total { font-size: 12px; color: var(--text3) }
+  .person { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 10px }
+  .person-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px }
+  .person-name { font-weight: 600; color: var(--blue) }
+  .person-count { font-size: 12px; color: var(--text3); background: var(--bg4); padding: 1px 8px; border-radius: 10px }
+  .task-line { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 14px; border-top: 1px solid var(--border) }
+  .task-line:first-of-type { border-top: none }
+  .board-ic { font-size: 13px; opacity: .8; width: 18px; text-align: center }
+  .proj-badge { font-size: 11px; padding: 1px 8px; border-radius: 6px; background: var(--bg4); color: var(--text2); white-space: nowrap }
+  .empty { text-align: center; padding: 50px; color: var(--text3) }
+  #loading { text-align: center; padding: 50px; color: var(--text3) }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">🦁 <em>Wblions</em></div>
+  <a href="/" class="hbtn">← Дашборд</a>
+  <a href="/admin/activity" class="hbtn">📊 Активность</a>
+  <a href="/admin" class="hbtn">⚙️ Пользователи</a>
+  <div class="sp"></div>
+  <span style="color:var(--text3);font-size:13px" id="updated-at"></span>
+</div>
+
+<div class="main">
+  <h1>✅ Выполненные задачи по дням</h1>
+  <div class="subtitle">Кто и в какой день закрыл задачи — обе доски (основные + дизайнеру). Виден только вам.</div>
+
+  <div class="stat-row">
+    <div class="stat-card"><div class="stat-label">Всего выполнено</div><div class="stat-value" id="s-total">—</div></div>
+    <div class="stat-card"><div class="stat-label">Исполнителей</div><div class="stat-value" id="s-people">—</div></div>
+    <div class="stat-card"><div class="stat-label">Дней с активностью</div><div class="stat-value" id="s-days">—</div></div>
+    <div class="stat-card"><div class="stat-label">В среднем в день</div><div class="stat-value" id="s-avg">—</div></div>
+  </div>
+
+  <div class="filters">
+    <div class="ftabs" id="period-tabs">
+      <button class="tab" onclick="setPeriod(7,this)">7 дней</button>
+      <button class="tab active" onclick="setPeriod(30,this)">30 дней</button>
+      <button class="tab" onclick="setPeriod(90,this)">90 дней</button>
+    </div>
+    <label style="color:var(--text3);font-size:12px">с</label>
+    <input class="dinp" type="date" id="from-inp" onchange="applyCustom()">
+    <label style="color:var(--text3);font-size:12px">по</label>
+    <input class="dinp" type="date" id="to-inp" onchange="applyCustom()">
+    <select class="psel" id="who-filter" onchange="render()">
+      <option value="">Все исполнители</option>
+    </select>
+  </div>
+
+  <div class="who-chips" id="who-chips"></div>
+
+  <div id="loading">⏳ Загрузка...</div>
+  <div id="content"></div>
+</div>
+
+<script>
+let DATA = null;
+const BOARD_IC = { main: '📋', design: '🎨' };
+const MONTHS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const WEEKDAYS = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function fmtDayRu(iso){
+  const d = new Date(iso + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((today - d) / 86400000);
+  const base = d.getDate() + ' ' + MONTHS[d.getMonth()];
+  if(diff === 0) return 'Сегодня, ' + base;
+  if(diff === 1) return 'Вчера, ' + base;
+  return base + ' · ' + WEEKDAYS[d.getDay()];
+}
+
+function setPeriod(days, el){
+  document.querySelectorAll('#period-tabs .tab').forEach(t=>t.classList.remove('active'));
+  if(el) el.classList.add('active');
+  const to = new Date();
+  const from = new Date(); from.setDate(from.getDate() - (days - 1));
+  document.getElementById('to-inp').value   = to.toISOString().slice(0,10);
+  document.getElementById('from-inp').value = from.toISOString().slice(0,10);
+  load();
+}
+
+function applyCustom(){
+  document.querySelectorAll('#period-tabs .tab').forEach(t=>t.classList.remove('active'));
+  load();
+}
+
+function render(){
+  if(!DATA) return;
+  const whoF = document.getElementById('who-filter').value;
+  const content = document.getElementById('content');
+
+  // Чипы-итоги по людям (без фильтра — общая картина за период)
+  const chips = document.getElementById('who-chips');
+  chips.innerHTML = DATA.totals_by_person.map(p =>
+    `<div class="who-chip">${esc(p.who)} <b>${p.count}</b></div>`).join('') || '';
+
+  let days = DATA.days;
+  if(whoF){
+    days = days.map(d => ({
+      ...d,
+      people: d.people.filter(p => p.who === whoF),
+    })).filter(d => d.people.length);
+  }
+
+  if(!days.length){
+    content.innerHTML = '<div class="empty">📭 За выбранный период выполненных задач нет</div>';
+    return;
+  }
+
+  content.innerHTML = days.map(d => {
+    const total = d.people.reduce((s,p)=>s+p.count,0);
+    const people = d.people.map(p => `
+      <div class="person">
+        <div class="person-head">
+          <span class="person-name">${esc(p.who)}</span>
+          <span class="person-count">${p.count}</span>
+        </div>
+        ${p.tasks.map(t => `
+          <div class="task-line">
+            <span class="board-ic" title="${t.board==='design'?'Дизайнеру':'Основная'}">${BOARD_IC[t.board]||'•'}</span>
+            <span>${esc(t.title)}</span>
+            ${t.project ? `<span class="proj-badge">${esc(t.project)}</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+    return `<div class="day">
+      <div class="day-head">
+        <span class="day-date">${fmtDayRu(d.date)}</span>
+        <span class="day-total">${total} задач${plural(total)}</span>
+      </div>
+      ${people}
+    </div>`;
+  }).join('');
+}
+
+function plural(n){
+  const m10 = n % 10, m100 = n % 100;
+  if(m10 === 1 && m100 !== 11) return 'а';
+  if(m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'и';
+  return '';
+}
+
+function updateStats(){
+  const total = DATA.grand_total;
+  const people = DATA.totals_by_person.length;
+  const days = DATA.days.length;
+  document.getElementById('s-total').textContent  = total;
+  document.getElementById('s-people').textContent = people;
+  document.getElementById('s-days').textContent   = days;
+  document.getElementById('s-avg').textContent    = days ? (total/days).toFixed(1) : '0';
+}
+
+function populateWhoFilter(){
+  const sel = document.getElementById('who-filter');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Все исполнители</option>' +
+    DATA.totals_by_person.map(p=>`<option value="${esc(p.who)}"${p.who===prev?' selected':''}>${esc(p.who)} (${p.count})</option>`).join('');
+}
+
+async function load(){
+  const from = document.getElementById('from-inp').value;
+  const to   = document.getElementById('to-inp').value;
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('content').innerHTML = '';
+  try{
+    const r = await fetch(`/api/admin/completed-summary?from=${from}&to=${to}`);
+    DATA = await r.json();
+    if(DATA.error) throw new Error(DATA.error);
+    document.getElementById('loading').style.display = 'none';
+    updateStats();
+    populateWhoFilter();
+    render();
+    document.getElementById('updated-at').textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  } catch(e){
+    document.getElementById('loading').textContent = 'Ошибка загрузки: ' + e.message;
+  }
+}
+
+// Старт — последние 30 дней
+setPeriod(30, document.querySelector('#period-tabs .tab.active'));
+</script>
+</body>
+</html>

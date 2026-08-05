@@ -500,6 +500,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
         <a href="/cockpit" class="admin-item" title="Кокпит агентства — аналитика для владельца">🚀 Кокпит</a>
         <a href="/admin" class="admin-item">⚙️ Пользователи</a>
         <a href="/admin/activity" class="admin-item">📊 Активность</a>
+        <a href="/admin/completed" class="admin-item" title="Кто и в какой день закрыл задачи — обе доски">✅ Выполненные задачи</a>
         {% endif %}
       </div>
     </div>
@@ -732,7 +733,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
               <th>Задача</th>
               <th>Проект</th>
               <th>Приоритет</th>
-              <th>Исполнитель</th>
+              {% if current_user.role != 'seller' %}<th>Исполнитель</th>{% endif %}
               <th>Создана</th>
               <th>Срок</th>
               <th>Статус</th>
@@ -740,7 +741,7 @@ tr:hover td{background:rgba(128,128,255,.03)}
             </tr>
           </thead>
           <tbody id="design-tbody">
-            <tr><td colspan="8" class="empty"><div class="empty-ic">⏳</div>Загрузка...</td></tr>
+            <tr><td colspan="{{ 7 if current_user.role == 'seller' else 8 }}" class="empty"><div class="empty-ic">⏳</div>Загрузка...</td></tr>
           </tbody>
         </table>
       </div>
@@ -1184,10 +1185,10 @@ function renderSubtaskPanel(t){
       return `<div class="subtask-item ${s.done?'done':''}">
         <input type="checkbox" ${s.done?'checked':''} onchange="toggleSubtask(${s.id},${t.id})" title="Выполнено">
         <span class="sub-title">${esc(s.title)}</span>
-        <select onchange="updateSubtaskField(${s.id},${t.id},this,'assignee')">
+        ${USER_ROLE === 'seller' ? '' : `<select onchange="updateSubtaskField(${s.id},${t.id},this,'assignee')">
           <option value="">— не назначен —</option>
           ${allUsers.map(u=>`<option value="${esc(u.email)}" ${s.assignee_email===u.email?'selected':''}>${esc(u.first_name)}</option>`).join('')}
-        </select>
+        </select>`}
         <input type="date" value="${dueVal}" onchange="updateSubtaskField(${s.id},${t.id},this,'due')" title="Дедлайн">
         <button class="ab dl" onclick="deleteSubtask(${s.id},${t.id})" title="Удалить">🗑</button>
       </div>`;
@@ -1655,7 +1656,7 @@ async function _openCommentsPanel(taskId, type){
   document.getElementById('cp-task-name').textContent = t.title;
   const meta = [
     t.project || '',
-    t.assignee ? '@'+t.assignee : '',
+    (USER_ROLE !== 'seller' && t.assignee) ? '@'+t.assignee : '',
     t.done ? '✓ Готово' : '● В работе'
   ].filter(Boolean).join(' · ');
   document.getElementById('cp-task-meta').textContent = meta;
@@ -1689,7 +1690,7 @@ async function loadComments(taskId){
     list.innerHTML = comments.map(c=>`
       <div class="comment">
         <div class="comment-head">
-          <span class="comment-author">${esc(c.author||'Аноним')}</span>
+          ${c.author ? `<span class="comment-author">${esc(c.author)}</span>` : '<span></span>'}
           <span class="comment-date">${fmtCommentDate(c.created_at)}</span>
         </div>
         <div class="comment-text">${linkify(c.text)}</div>
@@ -1950,7 +1951,7 @@ async function loadDesign(){
     if(!r.ok || data.error){
       console.error('loadDesign API error:', data);
       const tbody = document.getElementById('design-tbody');
-      if(tbody) tbody.innerHTML=`<tr><td colspan="8" class="empty">Ошибка: ${data.error||r.status}</td></tr>`;
+      if(tbody) tbody.innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:8}" class="empty">Ошибка: ${data.error||r.status}</td></tr>`;
       return;
     }
     designTasks = data;
@@ -1964,7 +1965,7 @@ async function loadDesign(){
   } catch(e){
     console.error('loadDesign exception:', e);
     const tbody = document.getElementById('design-tbody');
-    if(tbody) tbody.innerHTML=`<tr><td colspan="8" class="empty">Ошибка загрузки</td></tr>`;
+    if(tbody) tbody.innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:8}" class="empty">Ошибка загрузки</td></tr>`;
   }
 }
 
@@ -1990,7 +1991,7 @@ function renderDesign(){
   if(af) tasks = tasks.filter(t=>(t.assignee||'')===af);
 
   if(!tasks.length){
-    tbody.innerHTML='<tr><td colspan="8" class="empty"><div class="empty-ic">🎨</div>Задач нет</td></tr>';
+    tbody.innerHTML=`<tr><td colspan="${USER_ROLE==='seller'?7:8}" class="empty"><div class="empty-ic">🎨</div>Задач нет</td></tr>`;
     return;
   }
   tbody.innerHTML = tasks.map((t,i)=>{
@@ -2044,7 +2045,7 @@ async function openDsp(taskId){
   if(!t) return;
   document.getElementById('dsp-task-name').textContent = t.title;
   const meta = [
-    t.assignee ? '@'+t.assignee : '',
+    (USER_ROLE !== 'seller' && t.assignee) ? '@'+t.assignee : '',
     t.done ? '✓ Готово' : '● В работе',
     t.due ? 'до '+fmtDate(t.due) : ''
   ].filter(Boolean).join(' · ');
