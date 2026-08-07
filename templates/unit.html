@@ -1009,12 +1009,17 @@ function compute(r) {
   const buyoutR = red / 100;
   const returnR = (100 - red) / 100;
 
+  // Тариф возврата товара продавцу FBS в ПВЗ (с 07.08.2026): первый литр 25₽, каждый след. 4₽
+  function fbsReturnTariff(lit) { return 25 + 4 * Math.max(0, Math.ceil(lit) - 1); }
+
   let fbsLog = 0;
   if (liters && scCoef && red > 0) {
-    const baseF = baseLogTariff(liters);
-    fbsLog = (baseF * (scCoef / 100) * ilFbs + returnR * baseF) / buyoutR;
+    const baseF   = baseLogTariff(liters);         // прямая логистика (сетка 23…46+14)
+    const retTar  = fbsReturnTariff(liters);       // возврат FBS: 25 + 4×доп.литры
+    // прямая на 1 продажу + возврат невыкупов (1/выкуп − 1 возвратов на продажу)
+    fbsLog = baseF * (scCoef / 100) * ilFbs / buyoutR + retTar * (1 / buyoutR - 1);
   }
-  const fbsShip      = (isPvz && buyoutR > 0) ? 10 / buyoutR : 0;              // обработка отгрузки ПВЗ 10₽/шт
+  const fbsShip      = (isPvz && buyoutR > 0) ? 10 / buyoutR : 0;              // обработка отгрузки ПВЗ 10₽/шт (первые 500/сут, далее 50₽)
   const fbsRetSt     = buyoutR > 0 ? retDays * 10 * (1 / buyoutR - 1) : 0;      // хранение автовозвратов 10₽/шт/день
   const fbsCommission = wp * (fbsCom + asmCoef) / 100;
   const fbsExpenses   = fbsLog + fbsShip + fbsRetSt + fbsCommission + ownCost;
@@ -1346,7 +1351,7 @@ function rowHTML(r) {
   <td class="ed">${n(r.fbs_assembly_coef??0,'fbs_assembly_coef','','0')}</td>
   <td class="ed">${n(r.fbs_own_cost??0,'fbs_own_cost','','0')}</td>
   <td class="ed">${n(r.fbs_return_days??0,'fbs_return_days','','0')}</td>
-  <td class="comp cv-fbslog" title="ФБС: (base×коэф.СЦ×ИЛ + возврат×base) ÷ выкуп%">${fmtR(c.fbsLog)}</td>
+  <td class="comp cv-fbslog" title="ФБС: прямая (base×коэф.СЦ×ИЛ)/выкуп + возврат (25+4×доп.литр)×(1/выкуп−1)">${fmtR(c.fbsLog)}</td>
   <td class="comp cv-fbsexp" title="ФБС: логистика + обработка + автовозвраты + комиссия + свой склад">${fmtR(c.fbsExpenses)}</td>
   <td class="comp cv-profitfbs ${profitCls(c.profitFbs)}">${fmtR(c.profitFbs)}</td>
   <td class="comp cv-marginfbs"><span class="mbadge ${mClass(c.marginFbs)}">${fmtP(c.marginFbs)}</span></td>
