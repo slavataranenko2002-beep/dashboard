@@ -341,6 +341,14 @@ tfoot td.fcomp{background:var(--comp-bg)}
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     📦 Комиссии
   </button>
+  <span title="Индекс локализации — единый на кабинет. Определяет КТР (×коэф к логистике)"
+    style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--text2);
+    background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 8px">
+    ИЛ
+    <input id="cabinetIlInp" type="number" step="1" min="0" max="100" oninput="onCabinetIlChange(this.value)"
+      style="width:46px;padding:2px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;text-align:right">%
+    · КТР <b id="ktrDisp" style="color:var(--text)">2</b>
+  </span>
   <div class="tsep"></div>
   <span class="save-indicator" id="saveInd"></span>
 </div>
@@ -364,7 +372,6 @@ tfoot td.fcomp{background:var(--comp-bg)}
       <option value="liters">Литраж</option>
       <option value="redemption_pct">% выкупа</option>
       <option value="warehouse">Склад</option>
-      <option value="il">ИЛ</option>
     </optgroup>
     <optgroup label="Цена и реклама">
       <option value="commission_pct">Комиссия %</option>
@@ -806,7 +813,6 @@ const COL_DEFS = [
   {k:'liters',           get:r=>+r.liters||Math.round(compute(r).liters*10)/10,type:'num'},
   {k:'redemption_pct',   get:r=>+r.redemption_pct||100,                       type:'num'},
   {k:'warehouse',        get:r=>r.warehouse||'',                              type:'text'},
-  {k:'il',               get:r=>+r.il||1,                                     type:'num'},
   {k:'ktr',              get:r=>compute(r).ktr,                               type:'num'},
   {k:'logKtr',           get:r=>Math.round(compute(r).logKtr),                type:'num'},
   {k:'storage30',        get:r=>Math.round(compute(r).storage30),             type:'num'},
@@ -999,6 +1005,25 @@ function ktrFromIl(ilPct) {
   return 2.0;
 }
 
+// ИЛ единый на кабинет (в %), хранится по проекту
+let CABINET_IL = 0;
+function loadCabinetIl(project) {
+  try { return +(JSON.parse(localStorage.getItem('unitCabinetIl') || '{}')[project]) || 0; }
+  catch { return 0; }
+}
+function saveCabinetIl(project, v) {
+  let m = {};
+  try { m = JSON.parse(localStorage.getItem('unitCabinetIl') || '{}'); } catch {}
+  m[project] = v;
+  localStorage.setItem('unitCabinetIl', JSON.stringify(m));
+}
+function onCabinetIlChange(v) {
+  CABINET_IL = +v || 0;
+  saveCabinetIl(currentProject, CABINET_IL);
+  const kd = document.getElementById('ktrDisp'); if (kd) kd.textContent = ktrFromIl(CABINET_IL);
+  document.querySelectorAll('#unit-tbody tr').forEach(tr => { if (tr.dataset.key) updateComputedCells(tr.dataset.key); });
+}
+
 // ─── Формулы ─────────────────────────────────────────────────────────────────
 function compute(r) {
   const cp  = +r.cost_price     || 0;
@@ -1034,8 +1059,8 @@ function compute(r) {
     return 46 + (lit - 1) * 14;
   }
 
-  // КТР (коэф. терр. распределения) — авторасчёт из ИЛ по справочнику WB (константа)
-  const ktr = ktrFromIl(+r.il || 0);   // ИЛ в % (0…100) → КТР (2.0…0.5)
+  // КТР (коэф. терр. распределения) — авторасчёт из ИЛ кабинета по справочнику WB (константа)
+  const ktr = ktrFromIl(CABINET_IL);   // ИЛ единый на кабинет, % (0…100) → КТР (2.0…0.5)
 
   let logKtr;
   if (r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== '') {
@@ -1151,6 +1176,10 @@ async function onProjectChange() {
   document.getElementById('btnRefresh').disabled = !active;
   document.getElementById('btnExcel').disabled   = !active;
   document.getElementById('btnPriceImport').disabled = !active;
+  // ИЛ единый на кабинет
+  CABINET_IL = loadCabinetIl(currentProject);
+  const ilInp = document.getElementById('cabinetIlInp'); if (ilInp) ilInp.value = CABINET_IL || '';
+  const kd = document.getElementById('ktrDisp'); if (kd) kd.textContent = ktrFromIl(CABINET_IL);
   if (!currentProject) { rows = []; renderContent(); return; }
 
   // Загружаем из БД
@@ -1397,8 +1426,7 @@ function rowHTML(r) {
       <option value="">—</option>${warehouseOptions(r.warehouse||'')}
     </select>
   </td>
-  <td class="ed">${n(r.il??1,'il','','%')}</td>
-  <td class="comp cv-ktr" title="Авто из ИЛ по справочнику">${c.ktr}</td>
+  <td class="comp cv-ktr" title="Авто из ИЛ кабинета по справочнику">${c.ktr}</td>
   ${r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
     ? `<td class="ed">${n(+r.logistics_ktr,'logistics_ktr','','авто')}</td>`
     : `<td class="comp cv-logtgtr" title="Авто: (base×коэф×ИЛ + возврат×base) ÷ выкуп%">${fmtR(c.logKtr)}</td>`}
@@ -1481,7 +1509,7 @@ function renderContent(state) {
       <th colspan="4" class="left sc2">Идентификация</th>
       <th colspan="5">Себестоимость</th>
       <th class="grp-comp">↓</th>
-      <th colspan="6">Параметры ВБ</th>
+      <th colspan="5">Параметры ВБ</th>
       <th class="grp-comp" colspan="2">↓ Хранение</th>
       <th colspan="8">Цена и реклама</th>
       <th class="grp-results" colspan="8">Результаты (ФБО)</th>
@@ -1503,8 +1531,7 @@ function renderContent(state) {
       ${thSF('liters','Литраж')}
       ${thSF('redemption_pct','%выкупа')}
       ${thSF('warehouse','Склад','left')}
-      ${thSF('il','ИЛ %','','Индекс локализации, % (0…100). Определяет КТР')}
-      ${thSF('ktr','КТР','comp','Коэф. терр. распределения — авто из ИЛ по справочнику')}
+      ${thSF('ktr','КТР','comp','Коэф. терр. распределения — авто из ИЛ кабинета (задаётся в тулбаре)')}
       ${thSF('logKtr','Лог+КТР','','Логистика + КТР (авто если пусто)')}
       ${thSF('storage30','Хран/30д','comp','Хранение за 30 дней')}
       ${thSF('storTotal','Хран×Ост','comp','Хранение 30 дн × Остаток')}
@@ -1613,7 +1640,7 @@ function updateFooter() {
     <td class="fcomp" title="Σ Ит.себест.">${fmtR(sumTotalCost)}</td>
     <td></td>
     <td class="fcomp" title="Ø % выкупа">${fmtP(avgRed)}</td>
-    <td class="left"></td><td></td><td></td>
+    <td class="left"></td><td></td>
     <td class="fcomp" title="Ø Лог+КТР">${fmtR(avgLogKtr)}</td>
     <td></td>
     <td class="fcomp" title="Σ Хран×Ост">${fmtR(sumStorTotal)}</td>
@@ -1698,7 +1725,6 @@ const EXPORT_COLS = [
   {k:'liters',           label:'Литраж',              fmt:'num'},
   {k:'redemption_pct',   label:'Выкуп, %',            fmt:'pct',   foot:'avg'},
   {k:'warehouse',        label:'Склад',               fmt:'text'},
-  {k:'il',               label:'ИЛ, %',               fmt:'num'},
   {k:'ktr',              label:'КТР',                 fmt:'num'},
   {k:'logKtr',           label:'Лог+КТР, ₽',          fmt:'money', foot:'avg'},
   {k:'storage30',        label:'Хранение/30д, ₽',     fmt:'money'},
@@ -1754,7 +1780,6 @@ function exportVal(r, k, c) {
     case 'liters':          return +r.liters || exportRound1(c.liters);
     case 'redemption_pct':  return +r.redemption_pct || 100;
     case 'warehouse':       return r.warehouse || '';
-    case 'il':              return +r.il || 1;
     case 'ktr':             return c.ktr;
     case 'logKtr':          return exportRound0(c.logKtr);
     case 'storage30':       return exportRound0(c.storage30);
