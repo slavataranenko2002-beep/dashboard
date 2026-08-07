@@ -337,6 +337,10 @@ tfoot td.fcomp{background:var(--comp-bg)}
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     ⚙️ Склады
   </button>
+  <button class="btn-add" onclick="openPredmet()"
+    style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
+    📦 Комиссии
+  </button>
   <div class="tsep"></div>
   <span class="save-indicator" id="saveInd"></span>
 </div>
@@ -408,6 +412,25 @@ tfoot td.fcomp{background:var(--comp-bg)}
       <button onclick="addWCoefRow()" class="modal-sel-all" style="text-align:left">+ Добавить склад</button>
       <button onclick="resetWCoefs()" class="flt-rst">Сбросить</button>
       <button onclick="saveWCoefs()" class="btn-import">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Комиссии по предмету -->
+<div class="modal-overlay" id="predmetOverlay" onclick="closePredmet(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="width:440px">
+    <div class="modal-hdr">
+      <span class="modal-title">📦 Комиссии по предмету, %</span>
+      <button class="modal-close" onclick="closePredmet()">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;padding:8px 20px 0;font-size:11px;color:var(--text3)">
+      <span style="flex:1">Предмет</span><span style="width:70px;text-align:right">ФБО</span><span style="width:70px;text-align:right">ФБС</span><span style="width:22px"></span>
+    </div>
+    <div class="modal-body" id="predmetBody" style="padding:8px 16px;gap:4px;display:flex;flex-direction:column"></div>
+    <div class="modal-ftr">
+      <button onclick="addPredmetRow()" class="modal-sel-all" style="text-align:left">+ Добавить предмет</button>
+      <button onclick="resetPredmet()" class="flt-rst">Сбросить</button>
+      <button onclick="savePredmet()" class="btn-import">Сохранить</button>
     </div>
   </div>
 </div>
@@ -530,6 +553,46 @@ function loadTaxPresets() {
 }
 function saveTaxPresets(list) { localStorage.setItem('taxPresets', JSON.stringify(list)); }
 let TAX_PRESETS = loadTaxPresets();
+
+// ─── Комиссии по предмету ───────────────────────────────────────────────────
+const PREDMET_PRESETS_DEFAULT = [
+  {predmet:'Шары',  fbo:41.5, fbs:46.0},
+  {predmet:'Банты', fbo:34.5, fbs:39.0},
+  {predmet:'Трусы', fbo:43.5, fbs:48.0},
+];
+function loadPredmetPresets() {
+  try { return JSON.parse(localStorage.getItem('predmetPresets') || 'null') || PREDMET_PRESETS_DEFAULT; }
+  catch { return PREDMET_PRESETS_DEFAULT; }
+}
+function savePredmetPresets(list) { localStorage.setItem('predmetPresets', JSON.stringify(list)); }
+let PREDMET_PRESETS = loadPredmetPresets();
+
+function predmetOptions(selected) {
+  const opts = PREDMET_PRESETS.map(p =>
+    `<option value="${esc(p.predmet)}" ${p.predmet===selected?'selected':''}>${esc(p.predmet)}</option>`
+  ).join('');
+  return `<option value="">—</option>` + opts;
+}
+
+// Выбор предмета → подставляем комиссию ФБО и ФБС из пресета
+function onPredmetSelect(key, selectEl) {
+  const v = selectEl.value;
+  const r = rows.find(x => x._key === key);
+  if (!r) return;
+  r.predmet = v; r._dirty = true;
+  const p = PREDMET_PRESETS.find(x => x.predmet === v);
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  if (p) {
+    r.commission_pct = p.fbo;
+    r.fbs_commission_pct = p.fbs;
+    if (tr) {
+      const ci = tr.querySelector(`input[oninput*="'commission_pct'"]`); if (ci) ci.value = p.fbo;
+      const fi = tr.querySelector(`input[oninput*="'fbs_commission_pct'"]`); if (fi) fi.value = p.fbs;
+    }
+  }
+  updateComputedCells(key);
+  schedSave(key);
+}
 
 function taxOptions(selectedLabel) {
   const opts = TAX_PRESETS.map((t, i) =>
@@ -731,6 +794,7 @@ const COL_DEFS = [
   {k:'seller_article',   get:r=>r.seller_article||'',                         type:'text'},
   {k:'wb_article',       get:r=>String(r.wb_article||''),                     type:'text'},
   {k:'status',           get:r=>r.status||'',                                  type:'text'},
+  {k:'predmet',          get:r=>r.predmet||'',                                 type:'text'},
   {k:'cost_price',       get:r=>+r.cost_price||0,                             type:'num'},
   {k:'packaging',        get:r=>+r.packaging||0,                              type:'num'},
   {k:'logistics_to_wb',  get:r=>+r.logistics_to_wb||0,                        type:'num'},
@@ -974,31 +1038,14 @@ function compute(r) {
   const wbClub      = wp * 0.95;
   const drrRub      = wp * dp / 100;
 
-  let usn;
-  const drRate = usnDrRate(r.tax_system);
-  if (drRate !== null) {
-    const ndsAmount = wp / 105 * 5;
-    const expenses  = logKtr + commission + totalCost + storage30 + drrRub;
-    const usnBase   = Math.max(0, wp - ndsAmount - expenses);
-    usn = usnBase * drRate + ndsAmount;
-  } else {
-    usn = wp * taxPct / 100;
-  }
-
   const brakCost    = totalCost * def / 100;
-  const revenue     = wp - commission - logKtr - storage30 - usn - drrRub;
-  const profit      = revenue - totalCost - brakCost;
-  const margin      = wp > 0 ? profit / wp * 100 : 0;
-  const roi         = totalCost > 0 ? profit / totalCost * 100 : 0;
-  const batchProfit = profit * qty;
-  const batchMargin = (qty > 0 && wp > 0) ? batchProfit / (wp * qty) * 100 : 0;
-  const invested    = totalCost * qty;
+  const cogs        = totalCost + brakCost;             // себестоимость с браком
+  const clientPrice = wp > 0 ? wp * (1 - spp / 100) : 0; // цена покупателю (после СПП)
 
-  const clientPrice = wp > 0 ? wp * (1 - spp / 100) : 0;
+  const drRate  = usnDrRate(r.tax_system);   // 0.15 / 0.07 для Д-Р, иначе null
+  const NDS_RATE = 0.05;                       // НДС 5% для систем Д-Р + НДС
 
-  const storTotal   = storage30 * qty;
-
-  // ─── ФБС (свой склад) — параллельный расчёт ──────────────────────────────
+  // ─── ФБС (свой склад): расходы ───────────────────────────────────────────
   const ilFbs   = +r.il || 1;
   const scCoef  = +r.fbs_sc_coef || 0;          // % склада/СЦ (напр. 130)
   const fbsCom  = +r.fbs_commission_pct || 0;   // %
@@ -1007,32 +1054,49 @@ function compute(r) {
   const retDays = +r.fbs_return_days || 0;
   const isPvz   = (r.fbs_point || 'ПВЗ') === 'ПВЗ';
   const buyoutR = red / 100;
-  const returnR = (100 - red) / 100;
 
   // Тариф возврата товара продавцу FBS в ПВЗ (с 07.08.2026): первый литр 25₽, каждый след. 4₽
   function fbsReturnTariff(lit) { return 25 + 4 * Math.max(0, Math.ceil(lit) - 1); }
-
   let fbsLog = 0;
   if (liters && scCoef && red > 0) {
-    const baseF   = baseLogTariff(liters);         // прямая логистика (сетка 23…46+14)
-    const retTar  = fbsReturnTariff(liters);       // возврат FBS: 25 + 4×доп.литры
-    // прямая на 1 продажу + возврат невыкупов (1/выкуп − 1 возвратов на продажу)
+    const baseF  = baseLogTariff(liters);          // прямая логистика (сетка 23…46+14)
+    const retTar = fbsReturnTariff(liters);        // возврат FBS: 25 + 4×доп.литры
     fbsLog = baseF * (scCoef / 100) * ilFbs / buyoutR + retTar * (1 / buyoutR - 1);
   }
-  const fbsShip      = (isPvz && buyoutR > 0) ? 10 / buyoutR : 0;              // обработка отгрузки ПВЗ 10₽/шт (первые 500/сут, далее 50₽)
-  const fbsRetSt     = buyoutR > 0 ? retDays * 10 * (1 / buyoutR - 1) : 0;      // хранение автовозвратов 10₽/шт/день
+  const fbsShip       = (isPvz && buyoutR > 0) ? 10 / buyoutR : 0;              // обработка отгрузки ПВЗ 10₽/шт (первые 500/сут, далее 50₽)
+  const fbsRetSt      = buyoutR > 0 ? retDays * 10 * (1 / buyoutR - 1) : 0;      // хранение автовозвратов 10₽/шт/день
   const fbsCommission = wp * (fbsCom + asmCoef) / 100;
   const fbsExpenses   = fbsLog + fbsShip + fbsRetSt + fbsCommission + ownCost;
 
-  let usnFbs;
+  // ─── Налог и прибыль (ФБО + ФБС) ─────────────────────────────────────────
+  const fboExpenses = commission + logKtr + storage30;   // расходы WB — ФБО
+  let usn, usnFbs, ndsAmount, profit, profitFbs;
   if (drRate !== null) {
-    const ndsAmountF = wp / 105 * 5;
-    const usnBaseF   = Math.max(0, wp - ndsAmountF - (fbsExpenses + totalCost + drrRub));
-    usnFbs = usnBaseF * drRate + ndsAmountF;
+    // УСН Доход−Расход + НДС: доход = цена покупателю (после СПП)
+    ndsAmount = clientPrice * NDS_RATE;
+    const baseFbo = clientPrice - cogs - fboExpenses - drrRub;
+    const baseFbs = clientPrice - cogs - fbsExpenses - drrRub;
+    usn       = Math.max(0, baseFbo * drRate) + ndsAmount;   // УСН + НДС (в столбец «Налог₽»)
+    usnFbs    = Math.max(0, baseFbs * drRate) + ndsAmount;
+    profit    = baseFbo - usn;
+    profitFbs = baseFbs - usnFbs;
   } else {
-    usnFbs = wp * taxPct / 100;
+    // Простые УСН%: доход = цена ВБ (до СПП), налог — от цены покупателю (после СПП)
+    ndsAmount = 0;
+    usn       = clientPrice * taxPct / 100;
+    usnFbs    = clientPrice * taxPct / 100;
+    profit    = wp - fboExpenses - usn    - drrRub - cogs;
+    profitFbs = wp - fbsExpenses - usnFbs - drrRub - cogs;
   }
-  const profitFbs      = wp - fbsExpenses - usnFbs - drrRub - totalCost - brakCost;
+
+  const revenue     = wp - fboExpenses - usn - drrRub;   // справочно
+  const margin      = wp > 0 ? profit / wp * 100 : 0;
+  const roi         = totalCost > 0 ? profit / totalCost * 100 : 0;
+  const batchProfit = profit * qty;
+  const batchMargin = (qty > 0 && wp > 0) ? batchProfit / (wp * qty) * 100 : 0;
+  const invested    = totalCost * qty;
+  const storTotal   = storage30 * qty;
+
   const marginFbs      = wp > 0 ? profitFbs / wp * 100 : 0;
   const roiFbs         = totalCost > 0 ? profitFbs / totalCost * 100 : 0;
   const batchProfitFbs = profitFbs * qty;
@@ -1040,7 +1104,7 @@ function compute(r) {
   const betterScheme   = deltaProfit > 0 ? 'ФБС' : deltaProfit < 0 ? 'ФБО' : '—';
 
   return {totalCost, liters, wCoef, storageDay, storage30, storTotal,
-          logKtr, commission, wbClub, usn, taxPct, drrRub, brakCost,
+          logKtr, commission, wbClub, usn, taxPct, drrRub, brakCost, ndsAmount,
           revenue, profit, margin, roi, batchProfit, batchMargin, invested,
           clientPrice,
           fbsLog, fbsExpenses, profitFbs, marginFbs, roiFbs, batchProfitFbs,
@@ -1220,7 +1284,7 @@ function updateComputedCells(key) {
 function makeEmptyRow(overrides = {}) {
   return {
     id: null, _key: newKey(), _dirty: true, project: currentProject,
-    brand: currentProject, wb_article: '', seller_article: '', status: '',
+    brand: currentProject, wb_article: '', seller_article: '', status: '', predmet: '',
     cost_price: 0, logistics_to_wb: 0, packaging: 0, overhead: 0, defect_pct: 0,
     width_cm: null, length_cm: null, height_cm: null, liters: null,
     redemption_pct: 100, warehouse: '', irp: 1.0, il: 1, logistics_ktr: null,
@@ -1300,6 +1364,9 @@ function rowHTML(r) {
   <td class="ed sc4 status-cell" style="padding:3px 4px" onclick="openStatusPopup(event,'${key}')">
     <div class="status-disp">${statusDisp(r.status||'')}</div>
   </td>
+  <td class="ed" style="padding:3px 4px">
+    <select onchange="onPredmetSelect('${key}',this)">${predmetOptions(r.predmet||'')}</select>
+  </td>
   <td class="ed">${n(r.cost_price,'cost_price')}</td>
   <td class="ed">${n(r.packaging,'packaging')}</td>
   <td class="ed">${n(r.logistics_to_wb,'logistics_to_wb')}</td>
@@ -1330,7 +1397,7 @@ function rowHTML(r) {
         oninput="onInput('${key}','tax_pct',this.value)">%
     </div>
   </td>
-  <td class="comp cv-usn"${usnDrRate(r.tax_system) !== null ? ` title="НДС 5% от цены ВБ + ${usnDrRate(r.tax_system)*100}% от (Цена − НДС − Лог − Комиссия − Себест/доп.расходы − Хранение − ДРР)"` : ''}>${fmtR(c.usn)}</td>
+  <td class="comp cv-usn"${usnDrRate(r.tax_system) !== null ? ` title="УСН ${usnDrRate(r.tax_system)*100}% от (Цена покупателю − Себест − Расходы WB − ДРР) + НДС 5% от Цены покупателю"` : ` title="Налог = Цена покупателю (после СПП) × ${(+r.tax_pct||7)}%"`}>${fmtR(c.usn)}</td>
   <td class="ed">${n(r.drr_pct,'drr_pct','','0')}</td>
   <td class="comp cv-drrrub" title="Авто: Цена ВБ × ДРР%">${fmtR(c.drrRub)}</td>
   <td class="comp cv-stock" title="Авто: обновляется из WB">${(+r.stock||0).toLocaleString('ru-RU')}</td>
@@ -1393,7 +1460,7 @@ function renderContent(state) {
     <tr class="grp-row">
       <th class="cb-cell sc0"></th>
       <th class="sc1"></th>
-      <th colspan="3" class="left sc2">Идентификация</th>
+      <th colspan="4" class="left sc2">Идентификация</th>
       <th colspan="5">Себестоимость</th>
       <th class="grp-comp">↓</th>
       <th colspan="5">Параметры ВБ</th>
@@ -1408,6 +1475,7 @@ function renderContent(state) {
       ${thSF('seller_article','Арт. продавца','left sc2')}
       ${thSF('wb_article','WB арт.','left sc3')}
       ${thSF('status','Статус','left sc4')}
+      ${thSF('predmet','Предмет','left','Категория WB — подставляет комиссию ФБО/ФБС')}
       ${thSF('cost_price','Себест.₽')}
       ${thSF('packaging','Упак.₽')}
       ${thSF('logistics_to_wb','Лог.ВБ₽')}
@@ -1521,7 +1589,7 @@ function updateFooter() {
   tfoot.innerHTML = `<tr>
     <td class="sc0"></td>
     <td class="sc1"></td>
-    <td class="left sc2" colspan="3">Итого (${n}${n !== rows.length ? '/'+rows.length : ''})</td>
+    <td class="left sc2" colspan="4">Итого (${n}${n !== rows.length ? '/'+rows.length : ''})</td>
     <td></td><td></td><td></td><td></td><td></td>
     <td class="fcomp" title="Σ Ит.себест.">${fmtR(sumTotalCost)}</td>
     <td></td>
@@ -1600,6 +1668,7 @@ const EXPORT_COLS = [
   {k:'seller_article',   label:'Арт. продавца',       fmt:'text'},
   {k:'wb_article',       label:'WB арт.',             fmt:'text'},
   {k:'status',           label:'Статус',              fmt:'text'},
+  {k:'predmet',          label:'Предмет',             fmt:'text'},
   {k:'brand',            label:'Бренд',               fmt:'text'},
   {k:'cost_price',       label:'Себест., ₽',          fmt:'money'},
   {k:'packaging',        label:'Упаковка, ₽',         fmt:'money'},
@@ -1654,6 +1723,7 @@ function exportVal(r, k, c) {
     case 'seller_article':  return r.seller_article || '';
     case 'wb_article':      return String(r.wb_article || '');
     case 'status':          return r.status || '';
+    case 'predmet':         return r.predmet || '';
     case 'brand':           return r.brand || '';
     case 'cost_price':      return +r.cost_price || 0;
     case 'packaging':       return +r.packaging || 0;
@@ -2024,6 +2094,47 @@ function resetWCoefs() {
   WAREHOUSES = Object.keys(WAREHOUSE_COEFS);
   _wcoefAll = Object.entries(WAREHOUSE_COEFS).map(([name,coef])=>({name,coef}));
   renderWCoefList('');
+}
+
+// ─── Менеджер комиссий по предмету ───────────────────────────────────────────
+let _predmetAll = [];
+function openPredmet() {
+  _predmetAll = PREDMET_PRESETS.map(p => ({...p}));
+  renderPredmetList();
+  document.getElementById('predmetOverlay').classList.add('open');
+}
+function closePredmet(e) {
+  if (e && e.target !== document.getElementById('predmetOverlay')) return;
+  document.getElementById('predmetOverlay').classList.remove('open');
+}
+function renderPredmetList() {
+  const inp = 'padding:4px 6px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px';
+  document.getElementById('predmetBody').innerHTML = _predmetAll.map((x,i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+      <input type="text" value="${esc(x.predmet)}" onchange="_predmetAll[${i}].predmet=this.value" style="flex:1;${inp}">
+      <input type="number" step="0.1" value="${x.fbo}" oninput="_predmetAll[${i}].fbo=+this.value||0" style="width:70px;text-align:right;${inp}">
+      <input type="number" step="0.1" value="${x.fbs}" oninput="_predmetAll[${i}].fbs=+this.value||0" style="width:70px;text-align:right;${inp}">
+      <button onclick="_predmetAll.splice(${i},1);renderPredmetList()" style="border:none;background:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1;padding:0 4px">✕</button>
+    </div>`).join('');
+}
+function addPredmetRow() { _predmetAll.push({predmet:'Новый предмет', fbo:0, fbs:0}); renderPredmetList(); }
+function savePredmet() {
+  PREDMET_PRESETS = _predmetAll.filter(x => x.predmet.trim())
+    .map(x => ({predmet:x.predmet.trim(), fbo:+x.fbo||0, fbs:+x.fbs||0}));
+  savePredmetPresets(PREDMET_PRESETS);
+  closePredmet();
+  // Перерисовываем селекты предмета в строках
+  document.querySelectorAll('#unit-tbody select[onchange^="onPredmetSelect"]').forEach(sel => {
+    const tr = sel.closest('tr'); const r = rows.find(x => x._key === tr?.dataset.key);
+    sel.innerHTML = predmetOptions(r ? (r.predmet||'') : '');
+  });
+}
+function resetPredmet() {
+  if (!confirm('Сбросить комиссии по предмету к значениям по умолчанию?')) return;
+  localStorage.removeItem('predmetPresets');
+  PREDMET_PRESETS = loadPredmetPresets();
+  _predmetAll = PREDMET_PRESETS.map(p => ({...p}));
+  renderPredmetList();
 }
 
 
