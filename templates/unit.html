@@ -63,41 +63,57 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .oz-set-h{grid-column:1/3;font-weight:700;color:var(--blue);margin-top:14px;margin-bottom:2px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;border-top:1px solid var(--border);padding-top:12px}
 .oz-set-h:first-child{margin-top:0;border-top:none;padding-top:0}
 .oz-modal-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
-/* Ozon-таблица: фикс-ширины, центрирование, закреп, ресайз, drag */
+/* Ozon-таблица: оформление как в ВБ-юните (без сетки/зебры) + colgroup-ширины, закреп, ресайз, drag */
 table.oz-table{table-layout:fixed;border-collapse:collapse;width:max-content}
-.oz-table th,.oz-table td{text-align:center;border:1px solid var(--border);padding:3px 6px;box-sizing:border-box;overflow:hidden;position:relative;white-space:nowrap;text-overflow:ellipsis}
-.oz-table thead th{background:var(--bg3);color:var(--text2);font-size:11px;font-weight:600;user-select:none;height:34px}
-.oz-table tbody td{font-size:13px;color:var(--text);height:32px}
-.oz-table td.ed{padding:0}
-.oz-table td.ed input,.oz-table td.ed select{width:100%;height:100%;border:none;background:transparent;color:var(--text);text-align:center;font-size:13px;padding:2px 4px;box-sizing:border-box}
-.oz-table td.ed input:focus{outline:2px solid var(--blue);outline-offset:-2px;border-radius:3px}
-.oz-table tbody tr:nth-child(even) td{background:var(--bg2)}
-.oz-table tbody tr:hover td{background:var(--bg3)}
+.oz-table th,.oz-table td{box-sizing:border-box;overflow:hidden;position:relative;white-space:nowrap;text-overflow:ellipsis}
+.oz-table .oz-c{text-align:center}
+/* групповая шапка */
+.oz-table thead tr.oz-grp th{background:#0f1e30;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#5a89b0;padding:5px 8px;border-bottom:1px solid var(--border);text-align:center}
+[data-theme="light"] .oz-table thead tr.oz-grp th{background:#dbeafe;color:#1d4ed8}
+/* строка заголовков столбцов */
+.oz-table thead tr.oz-col th{background:var(--bg3);color:var(--text2);font-size:11px;font-weight:600;padding:6px 8px;border-bottom:2px solid var(--border);user-select:none;text-align:right;position:sticky;top:0;z-index:11}
+.oz-table thead tr.oz-col th.oz-l{text-align:left}
+.oz-table thead th.oz-sorted{color:var(--blue)}
+.oz-table thead th .ch-lbl{cursor:pointer}
+.oz-table thead th .flt-btn{margin-left:2px}
+/* тело */
+.oz-table tbody tr{border-bottom:1px solid var(--border)}
+.oz-table tbody td{font-size:12px;color:var(--text);height:30px;padding:3px 8px;text-align:right;vertical-align:middle}
+.oz-table tbody td.oz-l{text-align:left}
+.oz-table tbody td.ed{padding:0}
+.oz-table td.ed input,.oz-table td.ed select{width:100%;height:100%;border:none;background:transparent;color:var(--text);font-size:12px;padding:3px 8px;box-sizing:border-box;text-align:right}
+.oz-table td.ed.oz-l input,.oz-table td.ed.oz-l select{text-align:left}
+.oz-table td.ed input:focus,.oz-table td.ed select:focus{outline:none;background:rgba(88,166,255,.12)}
+.oz-table td.ed input:hover,.oz-table td.ed select:hover{background:var(--bg3)}
+.oz-table tbody tr:hover td{background:rgba(88,166,255,.05)}
 /* вычисляемые ячейки — тонировка и цвета как в ВБ */
 .oz-table tbody td.comp{background:var(--comp-bg);color:var(--comp-text);font-variant-numeric:tabular-nums}
 .oz-table tbody td.comp.profit-pos{color:var(--green)}
 .oz-table tbody td.comp.profit-neg{color:var(--red)}
 .oz-table tbody td.comp.profit-mid{color:var(--yellow)}
-.oz-table tbody tr.selected td{background:rgba(88,166,255,.14)}
-[data-theme="light"] .oz-table tbody tr.selected td{background:rgba(59,130,246,.12)}
-.oz-table tbody tr.selected td.oz-sticky{background:rgb(20,54,105)!important}
-[data-theme="light"] .oz-table tbody tr.selected td.oz-sticky{background:rgb(186,220,255)!important}
-/* заголовок: сортировка + фильтр */
-.oz-table thead th .ch-lbl{cursor:pointer;display:inline-block;padding:0 2px}
-.oz-table thead th .flt-btn{margin-left:2px}
-.oz-table thead th.oz-sorted{color:var(--blue)}
-.oz-sticky{position:sticky;z-index:5;background:var(--bg)!important}
-.oz-table tbody tr:nth-child(even) td.oz-sticky{background:var(--bg2)!important}
-.oz-table thead th.oz-sticky{z-index:6;background:var(--bg3)!important}
-.oz-table tfoot td{background:var(--bg3)!important;font-weight:700;font-size:12px}
+/* закреплённые столбцы */
+.oz-table td.oz-sticky,.oz-table th.oz-sticky{position:sticky;z-index:5;background:var(--bg2)}
+.oz-table thead tr.oz-col th.oz-sticky{z-index:14;background:var(--bg3)}
+.oz-table thead tr.oz-grp th.oz-sticky{z-index:15}
+.oz-table thead tr.oz-grp th.oz-sticky{background:#0f1e30}
+[data-theme="light"] .oz-table thead tr.oz-grp th.oz-sticky{background:#dbeafe}
+.oz-table tbody tr:hover td.oz-sticky{background:var(--bg3)}
+.oz-table tfoot td{background:var(--bg4);font-weight:700;font-size:12px;padding:5px 8px;text-align:right;border-top:1px solid var(--border)}
 .oz-table tfoot td.oz-sticky{z-index:6}
+.oz-shadow::after{content:'';position:absolute;top:0;right:-8px;bottom:0;width:8px;background:linear-gradient(to right,rgba(0,0,0,.15),transparent);pointer-events:none}
+/* выделение */
+.oz-table tbody tr.selected td{background:rgba(88,166,255,.14)}
+[data-theme="light"] .oz-table tbody tr.selected td{background:rgba(59,130,246,.1)}
+.oz-table tbody tr.selected td.oz-sticky{background:rgb(20,54,105)}
+[data-theme="light"] .oz-table tbody tr.selected td.oz-sticky{background:rgb(200,224,255)}
+/* ресайз + drag */
 .oz-col-resizer{position:absolute;top:0;right:0;width:7px;height:100%;cursor:col-resize;z-index:8;user-select:none}
 .oz-col-resizer:hover{background:var(--blue);opacity:.5}
 .oz-table th.oz-th{cursor:grab}
 .oz-table th.oz-drag-over{box-shadow:inset 3px 0 0 var(--blue)}
 .oz-table th.oz-dragging{opacity:.4}
-.oz-cb{width:15px;height:15px;cursor:pointer}
-.oz-bulk{display:none;align-items:center;gap:10px;padding:8px 20px;background:var(--bg3);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.oz-cb{width:14px;height:14px;accent-color:var(--blue);cursor:pointer;vertical-align:middle}
+.oz-bulk{display:none;align-items:center;gap:10px;padding:8px 20px;background:rgba(88,166,255,.08);border-bottom:1px solid rgba(88,166,255,.2);flex-wrap:wrap}
 .oz-bulk.show{display:flex}
 .oz-bulk select,.oz-bulk input{padding:5px 9px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px}
 
@@ -2698,19 +2714,21 @@ function ozThInner(col) {
     + `<div class="oz-col-resizer" onpointerdown="ozResizeStart(event,'${key}')"></div>`;
 }
 
-function ozCellHtml(col, r, stickyStyle) {
-  const style = stickyStyle || `width:${ozColW(col)}px;min-width:${ozColW(col)}px`;
-  const stick = stickyStyle ? ' oz-sticky' : '';
-  if (col.k === 'txt') return `<td class="ed${stick}" style="${style}">${ozTxt(r[col.f], r._key, col.f)}</td>`;
-  if (col.k === 'num') return `<td class="ed${stick}" style="${style}">${ozNum(r[col.f], r._key, col.f)}</td>`;
+function ozAlign(col) { return ozColType(col) === 'num' ? '' : ' oz-l'; }
+function ozCellHtml(col, r, stickyLeft, shadow) {
+  const al = ozAlign(col);
+  const stick = stickyLeft ? ' oz-sticky' + (shadow ? ' oz-shadow' : '') : '';
+  const st = stickyLeft ? ` style="${stickyLeft}"` : '';
+  if (col.k === 'txt') return `<td class="ed${al}${stick}"${st}>${ozTxt(r[col.f], r._key, col.f)}</td>`;
+  if (col.k === 'num') return `<td class="ed${al}${stick}"${st}>${ozNum(r[col.f], r._key, col.f)}</td>`;
   if (col.k === 'sel') {
     const opts = col.o.map(o => `<option value="${esc(o)}" ${((r[col.f]||'')===o)?'selected':''}>${esc(o||'—')}</option>`).join('');
-    return `<td class="ed${stick}" style="${style}"><select onchange="onOzonInput('${r._key}','${col.f}',this.value)">${opts}</select></td>`;
+    return `<td class="ed${al}${stick}"${st}><select onchange="onOzonInput('${r._key}','${col.f}',this.value)">${opts}</select></td>`;
   }
   const c = computeOzon(r);
-  if (col.badge) return `<td class="comp ozc_${col.id}${stick}" style="${style}"><span class="mbadge ${mClass(col.badge(c))}">${col.d(c)}</span></td>`;
-  const cls = 'comp ozc_' + col.id + (col.color ? ' ' + profitCls(col.color(c)) : '') + stick;
-  return `<td class="${cls}" style="${style}">${col.d(c)}</td>`;
+  if (col.badge) return `<td class="comp ozc_${col.id}${al}${stick}"${st}><span class="mbadge ${mClass(col.badge(c))}">${col.d(c)}</span></td>`;
+  const cls = 'comp ozc_' + col.id + (col.color ? ' ' + profitCls(col.color(c)) : '') + al + stick;
+  return `<td class="${cls}"${st}>${col.d(c)}</td>`;
 }
 
 function renderOzon() {
@@ -2719,33 +2737,45 @@ function renderOzon() {
   if (!ozonRows.length) { div.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔵</div><div class="placeholder-text">Нет товаров Ozon</div><div class="placeholder-sub">«+ Строка» или «📥 Из ВБ»</div></div>`; ozUpdateBulk(); return; }
   const sa = COLS_OZON.find(c => c.f === 'seller_article');
   const saW = ozColW(sa);
-  const stCb  = `left:0;width:${OZ_CB_W}px;min-width:${OZ_CB_W}px`;
-  const stDel = `left:${OZ_CB_W}px;width:${OZ_DEL_W}px;min-width:${OZ_DEL_W}px`;
-  const stSa  = `left:${OZ_CB_W + OZ_DEL_W}px;width:${saW}px;min-width:${saW}px`;
-  const cols = ozOrderedCols().filter(c => c.f !== 'seller_article');
+  const stCb  = `left:0`;
+  const stDel = `left:${OZ_CB_W}px`;
+  const stSa  = `left:${OZ_CB_W + OZ_DEL_W}px`;
+  const movable = ozOrderedCols().filter(c => c.f !== 'seller_article');
   const view = ozFilteredSortedRows();
   const allSel = view.length > 0 && view.every(r => ozSel.has(r._key));
   const sortedCls = k => ozSortCol === k ? ' oz-sorted' : '';
-  // header
-  let head = `<th class="oz-sticky" style="${stCb}"><input type="checkbox" class="oz-cb" ${allSel?'checked':''} onchange="ozToggleAll(this.checked)"></th>`;
-  head += `<th class="oz-sticky" style="${stDel}"></th>`;
-  head += `<th class="oz-sticky${sortedCls(ck(sa))}" style="${stSa}" title="${esc(sa.title||sa.l)}">${ozThInner(sa)}</th>`;
-  cols.forEach((c, idx) => {
-    head += `<th class="oz-th${sortedCls(ck(c))}" draggable="true" data-ck="${ck(c)}"
+  // colgroup — источник ширин (table-layout:fixed)
+  let cg = `<col style="width:${OZ_CB_W}px"><col style="width:${OZ_DEL_W}px"><col style="width:${saW}px">`
+    + movable.map(c => `<col style="width:${ozColW(c)}px">`).join('');
+  // групповая шапка (закреплённая зона + группы движимых столбцов)
+  let grp = `<th class="oz-sticky oz-c" colspan="3" style="left:0;z-index:14">Идентификация</th>`;
+  let gi = 0;
+  while (gi < movable.length) {
+    const g = movable[gi].g || ''; let gj = gi;
+    while (gj < movable.length && (movable[gj].g || '') === g) gj++;
+    grp += `<th colspan="${gj - gi}">${esc(g)}</th>`;
+    gi = gj;
+  }
+  // строка заголовков
+  let col = `<th class="oz-sticky oz-c" style="${stCb}"><input type="checkbox" class="oz-cb" ${allSel?'checked':''} onchange="ozToggleAll(this.checked)"></th>`;
+  col += `<th class="oz-sticky oz-c" style="${stDel}"></th>`;
+  col += `<th class="oz-sticky oz-l oz-shadow${sortedCls(ck(sa))}" style="${stSa};z-index:14" title="${esc(sa.title||sa.l)}">${ozThInner(sa)}</th>`;
+  movable.forEach((c, idx) => {
+    col += `<th class="oz-th${ozAlign(c)}${sortedCls(ck(c))}" draggable="true" data-ck="${ck(c)}"
       ondragstart="ozDragStart(event,${idx})" ondragover="ozDragOver(event,${idx})" ondragleave="ozDragLeave(event)" ondrop="ozDrop(event,${idx})" ondragend="ozDragEnd(event)"
-      style="width:${ozColW(c)}px;min-width:${ozColW(c)}px" title="${esc((c.g?c.g+' · ':'')+(c.title||c.l))}">${ozThInner(c)}</th>`;
+      title="${esc((c.g?c.g+' · ':'')+(c.title||c.l))}">${ozThInner(c)}</th>`;
   });
-  // body
+  // тело
   const body = view.map(r => {
     const chk = ozSel.has(r._key);
-    let tds = `<td class="oz-sticky" style="${stCb}"><input type="checkbox" class="oz-cb" ${chk?'checked':''} onchange="ozRowCheck('${r._key}',this.checked)"></td>`;
-    tds += `<td class="oz-sticky" style="${stDel}"><button class="del-btn" onclick="deleteOzonRow('${r._key}',${r.id||'null'})">✕</button></td>`;
-    tds += ozCellHtml(sa, r, stSa);
-    cols.forEach(c => { tds += ozCellHtml(c, r); });
+    let tds = `<td class="oz-sticky oz-c" style="${stCb}"><input type="checkbox" class="oz-cb" ${chk?'checked':''} onchange="ozRowCheck('${r._key}',this.checked)"></td>`;
+    tds += `<td class="oz-sticky oz-c" style="${stDel}"><button class="del-btn" onclick="deleteOzonRow('${r._key}',${r.id||'null'})">✕</button></td>`;
+    tds += ozCellHtml(sa, r, stSa, true);
+    movable.forEach(c => { tds += ozCellHtml(c, r, null, false); });
     return `<tr data-key="${r._key}"${chk?' class="selected"':''}>${tds}</tr>`;
   }).join('');
-  div.innerHTML = `<div class="tbl-wrap"><table class="oz-table">
-    <thead><tr>${head}</tr></thead>
+  div.innerHTML = `<div class="tbl-wrap"><table class="oz-table"><colgroup>${cg}</colgroup>
+    <thead><tr class="oz-grp">${grp}</tr><tr class="oz-col">${col}</tr></thead>
     <tbody id="ozon-tbody">${body}</tbody>
     <tfoot id="ozon-tfoot"></tfoot>
   </table></div>`;
@@ -2776,17 +2806,14 @@ function updateOzonFooter() {
   if (!view.length) { tfoot.innerHTML = ''; return; }
   const sums = {}, cnt = view.length;
   view.forEach(r => { const c = computeOzon(r); COLS_OZON.forEach(col => { if (col.agg) sums[col.id] = (sums[col.id]||0) + (c[col.id]||0); }); });
-  const sa = COLS_OZON.find(c => c.f === 'seller_article');
-  const saW = ozColW(sa);
-  const cols = ozOrderedCols().filter(c => c.f !== 'seller_article');
-  let html = `<td class="oz-sticky" style="left:0;width:${OZ_CB_W}px;min-width:${OZ_CB_W}px"></td>`;
-  html += `<td class="oz-sticky" style="left:${OZ_CB_W}px;width:${OZ_DEL_W}px;min-width:${OZ_DEL_W}px"></td>`;
-  html += `<td class="oz-sticky" style="left:${OZ_CB_W + OZ_DEL_W}px;width:${saW}px;min-width:${saW}px">Итого ${cnt}</td>`;
-  cols.forEach(col => {
-    const w = `width:${ozColW(col)}px;min-width:${ozColW(col)}px`;
-    if (!col.agg) { html += `<td style="${w}"></td>`; return; }
+  const movable = ozOrderedCols().filter(c => c.f !== 'seller_article');
+  let html = `<td class="oz-sticky" style="left:0"></td>`;
+  html += `<td class="oz-sticky" style="left:${OZ_CB_W}px"></td>`;
+  html += `<td class="oz-sticky oz-l oz-shadow" style="left:${OZ_CB_W + OZ_DEL_W}px">Итого ${cnt}</td>`;
+  movable.forEach(col => {
+    if (!col.agg) { html += `<td></td>`; return; }
     const v = col.agg === 'avg' ? sums[col.id] / cnt : sums[col.id];
-    html += `<td class="${col.color ? profitCls(v) : ''}" style="${w}">${fmtR(v)}</td>`;
+    html += `<td class="${col.color ? profitCls(v) : ''}${ozAlign(col)}">${fmtR(v)}</td>`;
   });
   tfoot.innerHTML = `<tr>${html}</tr>`;
 }
