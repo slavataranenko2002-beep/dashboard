@@ -63,6 +63,30 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .oz-set-h{grid-column:1/3;font-weight:700;color:var(--blue);margin-top:14px;margin-bottom:2px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;border-top:1px solid var(--border);padding-top:12px}
 .oz-set-h:first-child{margin-top:0;border-top:none;padding-top:0}
 .oz-modal-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
+/* Ozon-таблица: фикс-ширины, центрирование, закреп, ресайз, drag */
+table.oz-table{table-layout:fixed;border-collapse:collapse;width:max-content}
+.oz-table th,.oz-table td{text-align:center;border:1px solid var(--border);padding:3px 6px;box-sizing:border-box;overflow:hidden;position:relative;white-space:nowrap;text-overflow:ellipsis}
+.oz-table thead th{background:var(--bg3);color:var(--text2);font-size:11px;font-weight:600;user-select:none;height:34px}
+.oz-table tbody td{font-size:13px;color:var(--text);height:32px}
+.oz-table td.ed{padding:0}
+.oz-table td.ed input,.oz-table td.ed select{width:100%;height:100%;border:none;background:transparent;color:var(--text);text-align:center;font-size:13px;padding:2px 4px;box-sizing:border-box}
+.oz-table td.ed input:focus{outline:2px solid var(--blue);outline-offset:-2px;border-radius:3px}
+.oz-table tbody tr:nth-child(even) td{background:var(--bg2)}
+.oz-table tbody tr:hover td{background:var(--bg3)}
+.oz-sticky{position:sticky;z-index:5;background:var(--bg)!important}
+.oz-table tbody tr:nth-child(even) td.oz-sticky{background:var(--bg2)!important}
+.oz-table thead th.oz-sticky{z-index:6;background:var(--bg3)!important}
+.oz-table tfoot td{background:var(--bg3)!important;font-weight:700;font-size:12px}
+.oz-table tfoot td.oz-sticky{z-index:6}
+.oz-col-resizer{position:absolute;top:0;right:0;width:7px;height:100%;cursor:col-resize;z-index:8;user-select:none}
+.oz-col-resizer:hover{background:var(--blue);opacity:.5}
+.oz-table th.oz-th{cursor:grab}
+.oz-table th.oz-drag-over{box-shadow:inset 3px 0 0 var(--blue)}
+.oz-table th.oz-dragging{opacity:.4}
+.oz-cb{width:15px;height:15px;cursor:pointer}
+.oz-bulk{display:none;align-items:center;gap:10px;padding:8px 20px;background:var(--bg3);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.oz-bulk.show{display:flex}
+.oz-bulk select,.oz-bulk input{padding:5px 9px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px}
 
 /* ── Table container ── */
 .tbl-outer{flex:1;overflow:hidden;padding:0 20px 20px;display:flex;flex-direction:column}
@@ -428,6 +452,19 @@ tfoot td.fcomp{background:var(--comp-bg)}
   <button class="bulk-apply" onclick="deleteBulk()"
     style="background:var(--red);margin-left:4px">🗑 Удалить</button>
   <button class="bulk-desel" onclick="deselectAll()">Снять выделение</button>
+</div>
+
+<!-- Ozon bulk edit bar -->
+<div class="oz-bulk" id="ozBulkBar">
+  <span id="ozBulkInfo" style="font-size:13px;color:var(--text2)">Выбрано 0</span>
+  <div class="tsep"></div>
+  <select id="ozBulkField" onchange="onOzBulkField()"></select>
+  <select id="ozBulkSelVal" style="display:none"></select>
+  <input id="ozBulkTextVal" type="text" placeholder="Значение" style="display:none">
+  <input id="ozBulkNumVal" type="number" step="any" placeholder="Значение">
+  <button class="btn-add" onclick="applyOzBulk()">Применить</button>
+  <button class="btn-add" style="background:var(--red)" onclick="deleteOzBulk()">🗑 Удалить</button>
+  <button class="btn-add" style="background:var(--bg2);color:var(--text2);border:1px solid var(--border)" onclick="ozDeselectAll()">Снять</button>
 </div>
 
 <!-- Warehouse coefficients modal -->
@@ -2527,6 +2564,7 @@ const OZ_NUM = new Set(['purchase','delivery','packaging','defect_pct','length_c
 const COLS_OZON = [
   {g:'Товар', f:'seller_article', l:'Арт.прод.', k:'txt'},
   {g:'Товар', f:'sku_ozon', l:'SKU Ozon', k:'txt'},
+  {g:'Товар', f:'brand', l:'Бренд', k:'txt'},
   {g:'Товар', f:'name', l:'Наимен.', k:'txt'},
   {g:'Товар', f:'category', l:'Категория', k:'txt'},
   {g:'Товар', f:'scheme', l:'Схема', k:'sel', o:['FBO','FBS']},
@@ -2576,41 +2614,73 @@ const COLS_OZON = [
 function ozNum(v, key, field){ return `<input type="number" value="${v??''}" step="any" oninput="onOzonInput('${key}','${field}',this.value)">`; }
 function ozTxt(v, key, field){ return `<input type="text" class="art" value="${esc(v??'')}" oninput="onOzonInput('${key}','${field}',this.value)">`; }
 
+// ─── Состояние столбцов Ozon (порядок + ширины, localStorage) ────────────────
+function ck(col) { return col.f || col.id; }
+const OZ_DEF_W = {seller_article:130, sku_ozon:110, brand:95, name:150, category:120, scheme:72, cluster:170, storage_type:120};
+function ozColW(col) { const w = OZON_STATE.widths[ck(col)]; return w || OZ_DEF_W[col.f] || (col.k === 'c' ? 96 : 78); }
+function loadOzColState() { try { const s = JSON.parse(localStorage.getItem('ozonColState')); return (s && s.order) ? s : {order:[], widths:{}}; } catch { return {order:[], widths:{}}; } }
+function saveOzColState() { localStorage.setItem('ozonColState', JSON.stringify(OZON_STATE)); }
+let OZON_STATE = loadOzColState();
+function ozOrderedCols() {
+  const byKey = {}; COLS_OZON.forEach(c => byKey[ck(c)] = c);
+  const out = [], seen = new Set();
+  (OZON_STATE.order || []).forEach(k => { if (byKey[k] && !seen.has(k)) { out.push(byKey[k]); seen.add(k); } });
+  COLS_OZON.forEach(c => { if (!seen.has(ck(c))) { out.push(c); seen.add(ck(c)); } });
+  return out;
+}
+const OZ_CB_W = 34, OZ_DEL_W = 34;
+
+function ozCellHtml(col, r, stickyStyle) {
+  const style = stickyStyle || `width:${ozColW(col)}px;min-width:${ozColW(col)}px`;
+  const stick = stickyStyle ? ' oz-sticky' : '';
+  if (col.k === 'txt') return `<td class="ed${stick}" style="${style}">${ozTxt(r[col.f], r._key, col.f)}</td>`;
+  if (col.k === 'num') return `<td class="ed${stick}" style="${style}">${ozNum(r[col.f], r._key, col.f)}</td>`;
+  if (col.k === 'sel') {
+    const opts = col.o.map(o => `<option value="${esc(o)}" ${((r[col.f]||'')===o)?'selected':''}>${esc(o||'—')}</option>`).join('');
+    return `<td class="ed${stick}" style="${style}"><select onchange="onOzonInput('${r._key}','${col.f}',this.value)">${opts}</select></td>`;
+  }
+  const c = computeOzon(r);
+  if (col.badge) return `<td class="comp ozc_${col.id}${stick}" style="${style}"><span class="mbadge ${mClass(col.badge(c))}">${col.d(c)}</span></td>`;
+  const cls = 'comp ozc_' + col.id + (col.color ? ' ' + profitCls(col.color(c)) : '') + stick;
+  return `<td class="${cls}" style="${style}">${col.d(c)}</td>`;
+}
+
 function renderOzon() {
   const div = document.getElementById('content');
-  if (!currentProject) { div.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔵</div><div class="placeholder-text">Юнит Ozon</div><div class="placeholder-sub">Выберите кабинет</div></div>`; return; }
-  if (!ozonRows.length) { div.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔵</div><div class="placeholder-text">Нет товаров Ozon</div><div class="placeholder-sub">Нажмите «+ Строка»</div></div>`; return; }
-  // группы (colspan)
-  let grp = '<th></th>'; // del col
-  let i = 0;
-  while (i < COLS_OZON.length) {
-    let j = i; while (j < COLS_OZON.length && COLS_OZON[j].g === COLS_OZON[i].g) j++;
-    grp += `<th colspan="${j - i}" class="grp-results">${esc(COLS_OZON[i].g)}</th>`;
-    i = j;
-  }
-  const hdr = '<th></th>' + COLS_OZON.map(c => `<th title="${esc(c.title||c.l)}">${esc(c.l)}</th>`).join('');
+  if (!currentProject) { div.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔵</div><div class="placeholder-text">Юнит Ozon</div><div class="placeholder-sub">Выберите кабинет</div></div>`; ozUpdateBulk(); return; }
+  if (!ozonRows.length) { div.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔵</div><div class="placeholder-text">Нет товаров Ozon</div><div class="placeholder-sub">«+ Строка» или «📥 Из ВБ»</div></div>`; ozUpdateBulk(); return; }
+  const sa = COLS_OZON.find(c => c.f === 'seller_article');
+  const saW = ozColW(sa);
+  const stCb  = `left:0;width:${OZ_CB_W}px;min-width:${OZ_CB_W}px`;
+  const stDel = `left:${OZ_CB_W}px;width:${OZ_DEL_W}px;min-width:${OZ_DEL_W}px`;
+  const stSa  = `left:${OZ_CB_W + OZ_DEL_W}px;width:${saW}px;min-width:${saW}px`;
+  const cols = ozOrderedCols().filter(c => c.f !== 'seller_article');
+  const allSel = ozonRows.length > 0 && ozonRows.every(r => ozSel.has(r._key));
+  // header
+  let head = `<th class="oz-sticky" style="${stCb}"><input type="checkbox" class="oz-cb" ${allSel?'checked':''} onchange="ozToggleAll(this.checked)"></th>`;
+  head += `<th class="oz-sticky" style="${stDel}"></th>`;
+  head += `<th class="oz-sticky" style="${stSa}" title="${esc(sa.title||sa.l)}">${esc(sa.l)}<div class="oz-col-resizer" onpointerdown="ozResizeStart(event,'${ck(sa)}')"></div></th>`;
+  cols.forEach((c, idx) => {
+    head += `<th class="oz-th" draggable="true" data-ck="${ck(c)}"
+      ondragstart="ozDragStart(event,${idx})" ondragover="ozDragOver(event,${idx})" ondragleave="ozDragLeave(event)" ondrop="ozDrop(event,${idx})" ondragend="ozDragEnd(event)"
+      style="width:${ozColW(c)}px;min-width:${ozColW(c)}px" title="${esc((c.g?c.g+' · ':'')+(c.title||c.l))}">${esc(c.l)}<div class="oz-col-resizer" onpointerdown="ozResizeStart(event,'${ck(c)}')"></div></th>`;
+  });
+  // body
   const body = ozonRows.map(r => {
-    const cells = COLS_OZON.map(col => {
-      if (col.k === 'txt') return `<td class="ed">${ozTxt(r[col.f], r._key, col.f)}</td>`;
-      if (col.k === 'num') return `<td class="ed">${ozNum(r[col.f], r._key, col.f)}</td>`;
-      if (col.k === 'sel') {
-        const opts = col.o.map(o => `<option value="${esc(o)}" ${((r[col.f]||'')===o)?'selected':''}>${esc(o||'—')}</option>`).join('');
-        return `<td class="ed" style="padding:3px 4px"><select onchange="onOzonInput('${r._key}','${col.f}',this.value)">${opts}</select></td>`;
-      }
-      const c = computeOzon(r);
-      if (col.badge) return `<td class="comp ozc_${col.id}"><span class="mbadge ${mClass(col.badge(c))}">${col.d(c)}</span></td>`;
-      let cls = 'comp ozc_' + col.id + (col.color ? ' ' + profitCls(col.color(c)) : '');
-      return `<td class="${cls}">${col.d(c)}</td>`;
-    }).join('');
-    const del = `<td class="del-cell"><button class="del-btn" onclick="deleteOzonRow('${r._key}',${r.id||'null'})">✕</button></td>`;
-    return `<tr data-key="${r._key}">${del}${cells}</tr>`;
+    const chk = ozSel.has(r._key);
+    let tds = `<td class="oz-sticky" style="${stCb}"><input type="checkbox" class="oz-cb" ${chk?'checked':''} onchange="ozRowCheck('${r._key}',this.checked)"></td>`;
+    tds += `<td class="oz-sticky" style="${stDel}"><button class="del-btn" onclick="deleteOzonRow('${r._key}',${r.id||'null'})">✕</button></td>`;
+    tds += ozCellHtml(sa, r, stSa);
+    cols.forEach(c => { tds += ozCellHtml(c, r); });
+    return `<tr data-key="${r._key}"${chk?' class="selected"':''}>${tds}</tr>`;
   }).join('');
-  div.innerHTML = `<div class="tbl-wrap"><table>
-    <thead><tr class="grp-row">${grp}</tr><tr class="col-row">${hdr}</tr></thead>
+  div.innerHTML = `<div class="tbl-wrap"><table class="oz-table">
+    <thead><tr>${head}</tr></thead>
     <tbody id="ozon-tbody">${body}</tbody>
     <tfoot id="ozon-tfoot"></tfoot>
   </table></div>`;
   updateOzonFooter();
+  ozUpdateBulk();
 }
 
 function updateOzonRow(key) {
@@ -2635,14 +2705,115 @@ function updateOzonFooter() {
   if (!ozonRows.length) { tfoot.innerHTML = ''; return; }
   const sums = {}, cnt = ozonRows.length;
   ozonRows.forEach(r => { const c = computeOzon(r); COLS_OZON.forEach(col => { if (col.agg) sums[col.id] = (sums[col.id]||0) + (c[col.id]||0); }); });
-  let html = `<td class="left">Итого (${cnt})</td>`;
-  COLS_OZON.forEach(col => {
-    if (!col.agg) { html += '<td></td>'; return; }
+  const sa = COLS_OZON.find(c => c.f === 'seller_article');
+  const saW = ozColW(sa);
+  const cols = ozOrderedCols().filter(c => c.f !== 'seller_article');
+  let html = `<td class="oz-sticky" style="left:0;width:${OZ_CB_W}px;min-width:${OZ_CB_W}px"></td>`;
+  html += `<td class="oz-sticky" style="left:${OZ_CB_W}px;width:${OZ_DEL_W}px;min-width:${OZ_DEL_W}px"></td>`;
+  html += `<td class="oz-sticky" style="left:${OZ_CB_W + OZ_DEL_W}px;width:${saW}px;min-width:${saW}px">Итого ${cnt}</td>`;
+  cols.forEach(col => {
+    const w = `width:${ozColW(col)}px;min-width:${ozColW(col)}px`;
+    if (!col.agg) { html += `<td style="${w}"></td>`; return; }
     const v = col.agg === 'avg' ? sums[col.id] / cnt : sums[col.id];
-    const cls = col.color ? profitCls(v) : '';
-    html += `<td class="fcomp ${cls}">${fmtR(v)}</td>`;
+    html += `<td class="${col.color ? profitCls(v) : ''}" style="${w}">${fmtR(v)}</td>`;
   });
   tfoot.innerHTML = `<tr>${html}</tr>`;
+}
+
+// ─── Выделение и массовое редактирование Ozon ────────────────────────────────
+let ozSel = new Set();
+function ozRowCheck(key, ch) {
+  ch ? ozSel.add(key) : ozSel.delete(key);
+  const tr = document.querySelector(`#ozon-tbody tr[data-key="${key}"]`);
+  if (tr) tr.classList.toggle('selected', ch);
+  ozUpdateBulk();
+}
+function ozToggleAll(ch) { ozSel = new Set(ch ? ozonRows.map(r => r._key) : []); renderOzon(); }
+function ozDeselectAll() { ozSel = new Set(); renderOzon(); }
+function ozUpdateBulk() {
+  const bar = document.getElementById('ozBulkBar');
+  if (!bar) return;
+  const n = ozSel.size;
+  const info = document.getElementById('ozBulkInfo'); if (info) info.textContent = 'Выбрано ' + n;
+  bar.classList.toggle('show', n > 0 && MARKET === 'ozon');
+}
+function ozBulkEditable() { return COLS_OZON.filter(c => c.k === 'txt' || c.k === 'num' || c.k === 'sel'); }
+function initOzBulk() {
+  const sel = document.getElementById('ozBulkField');
+  if (!sel) return;
+  sel.innerHTML = ozBulkEditable().map(c => `<option value="${c.f}">${esc((c.g?c.g+' · ':'')+c.l)}</option>`).join('');
+  onOzBulkField();
+}
+function onOzBulkField() {
+  const f = document.getElementById('ozBulkField').value;
+  const col = COLS_OZON.find(c => c.f === f);
+  const selV = document.getElementById('ozBulkSelVal'), txtV = document.getElementById('ozBulkTextVal'), numV = document.getElementById('ozBulkNumVal');
+  selV.style.display = txtV.style.display = numV.style.display = 'none';
+  if (!col) return;
+  if (col.k === 'sel') { selV.style.display = ''; selV.innerHTML = col.o.map(o => `<option value="${esc(o)}">${esc(o||'—')}</option>`).join(''); }
+  else if (col.k === 'num') { numV.style.display = ''; }
+  else { txtV.style.display = ''; }
+}
+async function applyOzBulk() {
+  if (!ozSel.size) return;
+  const f = document.getElementById('ozBulkField').value;
+  const col = COLS_OZON.find(c => c.f === f);
+  let val;
+  if (col.k === 'sel') val = document.getElementById('ozBulkSelVal').value;
+  else if (col.k === 'num') val = +document.getElementById('ozBulkNumVal').value || 0;
+  else val = document.getElementById('ozBulkTextVal').value;
+  ozonRows.forEach(r => { if (ozSel.has(r._key)) { r[f] = val; r._dirty = true; } });
+  renderOzon();
+  showInd('saving');
+  for (const r of ozonRows) { if (ozSel.has(r._key)) await saveOzonRow(r._key); }
+  showInd('saved');
+}
+async function deleteOzBulk() {
+  if (!ozSel.size) return;
+  if (!confirm('Удалить выбранные строки Ozon: ' + ozSel.size + '?')) return;
+  const toDel = ozonRows.filter(r => ozSel.has(r._key));
+  ozonRows = ozonRows.filter(r => !ozSel.has(r._key));
+  ozSel = new Set();
+  renderOzon();
+  for (const r of toDel) { if (r.id) { try { await fetch(`/api/ozon-rows/${r.id}`, {method:'DELETE'}); } catch {} } }
+}
+
+// ─── Ресайз столбцов Ozon ────────────────────────────────────────────────────
+let ozRz = null;
+function ozResizeStart(e, key) {
+  e.preventDefault(); e.stopPropagation();
+  ozRz = {key, x: e.clientX, w: ozColW(COLS_OZON.find(c => ck(c) === key)), raf: 0};
+  document.addEventListener('pointermove', ozResizeMove);
+  document.addEventListener('pointerup', ozResizeEnd);
+}
+function ozResizeMove(e) {
+  if (!ozRz) return;
+  OZON_STATE.widths[ozRz.key] = Math.max(40, Math.round(ozRz.w + (e.clientX - ozRz.x)));
+  if (!ozRz.raf) ozRz.raf = requestAnimationFrame(() => { ozRz.raf = 0; renderOzon(); });
+}
+function ozResizeEnd() {
+  if (ozRz) { saveOzColState(); ozRz = null; }
+  document.removeEventListener('pointermove', ozResizeMove);
+  document.removeEventListener('pointerup', ozResizeEnd);
+}
+
+// ─── Перетаскивание (порядок) столбцов Ozon ──────────────────────────────────
+let ozDrag = null;
+function ozDragStart(e, idx) { ozDrag = idx; e.dataTransfer.effectAllowed = 'move'; e.currentTarget.classList.add('oz-dragging'); }
+function ozDragOver(e, idx) { e.preventDefault(); e.currentTarget.classList.add('oz-drag-over'); }
+function ozDragLeave(e) { e.currentTarget.classList.remove('oz-drag-over'); }
+function ozDrop(e, idx) {
+  e.preventDefault(); e.currentTarget.classList.remove('oz-drag-over');
+  if (ozDrag == null || ozDrag === idx) { ozDrag = null; return; }
+  const movable = ozOrderedCols().filter(c => c.f !== 'seller_article');
+  const m = movable.splice(ozDrag, 1)[0];
+  movable.splice(idx, 0, m);
+  OZON_STATE.order = ['seller_article', ...movable.map(ck)];
+  saveOzColState(); ozDrag = null; renderOzon();
+}
+function ozDragEnd(e) {
+  e.currentTarget.classList.remove('oz-dragging');
+  document.querySelectorAll('.oz-drag-over').forEach(el => el.classList.remove('oz-drag-over'));
 }
 
 const OZON_NUMF = OZ_NUM;
@@ -2722,6 +2893,7 @@ async function switchMarket(m) {
   document.querySelectorAll('.wb-only').forEach(el => el.style.display = m === 'wb' ? '' : 'none');
   document.querySelectorAll('.ozon-only').forEach(el => el.style.display = m === 'ozon' ? '' : 'none');
   const bulk = document.getElementById('bulkBar'); if (bulk && m === 'ozon') bulk.classList.remove('show');
+  const ozbulk = document.getElementById('ozBulkBar'); if (ozbulk && m === 'wb') ozbulk.classList.remove('show');
   if (m === 'ozon') {
     document.getElementById('btnOzonAdd').disabled = !currentProject;
     document.getElementById('btnOzonImport').disabled = !currentProject;
@@ -2774,6 +2946,7 @@ initBulkWarehouse();
 initBulkTaxSys();
 initBulkStatus();
 onBulkFieldChange();
+initOzBulk();
 renderContent();
 </script>
 

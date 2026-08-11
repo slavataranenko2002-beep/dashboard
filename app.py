@@ -204,6 +204,7 @@ def _ensure_design_tables():
                         project        TEXT NOT NULL DEFAULT '',
                         seller_article TEXT DEFAULT '',
                         sku_ozon       TEXT DEFAULT '',
+                        brand          TEXT DEFAULT '',
                         name           TEXT DEFAULT '',
                         category       TEXT DEFAULT '',
                         scheme         TEXT DEFAULT 'FBO',
@@ -228,6 +229,7 @@ def _ensure_design_tables():
                         updated_at     TIMESTAMPTZ DEFAULT NOW()
                     )
                 """)
+                cur.execute("ALTER TABLE unit_ozon ADD COLUMN IF NOT EXISTS brand TEXT DEFAULT ''")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_access BOOLEAN DEFAULT FALSE")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_projects TEXT[] DEFAULT '{}'::TEXT[]")
                 # Ежедневные бэкапы
@@ -4055,7 +4057,7 @@ def api_unit_rows_delete(row_id):
 
 # ─── Юнит Ozon: CRUD ─────────────────────────────────────────────────────────
 _OZON_FIELDS = [
-    "seller_article", "sku_ozon", "name", "category", "scheme", "cluster",
+    "seller_article", "sku_ozon", "brand", "name", "category", "scheme", "cluster",
     "purchase", "delivery", "packaging", "defect_pct",
     "length_cm", "width_cm", "height_cm", "weight_kg",
     "price", "points_pct", "storage_type", "free_days", "turnover_days",
@@ -4210,7 +4212,7 @@ def api_ozon_import_from_wb():
                     p = _ozon_row_params({
                         "project": project,
                         "seller_article": sa,
-                        "name": w["brand"] or "",
+                        "brand": w["brand"] or "",
                         "category": w["predmet"] or "",
                         "purchase": w["cost_price"] or 0,
                         "delivery": w["logistics_to_wb"] or 0,
