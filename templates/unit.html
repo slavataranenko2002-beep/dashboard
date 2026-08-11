@@ -73,6 +73,19 @@ table.oz-table{table-layout:fixed;border-collapse:collapse;width:max-content}
 .oz-table td.ed input:focus{outline:2px solid var(--blue);outline-offset:-2px;border-radius:3px}
 .oz-table tbody tr:nth-child(even) td{background:var(--bg2)}
 .oz-table tbody tr:hover td{background:var(--bg3)}
+/* вычисляемые ячейки — тонировка и цвета как в ВБ */
+.oz-table tbody td.comp{background:var(--comp-bg);color:var(--comp-text);font-variant-numeric:tabular-nums}
+.oz-table tbody td.comp.profit-pos{color:var(--green)}
+.oz-table tbody td.comp.profit-neg{color:var(--red)}
+.oz-table tbody td.comp.profit-mid{color:var(--yellow)}
+.oz-table tbody tr.selected td{background:rgba(88,166,255,.14)}
+[data-theme="light"] .oz-table tbody tr.selected td{background:rgba(59,130,246,.12)}
+.oz-table tbody tr.selected td.oz-sticky{background:rgb(20,54,105)!important}
+[data-theme="light"] .oz-table tbody tr.selected td.oz-sticky{background:rgb(186,220,255)!important}
+/* заголовок: сортировка + фильтр */
+.oz-table thead th .ch-lbl{cursor:pointer;display:inline-block;padding:0 2px}
+.oz-table thead th .flt-btn{margin-left:2px}
+.oz-table thead th.oz-sorted{color:var(--blue)}
 .oz-sticky{position:sticky;z-index:5;background:var(--bg)!important}
 .oz-table tbody tr:nth-child(even) td.oz-sticky{background:var(--bg2)!important}
 .oz-table thead th.oz-sticky{z-index:6;background:var(--bg3)!important}
@@ -960,15 +973,8 @@ function toggleSort(col) {
   reRenderBody();
 }
 
-function openFilter(ev, col) {
-  ev.stopPropagation();
-  _fltOpenCol = col;
-  const def = COL_MAP[col];
-  const allVals = [...new Set(rows.map(r => String(def.get(r))))].sort(
-    def.type === 'num' ? (a, b) => +a - +b : (a, b) => a.localeCompare(b, 'ru')
-  );
-  const existing = colFilters[col];
-  _fltTempVals = existing ? new Set(existing) : new Set(allVals);
+let _fltApplyFn = null, _fltResetFn = null;
+function _fltShow(ev, allVals) {
   document.getElementById('fltSearchInp').value = '';
   const popup = document.getElementById('filterPopup');
   popup._allVals = allVals;
@@ -980,28 +986,37 @@ function openFilter(ev, col) {
   document.getElementById('fltSearchInp').focus();
 }
 
+function openFilter(ev, col) {              // WB
+  ev.stopPropagation();
+  _fltOpenCol = col;
+  const def = COL_MAP[col];
+  const allVals = [...new Set(rows.map(r => String(def.get(r))))].sort(
+    def.type === 'num' ? (a, b) => +a - +b : (a, b) => a.localeCompare(b, 'ru')
+  );
+  _fltTempVals = colFilters[col] ? new Set(colFilters[col]) : new Set(allVals);
+  _fltApplyFn = (vals) => {
+    if (vals.size >= allVals.length) delete colFilters[col]; else colFilters[col] = new Set(vals);
+    updateHeaderState(); reRenderBody();
+  };
+  _fltResetFn = () => { delete colFilters[col]; updateHeaderState(); reRenderBody(); };
+  _fltShow(ev, allVals);
+}
+
 function closeFilter() {
   document.getElementById('filterPopup').classList.remove('open');
   _fltOpenCol = null;
 }
 
 function applyColFilter() {
-  if (!_fltOpenCol) return;
-  const def = COL_MAP[_fltOpenCol];
-  const allCount = new Set(rows.map(r => String(def.get(r)))).size;
-  if (_fltTempVals.size >= allCount) delete colFilters[_fltOpenCol];
-  else colFilters[_fltOpenCol] = new Set(_fltTempVals);
-  updateHeaderState();
+  if (!_fltOpenCol || !_fltApplyFn) return;
+  _fltApplyFn(_fltTempVals);
   closeFilter();
-  reRenderBody();
 }
 
 function resetColFilter() {
-  if (!_fltOpenCol) return;
-  delete colFilters[_fltOpenCol];
-  updateHeaderState();
+  if (!_fltOpenCol || !_fltResetFn) return;
+  _fltResetFn();
   closeFilter();
-  reRenderBody();
 }
 
 function onFltSearch(q) {
@@ -2630,6 +2645,59 @@ function ozOrderedCols() {
 }
 const OZ_CB_W = 34, OZ_DEL_W = 34;
 
+// ─── Фильтры и сортировка Ozon (общий попап с ВБ) ────────────────────────────
+let ozColFilters = {};
+let ozSortCol = null, ozSortDir = 0;
+function ozColGetVal(col, r) {
+  if (col.k === 'c') { const v = computeOzon(r)[col.id]; return (typeof v === 'number') ? Math.round(v) : (v ?? ''); }
+  if (col.k === 'num') return +r[col.f] || 0;
+  return r[col.f] || '';
+}
+function ozColType(col) { return (col.k === 'num' || col.k === 'c') ? 'num' : 'text'; }
+function ozFilteredSortedRows() {
+  let res = ozonRows.filter(r => {
+    for (const [k, allowed] of Object.entries(ozColFilters)) {
+      if (!allowed || !allowed.size) continue;
+      const col = COLS_OZON.find(c => ck(c) === k); if (!col) continue;
+      if (!allowed.has(String(ozColGetVal(col, r)))) return false;
+    }
+    return true;
+  });
+  if (ozSortCol && ozSortDir) {
+    const col = COLS_OZON.find(c => ck(c) === ozSortCol);
+    if (col) { const t = ozColType(col); res = [...res].sort((a, b) => {
+      const va = ozColGetVal(col, a), vb = ozColGetVal(col, b);
+      return t === 'num' ? ozSortDir * (va - vb) : ozSortDir * String(va).localeCompare(String(vb), 'ru');
+    }); }
+  }
+  return res;
+}
+function ozToggleSort(key) {
+  if (ozSortCol === key) { ozSortDir = ozSortDir === 1 ? -1 : ozSortDir === -1 ? 0 : 1; if (!ozSortDir) ozSortCol = null; }
+  else { ozSortCol = key; ozSortDir = 1; }
+  renderOzon();
+}
+function ozOpenFilter(ev, key) {
+  ev.stopPropagation();
+  const col = COLS_OZON.find(c => ck(c) === key); if (!col) return;
+  _fltOpenCol = key;
+  const t = ozColType(col);
+  const allVals = [...new Set(ozonRows.map(r => String(ozColGetVal(col, r))))].sort(
+    t === 'num' ? (a, b) => +a - +b : (a, b) => a.localeCompare(b, 'ru'));
+  _fltTempVals = ozColFilters[key] ? new Set(ozColFilters[key]) : new Set(allVals);
+  _fltApplyFn = (vals) => { if (vals.size >= allVals.length) delete ozColFilters[key]; else ozColFilters[key] = new Set(vals); renderOzon(); };
+  _fltResetFn = () => { delete ozColFilters[key]; renderOzon(); };
+  _fltShow(ev, allVals);
+}
+function ozThInner(col) {
+  const key = ck(col);
+  const sortIc = ozSortCol === key ? (ozSortDir === 1 ? ' ↑' : ' ↓') : '';
+  const active = ozColFilters[key] ? ' active' : '';
+  return `<span class="ch-lbl" onclick="event.stopPropagation();ozToggleSort('${key}')">${esc(col.l)}<span class="sort-ic">${sortIc}</span></span>`
+    + `<button class="flt-btn${active}" onclick="ozOpenFilter(event,'${key}')">▾</button>`
+    + `<div class="oz-col-resizer" onpointerdown="ozResizeStart(event,'${key}')"></div>`;
+}
+
 function ozCellHtml(col, r, stickyStyle) {
   const style = stickyStyle || `width:${ozColW(col)}px;min-width:${ozColW(col)}px`;
   const stick = stickyStyle ? ' oz-sticky' : '';
@@ -2655,18 +2723,20 @@ function renderOzon() {
   const stDel = `left:${OZ_CB_W}px;width:${OZ_DEL_W}px;min-width:${OZ_DEL_W}px`;
   const stSa  = `left:${OZ_CB_W + OZ_DEL_W}px;width:${saW}px;min-width:${saW}px`;
   const cols = ozOrderedCols().filter(c => c.f !== 'seller_article');
-  const allSel = ozonRows.length > 0 && ozonRows.every(r => ozSel.has(r._key));
+  const view = ozFilteredSortedRows();
+  const allSel = view.length > 0 && view.every(r => ozSel.has(r._key));
+  const sortedCls = k => ozSortCol === k ? ' oz-sorted' : '';
   // header
   let head = `<th class="oz-sticky" style="${stCb}"><input type="checkbox" class="oz-cb" ${allSel?'checked':''} onchange="ozToggleAll(this.checked)"></th>`;
   head += `<th class="oz-sticky" style="${stDel}"></th>`;
-  head += `<th class="oz-sticky" style="${stSa}" title="${esc(sa.title||sa.l)}">${esc(sa.l)}<div class="oz-col-resizer" onpointerdown="ozResizeStart(event,'${ck(sa)}')"></div></th>`;
+  head += `<th class="oz-sticky${sortedCls(ck(sa))}" style="${stSa}" title="${esc(sa.title||sa.l)}">${ozThInner(sa)}</th>`;
   cols.forEach((c, idx) => {
-    head += `<th class="oz-th" draggable="true" data-ck="${ck(c)}"
+    head += `<th class="oz-th${sortedCls(ck(c))}" draggable="true" data-ck="${ck(c)}"
       ondragstart="ozDragStart(event,${idx})" ondragover="ozDragOver(event,${idx})" ondragleave="ozDragLeave(event)" ondrop="ozDrop(event,${idx})" ondragend="ozDragEnd(event)"
-      style="width:${ozColW(c)}px;min-width:${ozColW(c)}px" title="${esc((c.g?c.g+' · ':'')+(c.title||c.l))}">${esc(c.l)}<div class="oz-col-resizer" onpointerdown="ozResizeStart(event,'${ck(c)}')"></div></th>`;
+      style="width:${ozColW(c)}px;min-width:${ozColW(c)}px" title="${esc((c.g?c.g+' · ':'')+(c.title||c.l))}">${ozThInner(c)}</th>`;
   });
   // body
-  const body = ozonRows.map(r => {
+  const body = view.map(r => {
     const chk = ozSel.has(r._key);
     let tds = `<td class="oz-sticky" style="${stCb}"><input type="checkbox" class="oz-cb" ${chk?'checked':''} onchange="ozRowCheck('${r._key}',this.checked)"></td>`;
     tds += `<td class="oz-sticky" style="${stDel}"><button class="del-btn" onclick="deleteOzonRow('${r._key}',${r.id||'null'})">✕</button></td>`;
@@ -2702,9 +2772,10 @@ function updateOzonRow(key) {
 function updateOzonFooter() {
   const tfoot = document.getElementById('ozon-tfoot');
   if (!tfoot) return;
-  if (!ozonRows.length) { tfoot.innerHTML = ''; return; }
-  const sums = {}, cnt = ozonRows.length;
-  ozonRows.forEach(r => { const c = computeOzon(r); COLS_OZON.forEach(col => { if (col.agg) sums[col.id] = (sums[col.id]||0) + (c[col.id]||0); }); });
+  const view = ozFilteredSortedRows();
+  if (!view.length) { tfoot.innerHTML = ''; return; }
+  const sums = {}, cnt = view.length;
+  view.forEach(r => { const c = computeOzon(r); COLS_OZON.forEach(col => { if (col.agg) sums[col.id] = (sums[col.id]||0) + (c[col.id]||0); }); });
   const sa = COLS_OZON.find(c => c.f === 'seller_article');
   const saW = ozColW(sa);
   const cols = ozOrderedCols().filter(c => c.f !== 'seller_article');
@@ -2728,7 +2799,7 @@ function ozRowCheck(key, ch) {
   if (tr) tr.classList.toggle('selected', ch);
   ozUpdateBulk();
 }
-function ozToggleAll(ch) { ozSel = new Set(ch ? ozonRows.map(r => r._key) : []); renderOzon(); }
+function ozToggleAll(ch) { ozSel = new Set(ch ? ozFilteredSortedRows().map(r => r._key) : []); renderOzon(); }
 function ozDeselectAll() { ozSel = new Set(); renderOzon(); }
 function ozUpdateBulk() {
   const bar = document.getElementById('ozBulkBar');
