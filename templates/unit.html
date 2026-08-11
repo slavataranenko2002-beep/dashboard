@@ -50,14 +50,19 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .mkt-opt{padding:6px 12px;border:none;background:var(--bg2);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer}
 .mkt-opt.act{background:var(--blue);color:#fff}
 .mkt-opt:hover:not(.act){background:var(--bg3)}
-.oz-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:200;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.oz-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:1000;align-items:flex-start;justify-content:center;padding:48px 16px;overflow-y:auto}
 .oz-modal-bg.open{display:flex}
-.oz-modal{background:var(--bg1);border:1px solid var(--border);border-radius:12px;padding:20px 22px;max-width:680px;width:100%}
-.oz-modal h3{margin:0 0 14px;font-size:16px}
-.oz-set-grid{display:grid;grid-template-columns:1fr 110px;gap:6px 12px;align-items:center;font-size:13px}
-.oz-set-grid label{color:var(--text2)}
-.oz-set-grid input{padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);text-align:right}
-.oz-set-h{grid-column:1/3;font-weight:700;color:var(--blue);margin-top:8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.oz-modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px 24px;max-width:640px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.45);max-height:calc(100vh - 96px);display:flex;flex-direction:column}
+.oz-modal h3{margin:0 0 4px;font-size:17px;color:var(--text)}
+.oz-modal .oz-sub{color:var(--text3);font-size:12px;margin:0 0 16px}
+.oz-set-scroll{overflow-y:auto;flex:1;margin:0 -4px;padding:0 4px}
+.oz-set-grid{display:grid;grid-template-columns:1fr 120px;gap:9px 16px;align-items:center;font-size:13px}
+.oz-set-grid label{color:var(--text)}
+.oz-set-grid input{padding:6px 9px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);text-align:right;font-size:13px}
+.oz-set-grid input:focus{outline:none;border-color:var(--blue)}
+.oz-set-h{grid-column:1/3;font-weight:700;color:var(--blue);margin-top:14px;margin-bottom:2px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;border-top:1px solid var(--border);padding-top:12px}
+.oz-set-h:first-child{margin-top:0;border-top:none;padding-top:0}
+.oz-modal-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
 
 /* ── Table container ── */
 .tbl-outer{flex:1;overflow:hidden;padding:0 20px 20px;display:flex;flex-direction:column}
@@ -332,6 +337,9 @@ tfoot td.fcomp{background:var(--comp-bg)}
     <button class="mkt-opt" id="mktOzon" onclick="switchMarket('ozon')">🔵 Озон</button>
   </div>
   <button class="btn-add ozon-only" id="btnOzonAdd" disabled onclick="addOzonRow()" style="display:none">+ Строка</button>
+  <button class="btn-add ozon-only" id="btnOzonImport" disabled onclick="importOzonFromWb()"
+    style="display:none;background:var(--bg3);color:var(--text2);border:1px solid var(--border)"
+    title="Перенести базу товара из ВБ-юнитки: артикул, бренд, себестоимость, упаковку, габариты">📥 Из ВБ</button>
   <button class="btn-add ozon-only" id="btnOzonSettings" onclick="openOzonSettings()"
     style="display:none;background:var(--bg3);color:var(--text2);border:1px solid var(--border)">⚙️ Настройки Ozon</button>
   <button class="btn-add wb-only" id="btnAdd" disabled onclick="addRow()">+ Строка</button>
@@ -1218,6 +1226,7 @@ async function onProjectChange() {
   document.getElementById('btnExcel').disabled   = !active;
   document.getElementById('btnPriceImport').disabled = !active;
   const bozAdd = document.getElementById('btnOzonAdd'); if (bozAdd) bozAdd.disabled = !active;
+  const bozImp = document.getElementById('btnOzonImport'); if (bozImp) bozImp.disabled = !active;
   // ИЛ единый на кабинет
   CABINET_IL = loadCabinetIl(currentProject);
   const ilInp = document.getElementById('cabinetIlInp'); if (ilInp) ilInp.value = CABINET_IL || '';
@@ -2679,6 +2688,25 @@ async function deleteOzonRow(key, id) {
   if (id) { try { await fetch(`/api/ozon-rows/${id}`, {method:'DELETE'}); } catch {} }
 }
 
+async function importOzonFromWb() {
+  if (!currentProject) return;
+  const btn = document.getElementById('btnOzonImport');
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Переносим…';
+  try {
+    const res = await fetch('/api/ozon-import-from-wb?project=' + encodeURIComponent(currentProject), {method:'POST'});
+    const j = await res.json();
+    if (!res.ok || j.error) throw new Error(j.error || res.status);
+    await loadOzonRows();
+    renderOzon();
+    showInd('saved');
+    btn.textContent = `✓ +${j.added}`;
+    setTimeout(() => { btn.textContent = prev; }, 2500);
+  } catch (e) {
+    alert('Не удалось перенести из ВБ: ' + e.message);
+    btn.textContent = prev;
+  } finally { btn.disabled = false; }
+}
+
 async function loadOzonRows() {
   const resp = await fetch('/api/ozon-rows?project=' + encodeURIComponent(currentProject));
   const data = await resp.json();
@@ -2696,6 +2724,7 @@ async function switchMarket(m) {
   const bulk = document.getElementById('bulkBar'); if (bulk && m === 'ozon') bulk.classList.remove('show');
   if (m === 'ozon') {
     document.getElementById('btnOzonAdd').disabled = !currentProject;
+    document.getElementById('btnOzonImport').disabled = !currentProject;
     if (currentProject) { await loadOzonRows(); }
     renderOzon();
   } else {
@@ -2750,9 +2779,10 @@ renderContent();
 
 <div class="oz-modal-bg" id="ozonSettingsOverlay">
   <div class="oz-modal">
-    <h3>⚙️ Настройки Ozon (сохраняются в браузере)</h3>
-    <div class="oz-set-grid" id="ozonSetGrid"></div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+    <h3>⚙️ Настройки Ozon</h3>
+    <p class="oz-sub">Тарифы и коэффициенты кабинета. Сохраняются в этом браузере.</p>
+    <div class="oz-set-scroll"><div class="oz-set-grid" id="ozonSetGrid"></div></div>
+    <div class="oz-modal-foot">
       <button class="btn-add" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)" onclick="closeOzonSettings()">Отмена</button>
       <button class="btn-add" onclick="saveOzonSettingsModal()">Сохранить</button>
     </div>

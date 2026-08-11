@@ -4175,6 +4175,65 @@ def api_ozon_rows_delete(row_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/ozon-import-from-wb", methods=["POST"])
+@require_unit_api
+def api_ozon_import_from_wb():
+    """Переносит базу товара из ВБ-юнитки в Ozon: артикул, бренд, себестоимость,
+    упаковку, доставку, брак, габариты. Уже существующие (по артикулу продавца)
+    пропускаются, чтобы не затирать введённые в Ozon данные."""
+    project = request.args.get("project", "")
+    if not project:
+        return jsonify({"error": "project required"}), 400
+    if not _check_unit_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT seller_article FROM unit_ozon WHERE project=%s", (project,)
+                )
+                existing = {(r["seller_article"] or "").strip().lower()
+                            for r in cur.fetchall()}
+                cur.execute(
+                    "SELECT seller_article, brand, predmet, cost_price, logistics_to_wb, "
+                    "packaging, defect_pct, length_cm, width_cm, height_cm "
+                    "FROM unit_economics WHERE project=%s ORDER BY id ASC",
+                    (project,),
+                )
+                wb_rows = cur.fetchall()
+                added = 0
+                for w in wb_rows:
+                    sa = (w["seller_article"] or "").strip()
+                    if not sa or sa.lower() in existing:
+                        continue
+                    existing.add(sa.lower())
+                    p = _ozon_row_params({
+                        "project": project,
+                        "seller_article": sa,
+                        "name": w["brand"] or "",
+                        "category": w["predmet"] or "",
+                        "purchase": w["cost_price"] or 0,
+                        "delivery": w["logistics_to_wb"] or 0,
+                        "packaging": w["packaging"] or 0,
+                        "defect_pct": w["defect_pct"] or 0,
+                        "length_cm": w["length_cm"],
+                        "width_cm": w["width_cm"],
+                        "height_cm": w["height_cm"],
+                    })
+                    cols = ["project"] + _OZON_FIELDS
+                    collist = ", ".join(cols)
+                    vallist = ", ".join(f"%({c})s" for c in cols)
+                    cur.execute(
+                        f"INSERT INTO unit_ozon ({collist}) VALUES ({vallist})", p
+                    )
+                    added += 1
+            conn.commit()
+        return jsonify({"added": added, "skipped": len(wb_rows) - added})
+    except Exception as e:
+        logging.error(f"ozon-import-from-wb {project}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/unit-import-articles")
 @require_unit_api
 def api_unit_import_articles():
