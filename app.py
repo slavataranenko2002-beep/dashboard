@@ -197,6 +197,37 @@ def _ensure_design_tables():
                 # ФБО: хранение по дням оборачиваемости + приёмка коробов
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS fbo_storage_days NUMERIC(6,1) DEFAULT 30")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS fbo_accept_coef NUMERIC(6,2) DEFAULT 0")
+                # ── Юнит Ozon (параллельная модель) ──────────────────────────
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS unit_ozon (
+                        id             SERIAL PRIMARY KEY,
+                        project        TEXT NOT NULL DEFAULT '',
+                        seller_article TEXT DEFAULT '',
+                        sku_ozon       TEXT DEFAULT '',
+                        name           TEXT DEFAULT '',
+                        category       TEXT DEFAULT '',
+                        scheme         TEXT DEFAULT 'FBO',
+                        cluster        TEXT DEFAULT '',
+                        purchase       NUMERIC(12,2) DEFAULT 0,
+                        delivery       NUMERIC(12,2) DEFAULT 0,
+                        packaging      NUMERIC(12,2) DEFAULT 0,
+                        defect_pct     NUMERIC(6,2) DEFAULT 0,
+                        length_cm      NUMERIC(8,2),
+                        width_cm       NUMERIC(8,2),
+                        height_cm      NUMERIC(8,2),
+                        weight_kg      NUMERIC(8,3),
+                        price          NUMERIC(12,2) DEFAULT 0,
+                        points_pct     NUMERIC(6,2) DEFAULT 0,
+                        storage_type   TEXT DEFAULT 'Обычный',
+                        free_days      NUMERIC(7,1) DEFAULT 365,
+                        turnover_days  NUMERIC(7,1) DEFAULT 60,
+                        drr_pct        NUMERIC(6,2) DEFAULT 0,
+                        batch          INTEGER DEFAULT 0,
+                        fact_payout    NUMERIC(12,2) DEFAULT 0,
+                        created_at     TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at     TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_access BOOLEAN DEFAULT FALSE")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_projects TEXT[] DEFAULT '{}'::TEXT[]")
                 # Ежедневные бэкапы
@@ -4016,6 +4047,128 @@ def api_unit_rows_delete(row_id):
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM unit_economics WHERE id=%s", (row_id,))
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Юнит Ozon: CRUD ─────────────────────────────────────────────────────────
+_OZON_FIELDS = [
+    "seller_article", "sku_ozon", "name", "category", "scheme", "cluster",
+    "purchase", "delivery", "packaging", "defect_pct",
+    "length_cm", "width_cm", "height_cm", "weight_kg",
+    "price", "points_pct", "storage_type", "free_days", "turnover_days",
+    "drr_pct", "batch", "fact_payout",
+]
+_OZON_NUM = {"purchase", "delivery", "packaging", "defect_pct", "length_cm",
+             "width_cm", "height_cm", "weight_kg", "price", "points_pct",
+             "free_days", "turnover_days", "drr_pct", "batch", "fact_payout"}
+_OZON_NULLABLE = {"length_cm", "width_cm", "height_cm", "weight_kg"}
+
+
+def _ozon_row_params(d):
+    p = {"project": d.get("project", "")}
+    for f in _OZON_FIELDS:
+        v = d.get(f)
+        if f in _OZON_NUM:
+            if v in (None, ""):
+                p[f] = None if f in _OZON_NULLABLE else 0
+            else:
+                p[f] = v
+        else:
+            p[f] = v if v is not None else ""
+    # дефолты текстовых
+    if not p.get("scheme"):
+        p["scheme"] = "FBO"
+    if not p.get("storage_type"):
+        p["storage_type"] = "Обычный"
+    return p
+
+
+@app.route("/api/ozon-rows")
+@require_unit_api
+def api_ozon_rows_get():
+    project = request.args.get("project", "")
+    if not _check_unit_project(_session_user(), project):
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        cols = "id, project, " + ", ".join(_OZON_FIELDS)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {cols} FROM unit_ozon WHERE project=%s ORDER BY id ASC",
+                    (project,),
+                )
+                rows = [dict(r) for r in cur.fetchall()]
+        for row in rows:
+            for k, v in row.items():
+                if hasattr(v, "__float__") and not isinstance(v, (int, bool)):
+                    row[k] = float(v) if v is not None else None
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ozon-rows", methods=["POST"])
+@require_unit_api
+def api_ozon_rows_create():
+    raw = request.get_json(silent=True) or {}
+    try:
+        p = _ozon_row_params(raw)
+        if not _check_unit_project(_session_user(), p.get("project", "")):
+            return jsonify({"error": "forbidden"}), 403
+        cols = ["project"] + _OZON_FIELDS
+        collist = ", ".join(cols)
+        vallist = ", ".join(f"%({c})s" for c in cols)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"INSERT INTO unit_ozon ({collist}) VALUES ({vallist}) RETURNING id", p
+                )
+                new_id = cur.fetchone()["id"]
+            conn.commit()
+        return jsonify({"id": new_id})
+    except Exception as e:
+        logging.error(f"ozon-rows-create {raw.get('project','')}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ozon-rows/<int:row_id>", methods=["PUT"])
+@require_unit_api
+def api_ozon_rows_update(row_id):
+    raw = request.get_json(silent=True) or {}
+    try:
+        p = _ozon_row_params(raw)
+        p["id"] = row_id
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT project FROM unit_ozon WHERE id=%s", (row_id,))
+                ex = cur.fetchone()
+                if ex and not _check_unit_project(_session_user(), ex["project"]):
+                    return jsonify({"error": "forbidden"}), 403
+                sets = ", ".join(f"{c}=%({c})s" for c in (["project"] + _OZON_FIELDS))
+                cur.execute(
+                    f"UPDATE unit_ozon SET {sets}, updated_at=NOW() WHERE id=%(id)s", p
+                )
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logging.error(f"ozon-rows-update {row_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ozon-rows/<int:row_id>", methods=["DELETE"])
+@require_unit_api
+def api_ozon_rows_delete(row_id):
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT project FROM unit_ozon WHERE id=%s", (row_id,))
+                ex = cur.fetchone()
+                if ex and not _check_unit_project(_session_user(), ex["project"]):
+                    return jsonify({"error": "forbidden"}), 403
+                cur.execute("DELETE FROM unit_ozon WHERE id=%s", (row_id,))
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:

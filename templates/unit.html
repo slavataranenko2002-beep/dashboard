@@ -46,6 +46,18 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .save-indicator.saved{color:var(--green)}
 .save-indicator.error{color:var(--red);cursor:pointer}
 .tsep{width:1px;height:22px;background:var(--border)}
+.mkt-toggle{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.mkt-opt{padding:6px 12px;border:none;background:var(--bg2);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer}
+.mkt-opt.act{background:var(--blue);color:#fff}
+.mkt-opt:hover:not(.act){background:var(--bg3)}
+.oz-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:200;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.oz-modal-bg.open{display:flex}
+.oz-modal{background:var(--bg1);border:1px solid var(--border);border-radius:12px;padding:20px 22px;max-width:680px;width:100%}
+.oz-modal h3{margin:0 0 14px;font-size:16px}
+.oz-set-grid{display:grid;grid-template-columns:1fr 110px;gap:6px 12px;align-items:center;font-size:13px}
+.oz-set-grid label{color:var(--text2)}
+.oz-set-grid input{padding:4px 7px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);text-align:right}
+.oz-set-h{grid-column:1/3;font-weight:700;color:var(--blue);margin-top:8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
 
 /* ── Table container ── */
 .tbl-outer{flex:1;overflow:hidden;padding:0 20px 20px;display:flex;flex-direction:column}
@@ -315,33 +327,40 @@ tfoot td.fcomp{background:var(--comp-bg)}
     <option value="{{ p }}">{{ project_emoji[p] }} {{ p }}</option>
     {% endfor %}
   </select>
-  <button class="btn-add" id="btnAdd" disabled onclick="addRow()">+ Строка</button>
-  <button class="btn-add" id="btnImport" disabled onclick="openImport()"
+  <div class="mkt-toggle" id="mktToggle" title="Маркетплейс">
+    <button class="mkt-opt act" id="mktWb" onclick="switchMarket('wb')">🟣 ВБ</button>
+    <button class="mkt-opt" id="mktOzon" onclick="switchMarket('ozon')">🔵 Озон</button>
+  </div>
+  <button class="btn-add ozon-only" id="btnOzonAdd" disabled onclick="addOzonRow()" style="display:none">+ Строка</button>
+  <button class="btn-add ozon-only" id="btnOzonSettings" onclick="openOzonSettings()"
+    style="display:none;background:var(--bg3);color:var(--text2);border:1px solid var(--border)">⚙️ Настройки Ozon</button>
+  <button class="btn-add wb-only" id="btnAdd" disabled onclick="addRow()">+ Строка</button>
+  <button class="btn-add wb-only" id="btnImport" disabled onclick="openImport()"
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     📥 Загрузить из WB
   </button>
-  <button class="btn-add" id="btnRefresh" disabled onclick="refreshWB()"
+  <button class="btn-add wb-only" id="btnRefresh" disabled onclick="refreshWB()"
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     🔄 Обновить из WB
   </button>
-  <button class="btn-add" id="btnExcel" disabled onclick="exportExcel()"
+  <button class="btn-add wb-only" id="btnExcel" disabled onclick="exportExcel()"
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     📊 Excel
   </button>
-  <button class="btn-add" id="btnPriceImport" disabled onclick="openPriceImportPicker()"
+  <button class="btn-add wb-only" id="btnPriceImport" disabled onclick="openPriceImportPicker()"
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     📥 Импорт цен (Excel)
   </button>
   <input type="file" id="priceImportInput" accept=".xlsx" style="display:none" onchange="onPriceImportFile(event)">
-  <button class="btn-add" onclick="openWCoef()"
+  <button class="btn-add wb-only" onclick="openWCoef()"
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     ⚙️ Склады
   </button>
-  <button class="btn-add" onclick="openPredmet()"
+  <button class="btn-add wb-only" onclick="openPredmet()"
     style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)">
     📦 Комиссии
   </button>
-  <span title="Индекс локализации — единый на кабинет. Определяет КТР (×коэф к логистике)"
+  <span class="wb-only" title="Индекс локализации — единый на кабинет. Определяет КТР (×коэф к логистике)"
     style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--text2);
     background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 8px">
     ИЛ
@@ -1198,10 +1217,17 @@ async function onProjectChange() {
   document.getElementById('btnRefresh').disabled = !active;
   document.getElementById('btnExcel').disabled   = !active;
   document.getElementById('btnPriceImport').disabled = !active;
+  const bozAdd = document.getElementById('btnOzonAdd'); if (bozAdd) bozAdd.disabled = !active;
   // ИЛ единый на кабинет
   CABINET_IL = loadCabinetIl(currentProject);
   const ilInp = document.getElementById('cabinetIlInp'); if (ilInp) ilInp.value = CABINET_IL || '';
   const kd = document.getElementById('ktrDisp'); if (kd) kd.textContent = ktrFromIl(CABINET_IL);
+  if (MARKET === 'ozon') {
+    if (!currentProject) { ozonRows = []; renderOzon(); return; }
+    await loadOzonRows();
+    renderOzon();
+    return;
+  }
   if (!currentProject) { rows = []; renderContent(); return; }
 
   // Загружаем из БД
@@ -2397,6 +2423,323 @@ document.addEventListener('click', e => {
   if (sp && sp.classList.contains('open') && !sp.contains(e.target)) closeStatusPopup();
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ЮНИТ OZON — параллельная модель (тумблер ВБ↔Озон)
+// ═══════════════════════════════════════════════════════════════════════════
+let MARKET = 'wb';
+let ozonRows = [];
+let ozonTimers = {};
+
+const OZON_LOCAL_CLUSTERS = ['Москва, МО и Дальние регионы', 'Санкт-Петербург и СЗО', 'Беларусь'];
+const OZON_CLUSTERS = [...OZON_LOCAL_CLUSTERS, 'Другой кластер (нелокальный)'];
+
+const OZON_SETTINGS_DEFAULT = {
+  tax: 7,              // налог с оборота, %
+  buyout: 85,          // % выкупа
+  returnHandling: 15,  // обработка возврата, ₽/невыкуп
+  logMult: 2,          // множитель логистики на невыкупе
+  otherCosts: 0,       // прочие расходы, ₽/шт
+  log1: 46.77,         // логистика 1-й литр
+  log23: 10.17,        // 2-3 литр, ₽/л
+  log4: 15.25,         // 4-й и далее, ₽/л
+  logMin: 46.77,       // минимальный тариф
+  routeMin: 1.3,       // коэф. маршрута минимум
+  routeMax: 3.83,      // коэф. маршрута максимум
+  routeSlider: 0,      // ползунок маршрута 0..1
+  lastMile: 25,        // доставка до места выдачи
+  localDiscount: 3,    // скидка за локальность, п.п.
+  markup: 0,           // наценка за нелокальность, %
+  pvzPct: 2,           // обработка ПВЗ, % (FBS)
+  pvzMax: 45,          // обработка ПВЗ, ₽ макс.
+  stObychny: 2.5,      // хранение обычный, ₽/л/день
+  stKGT: 0.04,         // хранение КГТ
+  stFire: 0.6,         // хранение пожароопасный
+};
+function loadOzonSettings() {
+  try { return {...OZON_SETTINGS_DEFAULT, ...(JSON.parse(localStorage.getItem('ozonSettings') || '{}'))}; }
+  catch { return {...OZON_SETTINGS_DEFAULT}; }
+}
+function saveOzonSettings() { localStorage.setItem('ozonSettings', JSON.stringify(OZON_SETTINGS)); }
+let OZON_SETTINGS = loadOzonSettings();
+
+function computeOzon(r) {
+  const S = OZON_SETTINGS;
+  const purchase = +r.purchase || 0, delivery = +r.delivery || 0, pkg = +r.packaging || 0;
+  const def = +r.defect_pct || 0;
+  const cost = (purchase + delivery + pkg) * (1 + def / 100);
+  const L = +r.length_cm || 0, W = +r.width_cm || 0, H = +r.height_cm || 0;
+  const volume = (L && W && H) ? L * W * H / 1000 : 0;
+  const price = +r.price || 0, points = +r.points_pct || 0;
+  const calcPrice = price * (1 - points / 100);
+  const isFbs = (r.scheme === 'FBS');
+  const nominal = isFbs ? 54 : 48;                                   // вознагр. номинал, %
+  const isLocal = OZON_LOCAL_CLUSTERS.includes(r.cluster);
+  const uDisc = (!r.cluster || isLocal || isFbs) ? 0 : S.localDiscount; // скидка за локальность (только FBO, нелок.)
+  const vPct = Math.max(0, nominal - uDisc + S.markup);              // вознагр. итог, %
+  const reward = calcPrice * vPct / 100;
+  const ladder = Math.max(S.logMin, S.log1 + Math.min(Math.max(volume - 1, 0), 2) * S.log23 + Math.max(volume - 3, 0) * S.log4);
+  const routeK = S.routeMin + (S.routeMax - S.routeMin) * S.routeSlider;
+  const logistics = volume > 0 ? Math.round(ladder * routeK * 100) / 100 : 0;
+  const lastMile = S.lastMile;
+  const pvz = isFbs ? Math.min(calcPrice * S.pvzPct / 100, S.pvzMax) : 0;
+  const stRate = r.storage_type === 'КГТ' ? S.stKGT : (r.storage_type === 'Пожароопасный' ? S.stFire : S.stObychny);
+  const storage = volume * Math.max(0, (+r.turnover_days || 0) - (+r.free_days || 0)) * stRate;
+  const buyout = S.buyout / 100;
+  const revLog = buyout <= 0 ? 0 : (1 - buyout) / buyout * (logistics * S.logMult + lastMile + S.returnHandling);
+  const totalOzon = reward + logistics + lastMile + pvz + storage + revLog;
+  const ozonShare = calcPrice > 0 ? totalOzon / calcPrice * 100 : 0;
+  const other = S.otherCosts;
+  const drr = +r.drr_pct || 0;
+  const ad = calcPrice * drr / 100;
+  const tax = calcPrice * S.tax / 100;
+  const profit = calcPrice - cost - totalOzon - other - ad - tax;
+  const margin = calcPrice > 0 ? profit / calcPrice * 100 : 0;
+  const roi = cost > 0 ? profit / cost * 100 : 0;
+  const markupPct = cost > 0 ? (calcPrice / cost - 1) * 100 : 0;
+  const beDenom = (1 - vPct / 100 - drr / 100 - S.tax / 100);
+  const breakeven = (beDenom > 0 && (1 - points / 100) > 0)
+    ? (cost + logistics + lastMile + pvz + storage + revLog + other) / beDenom / (1 - points / 100) : null;
+  const maxDrr = calcPrice > 0 ? drr + profit / calcPrice * 100 : 0;
+  const invested = (+r.batch || 0) * cost;
+  const batchProfit = (+r.batch || 0) * profit;
+  const factPayout = +r.fact_payout || 0;
+  const factHold = (price > 0 && factPayout > 0) ? (1 - factPayout / price) * 100 : 0;
+  const diff = factHold === 0 ? 0 : factHold - ozonShare;
+  return {cost, volume, calcPrice, vPct, reward, logistics, lastMile, pvz, storage,
+          buyout: S.buyout, revLog, totalOzon, ozonShare, ad, tax, profit, margin, roi,
+          markupPct, breakeven, maxDrr, invested, batchProfit, factHold, diff};
+}
+
+// Единый источник структуры Ozon-таблицы: header/строки/footer — отсюда
+const fmtVol = v => (v != null && !isNaN(v)) ? v.toFixed(2) + ' л' : '—';
+const OZ_TXT = new Set(['seller_article','sku_ozon','name','category']);
+const OZ_NUM = new Set(['purchase','delivery','packaging','defect_pct','length_cm','width_cm',
+  'height_cm','price','points_pct','free_days','turnover_days','drr_pct','batch','fact_payout']);
+const COLS_OZON = [
+  {g:'Товар', f:'seller_article', l:'Арт.прод.', k:'txt'},
+  {g:'Товар', f:'sku_ozon', l:'SKU Ozon', k:'txt'},
+  {g:'Товар', f:'name', l:'Наимен.', k:'txt'},
+  {g:'Товар', f:'category', l:'Категория', k:'txt'},
+  {g:'Товар', f:'scheme', l:'Схема', k:'sel', o:['FBO','FBS']},
+  {g:'Товар', f:'cluster', l:'Кластер', k:'sel', o:['', ...OZON_CLUSTERS]},
+  {g:'Себест. и габариты', f:'purchase', l:'Закуп₽', k:'num'},
+  {g:'Себест. и габариты', f:'delivery', l:'Достав.скл₽', k:'num'},
+  {g:'Себест. и габариты', f:'packaging', l:'Упак₽', k:'num'},
+  {g:'Себест. и габариты', f:'defect_pct', l:'Брак%', k:'num'},
+  {g:'Себест. и габариты', f:'length_cm', l:'Дл', k:'num'},
+  {g:'Себест. и габариты', f:'width_cm', l:'Шр', k:'num'},
+  {g:'Себест. и габариты', f:'height_cm', l:'Вс', k:'num'},
+  {g:'Себест. и габариты', id:'cost', l:'Себест.₽', k:'c', d:c=>fmtR(c.cost), agg:'sum'},
+  {g:'Себест. и габариты', id:'volume', l:'Объём', k:'c', d:c=>fmtVol(c.volume)},
+  {g:'Цена', f:'price', l:'Цена прод.₽', k:'num'},
+  {g:'Цена', f:'points_pct', l:'Баллы%', k:'num'},
+  {g:'Цена', id:'calcPrice', l:'Цена к расч.₽', k:'c', d:c=>fmtR(c.calcPrice), agg:'avg'},
+  {g:'Расходы Ozon', id:'vPct', l:'Вознагр.%', k:'c', d:c=>fmtP(c.vPct)},
+  {g:'Расходы Ozon', id:'reward', l:'Вознагр.₽', k:'c', d:c=>fmtR(c.reward), agg:'sum'},
+  {g:'Расходы Ozon', id:'logistics', l:'Логист.₽', k:'c', d:c=>fmtR(c.logistics), agg:'sum'},
+  {g:'Расходы Ozon', id:'lastMile', l:'Достав.₽', k:'c', d:c=>fmtR(c.lastMile)},
+  {g:'Расходы Ozon', id:'pvz', l:'Обраб.ПВЗ₽', k:'c', d:c=>fmtR(c.pvz)},
+  {g:'Расходы Ozon', f:'storage_type', l:'Тип хран.', k:'sel', o:['Обычный','КГТ','Пожароопасный']},
+  {g:'Расходы Ozon', f:'free_days', l:'Беспл.дн', k:'num'},
+  {g:'Расходы Ozon', f:'turnover_days', l:'Дн.оборач.', k:'num'},
+  {g:'Расходы Ozon', id:'storage', l:'Хранен.₽', k:'c', d:c=>fmtR(c.storage), agg:'sum'},
+  {g:'Расходы Ozon', id:'buyout', l:'Выкуп%', k:'c', d:c=>fmtP(c.buyout)},
+  {g:'Расходы Ozon', id:'revLog', l:'Обр.лог.₽', k:'c', d:c=>fmtR(c.revLog), agg:'sum'},
+  {g:'Расходы Ozon', id:'totalOzon', l:'Итого Ozon₽', k:'c', d:c=>fmtR(c.totalOzon), agg:'sum'},
+  {g:'Расходы Ozon', id:'ozonShare', l:'Доля Ozon%', k:'c', d:c=>fmtP(c.ozonShare)},
+  {g:'Реклама и налог', f:'drr_pct', l:'ДРР%', k:'num'},
+  {g:'Реклама и налог', id:'ad', l:'Реклама₽', k:'c', d:c=>fmtR(c.ad), agg:'sum'},
+  {g:'Реклама и налог', id:'tax', l:'Налог₽', k:'c', d:c=>fmtR(c.tax), agg:'sum'},
+  {g:'Итог', id:'profit', l:'Прибыль₽', k:'c', d:c=>fmtR(c.profit), agg:'sum', color:c=>c.profit},
+  {g:'Итог', id:'margin', l:'Маржа%', k:'c', d:c=>fmtP(c.margin), badge:c=>c.margin},
+  {g:'Итог', id:'roi', l:'ROI%', k:'c', d:c=>fmtP(c.roi), color:c=>c.roi},
+  {g:'Итог', id:'markupPct', l:'Наценка%', k:'c', d:c=>fmtP(c.markupPct)},
+  {g:'Итог', id:'breakeven', l:'Безубыток₽', k:'c', d:c=>c.breakeven!=null?fmtR(c.breakeven):'—'},
+  {g:'Итог', id:'maxDrr', l:'Макс.ДРР%', k:'c', d:c=>fmtP(c.maxDrr)},
+  {g:'Партия и факт', f:'batch', l:'Партия,шт', k:'num'},
+  {g:'Партия и факт', id:'invested', l:'Вложено₽', k:'c', d:c=>fmtR(c.invested), agg:'sum'},
+  {g:'Партия и факт', id:'batchProfit', l:'Приб.партии₽', k:'c', d:c=>fmtR(c.batchProfit), agg:'sum', color:c=>c.batchProfit},
+  {g:'Партия и факт', f:'fact_payout', l:'Факт к пер.₽', k:'num'},
+  {g:'Партия и факт', id:'factHold', l:'Удерж.факт%', k:'c', d:c=>c.factHold?fmtP(c.factHold):'—'},
+  {g:'Партия и факт', id:'diff', l:'Расхожд.п.п.', k:'c', d:c=>c.factHold?fmtP(c.diff):'—'},
+];
+
+function ozNum(v, key, field){ return `<input type="number" value="${v??''}" step="any" oninput="onOzonInput('${key}','${field}',this.value)">`; }
+function ozTxt(v, key, field){ return `<input type="text" class="art" value="${esc(v??'')}" oninput="onOzonInput('${key}','${field}',this.value)">`; }
+
+function renderOzon() {
+  const div = document.getElementById('content');
+  if (!currentProject) { div.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔵</div><div class="placeholder-text">Юнит Ozon</div><div class="placeholder-sub">Выберите кабинет</div></div>`; return; }
+  if (!ozonRows.length) { div.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔵</div><div class="placeholder-text">Нет товаров Ozon</div><div class="placeholder-sub">Нажмите «+ Строка»</div></div>`; return; }
+  // группы (colspan)
+  let grp = '<th></th>'; // del col
+  let i = 0;
+  while (i < COLS_OZON.length) {
+    let j = i; while (j < COLS_OZON.length && COLS_OZON[j].g === COLS_OZON[i].g) j++;
+    grp += `<th colspan="${j - i}" class="grp-results">${esc(COLS_OZON[i].g)}</th>`;
+    i = j;
+  }
+  const hdr = '<th></th>' + COLS_OZON.map(c => `<th title="${esc(c.title||c.l)}">${esc(c.l)}</th>`).join('');
+  const body = ozonRows.map(r => {
+    const cells = COLS_OZON.map(col => {
+      if (col.k === 'txt') return `<td class="ed">${ozTxt(r[col.f], r._key, col.f)}</td>`;
+      if (col.k === 'num') return `<td class="ed">${ozNum(r[col.f], r._key, col.f)}</td>`;
+      if (col.k === 'sel') {
+        const opts = col.o.map(o => `<option value="${esc(o)}" ${((r[col.f]||'')===o)?'selected':''}>${esc(o||'—')}</option>`).join('');
+        return `<td class="ed" style="padding:3px 4px"><select onchange="onOzonInput('${r._key}','${col.f}',this.value)">${opts}</select></td>`;
+      }
+      const c = computeOzon(r);
+      if (col.badge) return `<td class="comp ozc_${col.id}"><span class="mbadge ${mClass(col.badge(c))}">${col.d(c)}</span></td>`;
+      let cls = 'comp ozc_' + col.id + (col.color ? ' ' + profitCls(col.color(c)) : '');
+      return `<td class="${cls}">${col.d(c)}</td>`;
+    }).join('');
+    const del = `<td class="del-cell"><button class="del-btn" onclick="deleteOzonRow('${r._key}',${r.id||'null'})">✕</button></td>`;
+    return `<tr data-key="${r._key}">${del}${cells}</tr>`;
+  }).join('');
+  div.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr class="grp-row">${grp}</tr><tr class="col-row">${hdr}</tr></thead>
+    <tbody id="ozon-tbody">${body}</tbody>
+    <tfoot id="ozon-tfoot"></tfoot>
+  </table></div>`;
+  updateOzonFooter();
+}
+
+function updateOzonRow(key) {
+  const r = ozonRows.find(x => x._key === key);
+  const tr = document.querySelector(`#ozon-tbody tr[data-key="${key}"]`);
+  if (!r || !tr) return;
+  const c = computeOzon(r);
+  COLS_OZON.forEach(col => {
+    if (col.k !== 'c') return;
+    const el = tr.querySelector('.ozc_' + col.id);
+    if (!el) return;
+    if (col.badge) { el.innerHTML = `<span class="mbadge ${mClass(col.badge(c))}">${col.d(c)}</span>`; return; }
+    el.textContent = col.d(c);
+    el.className = ('comp ozc_' + col.id + (col.color ? ' ' + profitCls(col.color(c)) : '')).trim();
+  });
+  updateOzonFooter();
+}
+
+function updateOzonFooter() {
+  const tfoot = document.getElementById('ozon-tfoot');
+  if (!tfoot) return;
+  if (!ozonRows.length) { tfoot.innerHTML = ''; return; }
+  const sums = {}, cnt = ozonRows.length;
+  ozonRows.forEach(r => { const c = computeOzon(r); COLS_OZON.forEach(col => { if (col.agg) sums[col.id] = (sums[col.id]||0) + (c[col.id]||0); }); });
+  let html = `<td class="left">Итого (${cnt})</td>`;
+  COLS_OZON.forEach(col => {
+    if (!col.agg) { html += '<td></td>'; return; }
+    const v = col.agg === 'avg' ? sums[col.id] / cnt : sums[col.id];
+    const cls = col.color ? profitCls(v) : '';
+    html += `<td class="fcomp ${cls}">${fmtR(v)}</td>`;
+  });
+  tfoot.innerHTML = `<tr>${html}</tr>`;
+}
+
+const OZON_NUMF = OZ_NUM;
+function onOzonInput(key, field, val) {
+  const r = ozonRows.find(x => x._key === key);
+  if (!r) return;
+  r[field] = OZON_NUMF.has(field) ? (val === '' ? 0 : +val) : val;
+  r._dirty = true;
+  updateOzonRow(key);
+  clearTimeout(ozonTimers[key]);
+  ozonTimers[key] = setTimeout(() => saveOzonRow(key), 600);
+  showInd('saving');
+}
+
+async function saveOzonRow(key) {
+  const r = ozonRows.find(x => x._key === key);
+  if (!r || !r._dirty) return;
+  const body = {...r, project: currentProject}; delete body._key; delete body._dirty;
+  const url = r.id ? `/api/ozon-rows/${r.id}` : '/api/ozon-rows';
+  const meth = r.id ? 'PUT' : 'POST';
+  try {
+    const res = await fetch(url, {method: meth, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || res.status);
+    if (json.id) r.id = json.id;
+    r._dirty = false;
+    showInd('saved'); checkAllSaved();
+  } catch (e) { console.error('ozon save', e); showInd('error'); }
+}
+
+function addOzonRow() {
+  if (!currentProject) return;
+  const r = {_key: newKey(), _dirty: true, project: currentProject, scheme: 'FBO',
+    storage_type: 'Обычный', free_days: 365, turnover_days: 60};
+  ozonRows.push(r);
+  renderOzon();
+  saveOzonRow(r._key);
+}
+
+async function deleteOzonRow(key, id) {
+  ozonRows = ozonRows.filter(r => r._key !== key);
+  renderOzon();
+  if (id) { try { await fetch(`/api/ozon-rows/${id}`, {method:'DELETE'}); } catch {} }
+}
+
+async function loadOzonRows() {
+  const resp = await fetch('/api/ozon-rows?project=' + encodeURIComponent(currentProject));
+  const data = await resp.json();
+  ozonRows = Array.isArray(data) ? data : [];
+  ozonRows.forEach(r => { r._key = newKey(); r._dirty = false; });
+}
+
+async function switchMarket(m) {
+  if (m === MARKET) return;
+  MARKET = m;
+  document.getElementById('mktWb').classList.toggle('act', m === 'wb');
+  document.getElementById('mktOzon').classList.toggle('act', m === 'ozon');
+  document.querySelectorAll('.wb-only').forEach(el => el.style.display = m === 'wb' ? '' : 'none');
+  document.querySelectorAll('.ozon-only').forEach(el => el.style.display = m === 'ozon' ? '' : 'none');
+  const bulk = document.getElementById('bulkBar'); if (bulk && m === 'ozon') bulk.classList.remove('show');
+  if (m === 'ozon') {
+    document.getElementById('btnOzonAdd').disabled = !currentProject;
+    if (currentProject) { await loadOzonRows(); }
+    renderOzon();
+  } else {
+    if (currentProject && !rows.length) { await onProjectChange(); return; }
+    renderContent();
+  }
+}
+
+// ─── Настройки Ozon (модалка) ────────────────────────────────────────────────
+const OZON_SET_FIELDS = [
+  ['h','Экономика кабинета'],
+  ['tax','Налог с оборота, %'], ['buyout','Процент выкупа, %'],
+  ['returnHandling','Обработка возврата, ₽/невыкуп'], ['logMult','Множитель логистики на невыкупе'],
+  ['otherCosts','Прочие расходы, ₽/шт'],
+  ['h','Логистика'],
+  ['log1','Тариф 1-й литр, ₽'], ['log23','2–3 литр, ₽/л'], ['log4','4-й и далее, ₽/л'],
+  ['logMin','Минимальный тариф, ₽'], ['routeMin','Коэф. маршрута — минимум'],
+  ['routeMax','Коэф. маршрута — максимум'], ['routeSlider','Ползунок маршрута (0…1)'],
+  ['lastMile','Доставка до места выдачи, ₽'],
+  ['h','Вознаграждение и обработка'],
+  ['localDiscount','Скидка за локальность, п.п.'], ['markup','Наценка за нелокальность, %'],
+  ['pvzPct','Обработка ПВЗ, % (FBS)'], ['pvzMax','Обработка ПВЗ, ₽ макс.'],
+  ['h','Хранение'],
+  ['stObychny','Обычный, ₽/л/день'], ['stKGT','КГТ, ₽/л/день'], ['stFire','Пожароопасный, ₽/л/день'],
+];
+function openOzonSettings() {
+  const ov = document.getElementById('ozonSettingsOverlay');
+  const grid = document.getElementById('ozonSetGrid');
+  grid.innerHTML = OZON_SET_FIELDS.map(([k, label]) =>
+    k === 'h' ? `<div class="oz-set-h">${esc(label)}</div>`
+      : `<label>${esc(label)}</label><input type="number" step="any" data-k="${k}" value="${OZON_SETTINGS[k]}">`
+  ).join('');
+  ov.classList.add('open');
+}
+function saveOzonSettingsModal() {
+  document.querySelectorAll('#ozonSetGrid input[data-k]').forEach(inp => {
+    OZON_SETTINGS[inp.dataset.k] = +inp.value || 0;
+  });
+  saveOzonSettings();
+  document.getElementById('ozonSettingsOverlay').classList.remove('open');
+  if (MARKET === 'ozon') renderOzon();
+}
+function closeOzonSettings() { document.getElementById('ozonSettingsOverlay').classList.remove('open'); }
+
 document.body.dataset.theme = localStorage.getItem('theme') || 'dark';
 initBulkWarehouse();
 initBulkTaxSys();
@@ -2404,5 +2747,16 @@ initBulkStatus();
 onBulkFieldChange();
 renderContent();
 </script>
+
+<div class="oz-modal-bg" id="ozonSettingsOverlay">
+  <div class="oz-modal">
+    <h3>⚙️ Настройки Ozon (сохраняются в браузере)</h3>
+    <div class="oz-set-grid" id="ozonSetGrid"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+      <button class="btn-add" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border)" onclick="closeOzonSettings()">Отмена</button>
+      <button class="btn-add" onclick="saveOzonSettingsModal()">Сохранить</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
