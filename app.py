@@ -194,6 +194,9 @@ def _ensure_design_tables():
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS fbs_own_cost NUMERIC(12,2) DEFAULT 0")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS fbs_return_days NUMERIC(6,1) DEFAULT 0")
                 cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS predmet TEXT DEFAULT ''")
+                # ФБО: хранение по дням оборачиваемости + приёмка коробов
+                cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS fbo_storage_days NUMERIC(6,1) DEFAULT 30")
+                cur.execute("ALTER TABLE unit_economics ADD COLUMN IF NOT EXISTS fbo_accept_coef NUMERIC(6,2) DEFAULT 0")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_access BOOLEAN DEFAULT FALSE")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_projects TEXT[] DEFAULT '{}'::TEXT[]")
                 # Ежедневные бэкапы
@@ -3842,6 +3845,8 @@ def _unit_row_params(d):
         "fbs_own_cost":         d.get("fbs_own_cost") or 0,
         "fbs_return_days":      d.get("fbs_return_days") or 0,
         "predmet":              d.get("predmet", ""),
+        "fbo_storage_days":     d.get("fbo_storage_days") if d.get("fbo_storage_days") not in (None, "") else 30,
+        "fbo_accept_coef":      d.get("fbo_accept_coef") or 0,
     }
 
 
@@ -3863,7 +3868,8 @@ def api_unit_rows_get():
                            wb_price, drr_pct, drr_external_rub, stock, spp_pct,
                            tax_system, tax_pct, status,
                            fbs_point, fbs_sc_coef, fbs_commission_pct,
-                           fbs_assembly_coef, fbs_own_cost, fbs_return_days, predmet
+                           fbs_assembly_coef, fbs_own_cost, fbs_return_days, predmet,
+                           fbo_storage_days, fbo_accept_coef
                     FROM unit_economics
                     WHERE project = %s
                     ORDER BY id ASC
@@ -3912,7 +3918,8 @@ def api_unit_rows_create():
                          wb_price, drr_pct, drr_external_rub, stock, spp_pct,
                          tax_system, tax_pct, status,
                          fbs_point, fbs_sc_coef, fbs_commission_pct,
-                         fbs_assembly_coef, fbs_own_cost, fbs_return_days, predmet)
+                         fbs_assembly_coef, fbs_own_cost, fbs_return_days, predmet,
+                         fbo_storage_days, fbo_accept_coef)
                     VALUES
                         (%(project)s, %(brand)s, %(wb_article)s, %(seller_article)s,
                          %(cost_price)s, %(logistics_to_wb)s, %(packaging)s, %(overhead)s,
@@ -3922,7 +3929,8 @@ def api_unit_rows_create():
                          %(wb_price)s, %(drr_pct)s, %(drr_external_rub)s, %(stock)s, %(spp_pct)s,
                          %(tax_system)s, %(tax_pct)s, %(status)s,
                          %(fbs_point)s, %(fbs_sc_coef)s, %(fbs_commission_pct)s,
-                         %(fbs_assembly_coef)s, %(fbs_own_cost)s, %(fbs_return_days)s, %(predmet)s)
+                         %(fbs_assembly_coef)s, %(fbs_own_cost)s, %(fbs_return_days)s, %(predmet)s,
+                         %(fbo_storage_days)s, %(fbo_accept_coef)s)
                     RETURNING id
                 """, p)
                 new_id = cur.fetchone()["id"]
@@ -3980,6 +3988,7 @@ def api_unit_rows_update(row_id):
                         fbs_assembly_coef=%(fbs_assembly_coef)s,
                         fbs_own_cost=%(fbs_own_cost)s, fbs_return_days=%(fbs_return_days)s,
                         predmet=%(predmet)s,
+                        fbo_storage_days=%(fbo_storage_days)s, fbo_accept_coef=%(fbo_accept_coef)s,
                         updated_at=NOW()
                     WHERE id=%(id)s
                 """, p)

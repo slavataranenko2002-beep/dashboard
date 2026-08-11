@@ -815,7 +815,10 @@ const COL_DEFS = [
   {k:'warehouse',        get:r=>r.warehouse||'',                              type:'text'},
   {k:'ktr',              get:r=>compute(r).ktr,                               type:'num'},
   {k:'logKtr',           get:r=>Math.round(compute(r).logKtr),                type:'num'},
+  {k:'fbo_storage_days', get:r=>+r.fbo_storage_days||30,                      type:'num'},
+  {k:'fbo_accept_coef',  get:r=>+r.fbo_accept_coef||0,                        type:'num'},
   {k:'storage30',        get:r=>Math.round(compute(r).storage30),             type:'num'},
+  {k:'accept',           get:r=>Math.round(compute(r).accept),               type:'num'},
   {k:'storTotal',        get:r=>Math.round(compute(r).storTotal),             type:'num'},
   {k:'commission_pct',   get:r=>+r.commission_pct||36,                        type:'num'},
   {k:'wb_price',         get:r=>+r.wb_price||0,                               type:'num'},
@@ -831,6 +834,7 @@ const COL_DEFS = [
   {k:'margin',           get:r=>Math.round(compute(r).margin*10)/10,          type:'num'},
   {k:'roi',              get:r=>Math.round(compute(r).roi*10)/10,             type:'num'},
   {k:'batchProfit',      get:r=>Math.round(compute(r).batchProfit),           type:'num'},
+  {k:'beFbo',            get:r=>Math.round(compute(r).beFbo),                 type:'num'},
   {k:'capital',          get:r=>Math.round((+r.wb_price||0)*(+r.stock||0)),  type:'num'},
   {k:'capitalCost',      get:r=>Math.round((+r.cost_price||0)*(+r.stock||0)),type:'num'},
   // ФБС (свой склад)
@@ -848,6 +852,7 @@ const COL_DEFS = [
   {k:'deltaProfit',        get:r=>Math.round(compute(r).deltaProfit),          type:'num'},
   {k:'betterScheme',       get:r=>compute(r).betterScheme,                     type:'text'},
   {k:'batchProfitFbs',     get:r=>Math.round(compute(r).batchProfitFbs),       type:'num'},
+  {k:'beFbs',              get:r=>Math.round(compute(r).beFbs),                type:'num'},
 ];
 const COL_MAP = Object.fromEntries(COL_DEFS.map(c => [c.k, c]));
 
@@ -1047,7 +1052,10 @@ function compute(r) {
   const wCoef  = WAREHOUSE_COEFS[r.warehouse] || 0;
 
   const storageDay = (liters && wCoef) ? 0.08 * liters * wCoef / 100 : (+r.storage_per_day || 0);
-  const storage30  = storageDay * 30;
+  const storageDays = (+r.fbo_storage_days > 0) ? +r.fbo_storage_days : 30;  // дней хранения (оборачиваемость), по умолч. 30
+  const storage30  = storageDay * storageDays;
+  const acceptCoef = +r.fbo_accept_coef || 0;         // коэф. приёмки склада (0 = бесплатно)
+  const accept     = liters * 1.7 * acceptCoef;       // приёмка коробов: литраж × 1.7₽ × коэф.
 
   // Тарифная сетка WB по литражу
   function baseLogTariff(lit) {
@@ -1110,7 +1118,7 @@ function compute(r) {
   const fbsExpenses   = fbsLog + fbsShip + fbsRetSt + fbsCommission + ownCost;
 
   // ─── Налог и прибыль (ФБО + ФБС) ─────────────────────────────────────────
-  const fboExpenses = commission + logKtr + storage30;   // расходы WB — ФБО
+  const fboExpenses = commission + logKtr + storage30 + accept;   // расходы WB — ФБО (+приёмка)
   let usn, usnFbs, ndsAmount, profit, profitFbs;
   if (drRate !== null) {
     // УСН Доход−Расход + НДС: доход = цена покупателю (после СПП)
@@ -1144,10 +1152,24 @@ function compute(r) {
   const deltaProfit    = profitFbs - profit;
   const betterScheme   = deltaProfit > 0 ? 'ФБС' : deltaProfit < 0 ? 'ФБО' : '—';
 
-  return {totalCost, liters, wCoef, ktr, storageDay, storage30, storTotal,
+  // ─── Цена безубытка (до СПП), при которой прибыль = 0 ────────────────────
+  // fixed — постоянные расходы (не зависят от цены ВБ); comEff — доля от цены ВБ
+  const kSpp = 1 - spp / 100;
+  function breakeven(fixed, comEff) {
+    if (drRate !== null) {
+      const denom = (kSpp - comEff - dp / 100) * (1 - drRate) - kSpp * NDS_RATE;
+      return denom > 0 ? fixed * (1 - drRate) / denom : null;
+    }
+    const denom = 1 - comEff - dp / 100 - kSpp * taxPct / 100;
+    return denom > 0 ? fixed / denom : null;
+  }
+  const beFbo = breakeven(cogs + logKtr + storage30 + accept, com / 100);
+  const beFbs = breakeven(cogs + fbsLog + fbsShip + fbsRetSt + ownCost, (fbsCom + asmCoef) / 100);
+
+  return {totalCost, liters, wCoef, ktr, storageDay, storage30, storTotal, accept,
           logKtr, commission, wbClub, usn, taxPct, drrRub, brakCost, ndsAmount,
           revenue, profit, margin, roi, batchProfit, batchMargin, invested,
-          clientPrice,
+          clientPrice, beFbo, beFbs,
           fbsLog, fbsExpenses, profitFbs, marginFbs, roiFbs, batchProfitFbs,
           deltaProfit, betterScheme};
 }
@@ -1269,6 +1291,7 @@ function onInput(key, field, val) {
   const numFields = ['cost_price','logistics_to_wb','packaging','overhead','defect_pct',
     'width_cm','length_cm','height_cm','liters','redemption_pct','irp','il','logistics_ktr',
     'commission_pct','wb_price','drr_pct','drr_external_rub','stock',
+    'fbo_storage_days','fbo_accept_coef',
     'fbs_sc_coef','fbs_commission_pct','fbs_assembly_coef','fbs_own_cost','fbs_return_days'];
   r[field] = numFields.includes(field) ? (val === '' ? (field === 'logistics_ktr' || field === 'liters' ? null : 0) : +val) : val;
   r._dirty = true;
@@ -1296,7 +1319,10 @@ function updateComputedCells(key) {
   set('cv-logtgtr',    r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
                          ? fmtR(+r.logistics_ktr) : fmtR(c.logKtr));
   set('cv-stor30',      fmtR(c.storage30));
+  set('cv-accept',      fmtR(c.accept));
   set('cv-stor-total',  fmtR(c.storTotal));
+  set('cv-befbo',       c.beFbo!=null?fmtR(c.beFbo):'—');
+  set('cv-befbs',       c.beFbs!=null?fmtR(c.beFbs):'—');
   set('cv-drrrub',      fmtR(c.drrRub));
   set('cv-commission', fmtR(c.commission));
   set('cv-capital',      fmtR(Math.round((+r.wb_price||0)*(+r.stock||0))));
@@ -1430,7 +1456,10 @@ function rowHTML(r) {
   ${r.logistics_ktr !== null && r.logistics_ktr !== undefined && r.logistics_ktr !== ''
     ? `<td class="ed">${n(+r.logistics_ktr,'logistics_ktr','','авто')}</td>`
     : `<td class="comp cv-logtgtr" title="Авто: (base×коэф×ИЛ + возврат×base) ÷ выкуп%">${fmtR(c.logKtr)}</td>`}
-  <td class="comp cv-stor30">${fmtR(c.storage30)}</td>
+  <td class="ed">${n(r.fbo_storage_days??30,'fbo_storage_days','','30','0')}</td>
+  <td class="ed">${n(r.fbo_accept_coef??0,'fbo_accept_coef','','0','0')}</td>
+  <td class="comp cv-stor30" title="Хранение = литраж × 0.08₽ × коэф.склада × дней хранения">${fmtR(c.storage30)}</td>
+  <td class="comp cv-accept" title="Приёмка = литраж × 1.7₽ × коэф.приёмки">${fmtR(c.accept)}</td>
   <td class="comp cv-stor-total" title="Хранение × Остаток">${fmtR(c.storTotal)}</td>
   <td class="ed">${n(r.commission_pct,'commission_pct','','36')}</td>
   <td class="ed">${n(r.wb_price,'wb_price')}</td>
@@ -1454,6 +1483,7 @@ function rowHTML(r) {
   <td class="comp cv-margin"><span class="mbadge ${mClass(c.margin)}">${fmtP(c.margin)}</span></td>
   <td class="comp cv-roi ${profitCls(c.roi)}">${fmtP(c.roi)}</td>
   <td class="comp cv-bprofit ${profitCls(c.batchProfit)}" title="Прибыль × Остаток">${fmtR(c.batchProfit)}</td>
+  <td class="comp cv-befbo" title="Цена ВБ (до СПП), при которой прибыль ФБО = 0">${c.beFbo!=null?fmtR(c.beFbo):'—'}</td>
   <td class="ed" style="padding:3px 4px">
     <select onchange="onInput('${key}','fbs_point',this.value)">
       ${['ПВЗ','СЦ','Склад'].map(o=>`<option value="${o}" ${((r.fbs_point||'ПВЗ')===o)?'selected':''}>${o}</option>`).join('')}
@@ -1471,7 +1501,8 @@ function rowHTML(r) {
   <td class="comp cv-roifbs ${profitCls(c.roiFbs)}">${fmtP(c.roiFbs)}</td>
   <td class="comp cv-deltaprofit ${profitCls(c.deltaProfit)}">${fmtR(c.deltaProfit)}</td>
   <td class="comp cv-better">${esc(c.betterScheme)}</td>
-  <td class="comp cv-bprofitfbs ${profitCls(c.batchProfitFbs)}" title="Прибыль ФБС × Остаток">${fmtR(c.batchProfitFbs)}</td>`;
+  <td class="comp cv-bprofitfbs ${profitCls(c.batchProfitFbs)}" title="Прибыль ФБС × Остаток">${fmtR(c.batchProfitFbs)}</td>
+  <td class="comp cv-befbs" title="Цена ВБ (до СПП), при которой прибыль ФБС = 0">${c.beFbs!=null?fmtR(c.beFbs):'—'}</td>`;
 }
 
 function renderContent(state) {
@@ -1510,10 +1541,10 @@ function renderContent(state) {
       <th colspan="5">Себестоимость</th>
       <th class="grp-comp">↓</th>
       <th colspan="5">Параметры ВБ</th>
-      <th class="grp-comp" colspan="2">↓ Хранение</th>
+      <th class="grp-comp" colspan="5">↓ Хранение и приёмка</th>
       <th colspan="8">Цена и реклама</th>
-      <th class="grp-results" colspan="8">Результаты (ФБО)</th>
-      <th class="grp-results" colspan="14">ФБС · свой склад</th>
+      <th class="grp-results" colspan="9">Результаты (ФБО)</th>
+      <th class="grp-results" colspan="15">ФБС · свой склад</th>
     </tr>
     <tr class="col-row">
       <th class="cb-cell sc0"><input type="checkbox" id="cbAll" onchange="toggleSelectAll(this.checked)" title="Выбрать все"></th>
@@ -1533,8 +1564,11 @@ function renderContent(state) {
       ${thSF('warehouse','Склад','left')}
       ${thSF('ktr','КТР','comp','Коэф. терр. распределения — авто из ИЛ кабинета (задаётся в тулбаре)')}
       ${thSF('logKtr','Лог+КТР','','Логистика + КТР (авто если пусто)')}
-      ${thSF('storage30','Хран/30д','comp','Хранение за 30 дней')}
-      ${thSF('storTotal','Хран×Ост','comp','Хранение 30 дн × Остаток')}
+      ${thSF('fbo_storage_days','Дн.хран','','Дней хранения (оборачиваемость), по умолч. 30')}
+      ${thSF('fbo_accept_coef','Коэф.приём','','Коэф. приёмки склада (0 = бесплатно, x1, x2…)')}
+      ${thSF('storage30','Хранение','comp','Хранение = литраж × 0.08₽ × коэф.склада × дней')}
+      ${thSF('accept','Приёмка₽','comp','Приёмка = литраж × 1.7₽ × коэф.приёмки')}
+      ${thSF('storTotal','Хран×Ост','comp','Хранение × Остаток')}
       ${thSF('commission_pct','Комис.%')}
       ${thSF('wb_price','Цена ВБ₽')}
       ${thSF('spp_pct','СПП%')}
@@ -1551,6 +1585,7 @@ function renderContent(state) {
       ${thSF('margin','Маржа','comp')}
       ${thSF('roi','ROI','comp')}
       ${thSF('batchProfit','Прибыль пар.','comp','Прибыль партии = Прибыль × Остаток')}
+      ${thSF('beFbo','Безубыток ФБО','comp','Цена ВБ (до СПП), при которой прибыль ФБО = 0')}
       ${thSF('fbs_point','Точка сдачи','left','ФБС: ПВЗ / другое')}
       ${thSF('fbs_sc_coef','Коэф.СЦ%','','ФБС: коэф. СЦ/склада, %')}
       ${thSF('fbs_commission_pct','Комис.ФБС%','','ФБС: комиссия, %')}
@@ -1565,6 +1600,7 @@ function renderContent(state) {
       ${thSF('deltaProfit','Δ ФБС−ФБО','comp','Прибыль ФБС − Прибыль ФБО')}
       ${thSF('betterScheme','Выгоднее','left','Что выгоднее: ФБО или ФБС')}
       ${thSF('batchProfitFbs','Приб.пар.ФБС','comp','Прибыль партии ФБС = Прибыль ФБС × Остаток')}
+      ${thSF('beFbs','Безубыток ФБС','comp','Цена ВБ (до СПП), при которой прибыль ФБС = 0')}
     </tr>
   </thead>
   <tbody id="unit-tbody">
@@ -1583,7 +1619,7 @@ function updateFooter() {
   const n = dr.length;
 
   // Суммы
-  let sumTotalCost = 0, sumStorTotal = 0, sumUsn = 0, sumDrrRub = 0;
+  let sumTotalCost = 0, sumStorTotal = 0, sumAccept = 0, sumUsn = 0, sumDrrRub = 0;
   let sumStock = 0, sumCapital = 0, sumCapitalCost = 0, sumProfit = 0, sumBatchProfit = 0;
   // Средние (накопитель)
   let sumRed = 0, sumLogKtr = 0, sumClientPrice = 0, sumWbPrice = 0;
@@ -1596,6 +1632,7 @@ function updateFooter() {
     const c = compute(r);
     sumTotalCost   += c.totalCost;
     sumStorTotal   += c.storTotal;
+    sumAccept      += c.accept;
     sumUsn         += c.usn;
     sumDrrRub      += c.drrRub;
     sumStock       += (+r.stock || 0);
@@ -1642,7 +1679,9 @@ function updateFooter() {
     <td class="fcomp" title="Ø % выкупа">${fmtP(avgRed)}</td>
     <td class="left"></td><td></td>
     <td class="fcomp" title="Ø Лог+КТР">${fmtR(avgLogKtr)}</td>
+    <td></td><td></td>
     <td></td>
+    <td class="fcomp" title="Σ Приёмка">${fmtR(sumAccept)}</td>
     <td class="fcomp" title="Σ Хран×Ост">${fmtR(sumStorTotal)}</td>
     <td></td>
     <td class="fcomp" title="Ø Цена ВБ">${fmtR(avgWbP)}</td>
@@ -1660,6 +1699,7 @@ function updateFooter() {
     <td class="fcomp" title="Ø Маржа"><span class="mbadge ${mClass(avgM)}">${fmtP(avgM)}</span></td>
     <td class="fcomp" title="Ø ROI">${fmtP(avgRoi)}</td>
     <td class="fcomp ${profitCls(sumBatchProfit)}" title="Σ Прибыль партии">${fmtR(sumBatchProfit)}</td>
+    <td></td>
     <td class="left"></td><td></td><td></td><td></td><td></td><td></td>
     <td class="fcomp" title="Ø Лог.ФБС">${fmtR(avgFbsLog)}</td>
     <td></td>
@@ -1669,6 +1709,7 @@ function updateFooter() {
     <td class="fcomp ${profitCls(sumDeltaProfit)}" title="Σ Δ ФБС−ФБО">${fmtR(sumDeltaProfit)}</td>
     <td></td>
     <td class="fcomp ${profitCls(sumBatchProfitFbs)}" title="Σ Прибыль партии ФБС">${fmtR(sumBatchProfitFbs)}</td>
+    <td></td>
   </tr>`;
 }
 
