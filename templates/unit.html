@@ -518,13 +518,23 @@ tfoot td.fcomp{background:var(--comp-bg)}
 
 <!-- Комиссии по предмету -->
 <div class="modal-overlay" id="predmetOverlay" onclick="closePredmet(event)">
-  <div class="modal" onclick="event.stopPropagation()" style="width:440px">
+  <div class="modal" onclick="event.stopPropagation()" style="width:760px">
     <div class="modal-hdr">
       <span class="modal-title">📦 Комиссии по предмету, %</span>
       <button class="modal-close" onclick="closePredmet()">✕</button>
     </div>
+    <div style="padding:8px 20px 0;font-size:11px;color:var(--text3)">
+      Итоговая комиссия = базовая + эквайринг + тарифы − скидка. Подставляется в строки автоматически при загрузке и при выборе предмета.
+    </div>
     <div style="display:flex;gap:8px;padding:8px 20px 0;font-size:11px;color:var(--text3)">
-      <span style="flex:1">Предмет</span><span style="width:70px;text-align:right">ФБО</span><span style="width:70px;text-align:right">ФБС</span><span style="width:22px"></span>
+      <span style="flex:1">Предмет</span>
+      <span style="width:62px;text-align:right">ФБО</span>
+      <span style="width:62px;text-align:right">ФБС</span>
+      <span style="width:70px;text-align:right">Эквайринг</span>
+      <span style="width:62px;text-align:right">Тарифы</span>
+      <span style="width:62px;text-align:right">Скидка</span>
+      <span style="width:96px;text-align:right">Итого ФБО/ФБС</span>
+      <span style="width:22px"></span>
     </div>
     <div class="modal-body" id="predmetBody" style="padding:8px 16px;gap:4px;display:flex;flex-direction:column"></div>
     <div class="modal-ftr">
@@ -657,17 +667,55 @@ function saveTaxPresets(list) { localStorage.setItem('taxPresets', JSON.stringif
 let TAX_PRESETS = loadTaxPresets();
 
 // ─── Комиссии по предмету ───────────────────────────────────────────────────
+const ACQUIRING_DEFAULT = 1.7;   // эквайринг WB, % — входит в итоговую комиссию
 const PREDMET_PRESETS_DEFAULT = [
-  {predmet:'Шары',  fbo:41.5, fbs:46.0},
-  {predmet:'Банты', fbo:34.5, fbs:39.0},
-  {predmet:'Трусы', fbo:43.5, fbs:48.0},
+  {predmet:'Шары',  fbo:41.5, fbs:46.0, acq:ACQUIRING_DEFAULT, tariff:0, discount:0},
+  {predmet:'Банты', fbo:34.5, fbs:39.0, acq:ACQUIRING_DEFAULT, tariff:0, discount:0},
+  {predmet:'Трусы', fbo:43.5, fbs:48.0, acq:ACQUIRING_DEFAULT, tariff:0, discount:0},
 ];
+// Старые пресеты (без эквайринга/тарифов/скидки) дополняем значениями по умолчанию
+function normalizePredmet(p) {
+  return {
+    predmet: String(p.predmet || '').trim(),
+    fbo:      +p.fbo      || 0,
+    fbs:      +p.fbs      || 0,
+    acq:      p.acq      === undefined ? ACQUIRING_DEFAULT : (+p.acq      || 0),
+    tariff:   p.tariff   === undefined ? 0                 : (+p.tariff   || 0),
+    discount: p.discount === undefined ? 0                 : (+p.discount || 0),
+  };
+}
 function loadPredmetPresets() {
-  try { return JSON.parse(localStorage.getItem('predmetPresets') || 'null') || PREDMET_PRESETS_DEFAULT; }
-  catch { return PREDMET_PRESETS_DEFAULT; }
+  let list;
+  try { list = JSON.parse(localStorage.getItem('predmetPresets') || 'null') || PREDMET_PRESETS_DEFAULT; }
+  catch { list = PREDMET_PRESETS_DEFAULT; }
+  return list.map(normalizePredmet);
 }
 function savePredmetPresets(list) { localStorage.setItem('predmetPresets', JSON.stringify(list)); }
 let PREDMET_PRESETS = loadPredmetPresets();
+
+// Итоговая комиссия = базовая + эквайринг + тарифы − скидка
+function predmetComFbo(p) { return round2(p.fbo + p.acq + p.tariff - p.discount); }
+function predmetComFbs(p) { return round2(p.fbs + p.acq + p.tariff - p.discount); }
+function round2(v) { return Math.round(v * 100) / 100; }
+
+// Проставляет комиссии ФБО/ФБС во все строки с известным предметом.
+// Вызывается при любой загрузке строк и при сохранении настроек — без кликов.
+function applyPredmetPresets({save = true} = {}) {
+  let changed = 0;
+  rows.forEach(r => {
+    const p = PREDMET_PRESETS.find(x => x.predmet === r.predmet);
+    if (!p) return;
+    const fbo = predmetComFbo(p), fbs = predmetComFbs(p);
+    if (+r.commission_pct !== fbo || +r.fbs_commission_pct !== fbs) {
+      r.commission_pct = fbo;
+      r.fbs_commission_pct = fbs;
+      r._dirty = true;
+      changed++;
+      if (save && r.id) schedSave(r._key);
+    }
+  });
+  return changed;
+}
 
 function predmetOptions(selected) {
   const opts = PREDMET_PRESETS.map(p =>
@@ -685,11 +733,12 @@ function onPredmetSelect(key, selectEl) {
   const p = PREDMET_PRESETS.find(x => x.predmet === v);
   const tr = document.querySelector(`tr[data-key="${key}"]`);
   if (p) {
-    r.commission_pct = p.fbo;
-    r.fbs_commission_pct = p.fbs;
+    const fbo = predmetComFbo(p), fbs = predmetComFbs(p);
+    r.commission_pct = fbo;
+    r.fbs_commission_pct = fbs;
     if (tr) {
-      const ci = tr.querySelector(`input[oninput*="'commission_pct'"]`); if (ci) ci.value = p.fbo;
-      const fi = tr.querySelector(`input[oninput*="'fbs_commission_pct'"]`); if (fi) fi.value = p.fbs;
+      const ci = tr.querySelector(`input[oninput*="'commission_pct'"]`); if (ci) ci.value = fbo;
+      const fi = tr.querySelector(`input[oninput*="'fbs_commission_pct'"]`); if (fi) fi.value = fbs;
     }
   }
   updateComputedCells(key);
@@ -1312,6 +1361,7 @@ async function onProjectChange() {
   const data = await resp.json();
   rows = Array.isArray(data) ? data : [];
   rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+  applyPredmetPresets();   // комиссии по предмету — без кликов, при каждой загрузке
 
   // Первый раз (или только пустые строки) — авто-импорт из WB без модалки
   const hasRealArticles = rows.some(r => r.wb_article);
@@ -1323,6 +1373,7 @@ async function onProjectChange() {
       if (ij.error) throw new Error(ij.error);
       rows = ij.rows || [];
       rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+  applyPredmetPresets();   // комиссии по предмету — без кликов, при каждой загрузке
     } catch(e) {
       // Показываем ошибку в плейсхолдере
       document.getElementById('content').innerHTML = `<div class="placeholder">
@@ -1842,6 +1893,7 @@ async function refreshWB() {
     const resp = await fetch('/api/unit-rows?project=' + encodeURIComponent(currentProject));
     rows = await resp.json();
     rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+  applyPredmetPresets();   // комиссии по предмету — без кликов, при каждой загрузке
     renderContent();
     showInd('saved');
     btn.textContent = `✓ Обновлено ${j.updated}`;
@@ -2084,6 +2136,7 @@ async function reloadRowsFromServer() {
   const data = await resp.json();
   rows = Array.isArray(data) ? data : [];
   rows.forEach(r => { r._key = newKey(); r._dirty = false; });
+  applyPredmetPresets();   // комиссии по предмету — без кликов, при каждой загрузке
   renderContent();
 }
 
@@ -2299,20 +2352,40 @@ function closePredmet(e) {
 }
 function renderPredmetList() {
   const inp = 'padding:4px 6px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px';
+  const cell = (i, f) =>
+    `<input type="number" step="0.1" value="${_predmetAll[i][f]}" style="width:62px;text-align:right;${inp}"
+       oninput="_predmetAll[${i}].${f}=+this.value||0;renderPredmetTotals()">`;
   document.getElementById('predmetBody').innerHTML = _predmetAll.map((x,i) => `
     <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
       <input type="text" value="${esc(x.predmet)}" onchange="_predmetAll[${i}].predmet=this.value" style="flex:1;${inp}">
-      <input type="number" step="0.1" value="${x.fbo}" oninput="_predmetAll[${i}].fbo=+this.value||0" style="width:70px;text-align:right;${inp}">
-      <input type="number" step="0.1" value="${x.fbs}" oninput="_predmetAll[${i}].fbs=+this.value||0" style="width:70px;text-align:right;${inp}">
+      ${cell(i,'fbo')}
+      ${cell(i,'fbs')}
+      <input type="number" step="0.1" value="${x.acq}" style="width:70px;text-align:right;${inp}"
+        oninput="_predmetAll[${i}].acq=+this.value||0;renderPredmetTotals()">
+      ${cell(i,'tariff')}
+      ${cell(i,'discount')}
+      <span id="pmTot${i}" style="width:96px;text-align:right;font-size:12px;color:var(--text2)"></span>
       <button onclick="_predmetAll.splice(${i},1);renderPredmetList()" style="border:none;background:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1;padding:0 4px">✕</button>
     </div>`).join('');
+  renderPredmetTotals();
 }
-function addPredmetRow() { _predmetAll.push({predmet:'Новый предмет', fbo:0, fbs:0}); renderPredmetList(); }
+function renderPredmetTotals() {
+  _predmetAll.forEach((x,i) => {
+    const el = document.getElementById('pmTot' + i);
+    if (el) el.textContent = `${predmetComFbo(x)} / ${predmetComFbs(x)}`;
+  });
+}
+function addPredmetRow() {
+  _predmetAll.push({predmet:'Новый предмет', fbo:0, fbs:0, acq:ACQUIRING_DEFAULT, tariff:0, discount:0});
+  renderPredmetList();
+}
 function savePredmet() {
-  PREDMET_PRESETS = _predmetAll.filter(x => x.predmet.trim())
-    .map(x => ({predmet:x.predmet.trim(), fbo:+x.fbo||0, fbs:+x.fbs||0}));
+  PREDMET_PRESETS = _predmetAll.filter(x => String(x.predmet).trim()).map(normalizePredmet);
   savePredmetPresets(PREDMET_PRESETS);
   closePredmet();
+  // Пересчитываем комиссии во всех строках по новым настройкам и сохраняем
+  const changed = applyPredmetPresets();
+  if (changed) reRenderBody();
   // Перерисовываем селекты предмета в строках
   document.querySelectorAll('#unit-tbody select[onchange^="onPredmetSelect"]').forEach(sel => {
     const tr = sel.closest('tr'); const r = rows.find(x => x._key === tr?.dataset.key);
