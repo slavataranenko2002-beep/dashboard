@@ -137,6 +137,8 @@ tfoot td.left{text-align:left;color:var(--text2)}
   </select>
   <button class="btn" id="refreshBtn" onclick="loadDecomp(true)" disabled>🔄 Обновить из WB</button>
   <button class="btn btn-primary" id="addBtn" onclick="openEditor(null)" disabled>+ Группа</button>
+  <button class="btn" id="exportBtn" onclick="exportXlsx()" disabled
+          title="Excel с живыми формулами — можно загрузить в Google Таблицы">⬇️ Excel</button>
   <div class="tsep"></div>
   <span class="fetched" id="fetched"></span>
 </div>
@@ -204,6 +206,7 @@ async function onProjectChange(){
   const seq = ++REQ_SEQ;
   document.getElementById('refreshBtn').disabled = !CUR;
   document.getElementById('addBtn').disabled = !CUR;
+  document.getElementById('exportBtn').disabled = !CUR;
   document.getElementById('fetched').textContent = '';
   if(!CUR){
     document.getElementById('content').innerHTML = '<div class="hint">Выберите кабинет, чтобы увидеть декомпозицию по группам.</div>';
@@ -492,6 +495,12 @@ async function saveBuyout(wbArticle, value){
     });
   }catch(e){ document.getElementById('fetched').textContent = '⚠ не удалось сохранить %выкупа'; return; }
   loadDecomp(false);   // пересчитать зависимые столбцы из кэша (без обращения к WB)
+}
+
+// Выгрузка в Excel: файл с формулами, совместим с Google Таблицами.
+function exportXlsx(){
+  if(!CUR) return;
+  window.location = '/api/season/export?project='+encodeURIComponent(CUR);
 }
 
 function toggleTheme(){

@@ -6055,6 +6055,215 @@ def api_season_decomposition():
         return jsonify({"error": str(e)}), 500
 
 
+def _season_fetched_label(raw) -> str:
+    """Штамп времени снапшота для шапки выгрузки."""
+    if not raw:
+        return "нет данных"
+    try:
+        d = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        return d.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return str(raw)
+
+
+def _season_sheet_title(name: str, used: set) -> str:
+    """Имя листа: без запрещённых символов, <=31 симв., уникальное."""
+    t = "".join(" " if ch in "[]:*?/\\'" else ch for ch in (name or "Группа"))
+    t = (" ".join(t.split()) or "Группа")[:31]
+    base, i = t, 2
+    while t.lower() in used:
+        suf = f" ({i})"
+        t = base[:31 - len(suf)] + suf
+        i += 1
+    used.add(t.lower())
+    return t
+
+
+@app.route("/api/season/export")
+@require_season_api
+def api_season_export():
+    """
+    Выгрузка декомпозиции кабинета в xlsx с ЖИВЫМИ формулами (совместимо с Google
+    Таблицами): вводные — остаток, %выкупа, цена, темп и даты сезона; всё остальное
+    считается формулами прямо в файле. Данные берутся из снапшота, WB не трогаем.
+    """
+    project = request.args.get("project", "").strip()
+    if not project or project not in WB_CABINETS:
+        return jsonify({"error": "project required"}), 400
+    try:
+        import io, urllib.parse
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+
+        today = date.today()
+        snapshot = _season_load_snapshot(project)
+        if snapshot is None:
+            snapshot = {"articles": [], "days_elapsed": 1, "pace_month": "", "fetched_at": None}
+        payload = _season_decomp_payload(project, snapshot, today)
+        presets = payload.get("presets", [])
+
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+
+        hdr_font  = Font(bold=True, color="FFFFFF", size=10)
+        hdr_fill  = PatternFill("solid", fgColor="1F3A5F")
+        rub_fill  = PatternFill("solid", fgColor="2E5A87")
+        in_fill   = PatternFill("solid", fgColor="FFF2CC")   # вводные — жёлтые
+        ttl_font  = Font(bold=True, size=13)
+        lbl_font  = Font(bold=True, size=10)
+        tot_font  = Font(bold=True)
+        tot_fill  = PatternFill("solid", fgColor="EAEEF3")
+        thin      = Side(style="thin", color="BFC7D1")
+        box       = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        F_INT, F_RUB, F_ONE = "#,##0", '#,##0 \u20bd', "#,##0.0"
+
+        # A..O: артикул, название, WB, [вводные] остаток, %выкупа, цена, темп → расчёт
+        COLS = [
+            ("Артикул",           26, None,  "left"),
+            ("Название",          34, None,  "left"),
+            ("Артикул WB",        13, F_INT, "in"),
+            ("Остаток, шт",       12, F_INT, "in"),
+            ("%Выкупа",           10, F_ONE, "in"),
+            ("Цена, \u20bd",       12, F_INT, "in"),
+            ("Темп сейчас, шт/дн", 15, F_ONE, "in"),
+            ("Нужно продать, шт", 15, F_INT, "calc"),
+            ("Продать, \u20bd",    14, F_RUB, "rub"),
+            ("Нужно заказов, шт", 15, F_INT, "calc"),
+            ("Заказов, \u20bd",    14, F_RUB, "rub"),
+            ("Заказов/день",      13, F_INT, "calc"),
+            ("Темп, \u20bd/дн",    14, F_RUB, "rub"),
+            ("Отставание, шт/дн", 15, F_ONE, "calc"),
+            ("Отстав., \u20bd/дн", 14, F_RUB, "rub"),
+        ]
+        HDR_ROW = 9
+        used_titles: set = set()
+        sheet_map = []   # (лист, имя группы, строка итогов)
+
+        for p in presets:
+            ws = wb.create_sheet(_season_sheet_title(p.get("name") or "Группа", used_titles))
+
+            ws["A1"] = p.get("name") or "Группа";  ws["A1"].font = ttl_font
+            ws["A2"] = "Кабинет";                  ws["B2"] = project
+            ws["A3"] = "Начало сезона"
+            ws["A4"] = "Конец сезона"
+            ws["A5"] = "Дней до конца"
+            ws["A6"] = "Данные из WB"
+            ws["A7"] = "Темп посчитан за, дн"
+            for r in range(2, 8):
+                ws.cell(row=r, column=1).font = lbl_font
+
+            if p.get("start_date"):
+                ws["B3"] = date.fromisoformat(p["start_date"]); ws["B3"].number_format = "DD.MM.YYYY"
+            if p.get("end_date"):
+                ws["B4"] = date.fromisoformat(p["end_date"]);   ws["B4"].number_format = "DD.MM.YYYY"
+            for c in ("B3", "B4"):
+                ws[c].fill = in_fill; ws[c].border = box
+            # дни считаются формулой — файл остаётся живым и завтра
+            ws["B5"] = '=IF($B$4="","",$B$4-MAX(TODAY(),IF($B$3="",TODAY(),$B$3)))'
+            ws["B5"].font = tot_font
+            ws["B6"] = _season_fetched_label(payload.get("fetched_at"))
+            ws["B7"] = payload.get("pace_days") or 1
+
+            for i, (title, width, numfmt, kind) in enumerate(COLS, 1):
+                c = ws.cell(row=HDR_ROW, column=i, value=title)
+                c.font = hdr_font
+                c.fill = rub_fill if kind == "rub" else hdr_fill
+                c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                c.border = box
+                ws.column_dimensions[get_column_letter(i)].width = width
+            ws.row_dimensions[HDR_ROW].height = 30
+
+            first = HDR_ROW + 1
+            rows = p.get("rows", [])
+            for j, r in enumerate(rows):
+                n = first + j
+                ws.cell(row=n, column=1, value=r.get("seller_article") or str(r.get("wb_article") or ""))
+                ws.cell(row=n, column=2, value=r.get("name") or "")
+                ws.cell(row=n, column=3, value=r.get("wb_article"))
+                ws.cell(row=n, column=4, value=int(r.get("stock") or 0))
+                ws.cell(row=n, column=5, value=float(r.get("buyout_pct") or 0))
+                ws.cell(row=n, column=6, value=float(r.get("avg_price") or 0))
+                ws.cell(row=n, column=7, value=float(r.get("pace") or 0))
+                # ── формулы ──
+                ws.cell(row=n, column=8,  value=f"=D{n}")                                             # нужно продать
+                ws.cell(row=n, column=9,  value=f"=H{n}*F{n}")                                        # продать, ₽
+                ws.cell(row=n, column=10, value=f"=IF(E{n}>0,CEILING(D{n}/(E{n}/100),1),D{n})")       # нужно заказов
+                ws.cell(row=n, column=11, value=f"=J{n}*F{n}")                                        # заказов, ₽
+                ws.cell(row=n, column=12,
+                        value=f'=IF($B$5="","",IF($B$5<=0,J{n},CEILING(J{n}/$B$5,1)))')               # заказов/день
+                ws.cell(row=n, column=13, value=f"=G{n}*F{n}")                                        # темп, ₽/дн
+                ws.cell(row=n, column=14, value=f'=IF(L{n}="","",L{n}-G{n})')                         # отставание
+                ws.cell(row=n, column=15, value=f'=IF(N{n}="","",N{n}*F{n})')                         # отстав., ₽
+
+            last = first + len(rows) - 1
+            tot  = (last if rows else first) + 1
+
+            for n in range(first, last + 1):
+                for i, (_t, _w, numfmt, kind) in enumerate(COLS, 1):
+                    c = ws.cell(row=n, column=i)
+                    if numfmt:
+                        c.number_format = numfmt
+                    if kind == "in":
+                        c.fill = in_fill
+                    c.border = box
+
+            ws.cell(row=tot, column=1, value=f"Итого ({len(rows)})").font = tot_font
+            if rows:
+                ws.cell(row=tot, column=5, value=f'=IFERROR(AVERAGEIF(E{first}:E{last},">0"),0)')
+                for col in (4, 8, 9, 10, 11, 12, 13, 14, 15):
+                    L = get_column_letter(col)
+                    ws.cell(row=tot, column=col, value=f"=SUM({L}{first}:{L}{last})")
+                ws.cell(row=tot, column=7, value=f"=SUM(G{first}:G{last})")
+            for i, (_t, _w, numfmt, _k) in enumerate(COLS, 1):
+                c = ws.cell(row=tot, column=i)
+                c.font = tot_font; c.fill = tot_fill; c.border = box
+                if numfmt and i != 3:
+                    c.number_format = numfmt
+
+            ws.freeze_panes = f"D{first}"
+            sheet_map.append((ws.title, p.get("name") or "Группа", tot))
+
+        # ── Свод по группам (ссылки на листы, тоже формулами) ──
+        sm = wb.create_sheet("Свод", 0)
+        sm["A1"] = f"Темп сезона — {project}"; sm["A1"].font = ttl_font
+        sm["A2"] = "Данные из WB"
+        sm["B2"] = _season_fetched_label(payload.get("fetched_at"))
+        sm["A2"].font = lbl_font
+        head = ["Группа", "Дней до конца", "Остаток, шт", "Нужно заказов, шт",
+                "Заказов, \u20bd", "Заказов/день", "Темп, шт/дн", "Отставание, шт/дн", "Отстав., \u20bd/дн"]
+        widths = [30, 14, 13, 17, 16, 13, 14, 17, 16]
+        for i, (h, w) in enumerate(zip(head, widths), 1):
+            c = sm.cell(row=4, column=i, value=h)
+            c.font = hdr_font; c.fill = hdr_fill; c.border = box
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            sm.column_dimensions[get_column_letter(i)].width = w
+        sm.row_dimensions[4].height = 30
+        for k, (title, name, tot) in enumerate(sheet_map):
+            n = 5 + k
+            ref = "'" + title.replace("'", "''") + "'"
+            sm.cell(row=n, column=1, value=name)
+            sm.cell(row=n, column=2, value=f"={ref}!$B$5").number_format = F_INT
+            for i, col in enumerate(["D", "J", "K", "L", "G", "N", "O"], 3):
+                c = sm.cell(row=n, column=i, value=f"={ref}!{col}{tot}")
+                c.number_format = F_RUB if col in ("K", "O") else (F_ONE if col in ("G", "N") else F_INT)
+            for i in range(1, 10):
+                sm.cell(row=n, column=i).border = box
+        if not sheet_map:
+            sm.cell(row=5, column=1, value="В кабинете ещё нет групп")
+
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+        fname = f"season_{project}_{today.isoformat()}.xlsx"
+        quoted = urllib.parse.quote(fname)
+        return Response(buf.read(), headers={
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition": f"attachment; filename=\"season_{today.isoformat()}.xlsx\"; filename*=UTF-8''{quoted}",
+        })
+    except Exception as e:
+        logging.exception("season export failed")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/season/cron-refresh", methods=["GET", "POST"])
 def api_season_cron_refresh():
     """
