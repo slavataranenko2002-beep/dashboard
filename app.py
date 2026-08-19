@@ -10,6 +10,7 @@ Google OAuth авторизация, ролевой доступ:
 import os
 import json
 import math
+import hashlib
 import logging
 import functools
 from datetime import date, datetime, timedelta
@@ -6003,6 +6004,67 @@ def _season_load_overrides(project: str) -> dict:
         return {}
 
 
+# Снапшот старше этого возраста считается протухшим: при открытии страницы запускаем
+# фоновое обновление (сам отчёт остатков на стороне WB обновляется раз в 30 минут).
+SEASON_SNAPSHOT_TTL_MIN = 60
+_season_refreshing: set = set()
+_season_refresh_lock = __import__("threading").Lock()
+
+
+def _season_snapshot_age_min(snapshot: dict) -> float | None:
+    """Возраст снапшота в минутах (None, если времени нет)."""
+    raw = snapshot.get("fetched_at")
+    if not raw:
+        return None
+    try:
+        d = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
+        now = datetime.now(d.tzinfo) if d.tzinfo else datetime.now()
+        return (now - d).total_seconds() / 60
+    except Exception:
+        return None
+
+
+def _season_refresh_bg(project: str):
+    """
+    Обновляет снапшот кабинета из WB в фоне (страница тем временем отдаёт кэш).
+    Advisory-lock в БД — чтобы два воркера gunicorn не пошли в WB одновременно.
+    """
+    lock_key = int.from_bytes(hashlib.md5(f"season:{project}".encode()).digest()[:8],
+                              "big", signed=True)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_try_advisory_lock(%s) AS got", (lock_key,))
+                if not cur.fetchone()["got"]:
+                    logging.info(f"season: {project} уже обновляется другим воркером")
+                    return
+            try:
+                _season_build_snapshot(project, date.today(), force=True)
+                logging.info(f"season: фоновое обновление снапшота {project} готово")
+            finally:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_unlock(%s)", (lock_key,))
+    except Exception:
+        logging.exception(f"season: фоновое обновление снапшота {project} упало")
+    finally:
+        with _season_refresh_lock:
+            _season_refreshing.discard(project)
+
+
+def _season_maybe_refresh_bg(project: str, snapshot: dict) -> bool:
+    """Запускает фоновое обновление, если снапшот протух. True — обновление идёт."""
+    age = _season_snapshot_age_min(snapshot)
+    with _season_refresh_lock:
+        if project in _season_refreshing:
+            return True
+        if age is not None and age < SEASON_SNAPSHOT_TTL_MIN:
+            return False
+        _season_refreshing.add(project)
+    import threading
+    threading.Thread(target=_season_refresh_bg, args=(project,), daemon=True).start()
+    return True
+
+
 def _season_decomp_payload(project: str, snapshot: dict, today: date) -> dict:
     """Считает декомпозицию по всем группам кабинета поверх снапшота метрик."""
     presets = _season_load_presets(project)
@@ -6049,6 +6111,9 @@ def api_season_decomposition():
             return jsonify(payload)
         payload = _season_decomp_payload(project, snapshot, today)
         payload["from_cache"] = not force
+        # Данные старше часа — тянем свежие из WB в фоне, страница обновится сама.
+        payload["refreshing"] = False if force else _season_maybe_refresh_bg(project, snapshot)
+        payload["age_min"] = round(_season_snapshot_age_min(snapshot) or 0)
         return jsonify(payload)
     except Exception as e:
         logging.error(f"season/decomposition {project}: {e}")

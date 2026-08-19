@@ -192,6 +192,7 @@ let EDIT_ID = null;        // id редактируемого пресета (nu
 let PICKED = new Set();    // выбранные wb_article в пикере
 let NO_SNAPSHOT = false;   // снапшот метрик кабинета ещё не собран
 let REQ_SEQ = 0;           // защита от гонок при быстром переключении кабинета
+let REFRESH_TIMER = null;  // ожидание фонового обновления снапшота
 
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => (n==null?'—':Number(n).toLocaleString('ru-RU'));
@@ -257,9 +258,17 @@ async function loadDecomp(force){
     NO_SNAPSHOT = !!data.no_snapshot;
     if(NO_SNAPSHOT){
       document.getElementById('fetched').textContent = 'нет данных из WB — нажмите «Обновить из WB»';
+    } else if(data.refreshing){
+      document.getElementById('fetched').textContent =
+        `обновлено ${fmtStamp(data.fetched_at)} · тяну свежие данные из WB…`;
     } else {
       document.getElementById('fetched').textContent =
         `обновлено ${fmtStamp(data.fetched_at)} · ${data.pace_month||''} · темп за ${data.pace_days} дн`;
+    }
+    // Снапшот протух — бэкенд обновляет его в фоне; ждём и перерисовываем сами.
+    clearTimeout(REFRESH_TIMER);
+    if(data.refreshing){
+      REFRESH_TIMER = setTimeout(()=>{ if(seq === REQ_SEQ) loadDecomp(false); }, 20000);
     }
     render();
   }catch(e){

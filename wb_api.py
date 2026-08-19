@@ -442,9 +442,10 @@ class WBClient:
         wh_qty  = float(g("quantity", "qty", "amount", "warehouseQuantity", default=0) or 0)
         in_to   = float(g("inWayToClient", "in_way_to_client", default=0) or 0)
         in_from = float(g("inWayFromClient", "in_way_from_client", default=0) or 0)
-        qty_full = g("quantityFull", "quantityWbTotal", default=None)
-        if qty_full is None:
-            qty_full = wh_qty + in_to + in_from
+        # «Остаток» = склад + возвраты в пути. Товар «в пути к клиенту» НЕ считаем: он уже
+        # заказан, иначе он двойным счётом попадает и в остаток, и в план заказов.
+        # quantityFull от WB не используем — там сумма всех трёх величин.
+        qty_full = wh_qty + in_from
         return {
             "supplierArticle": g("vendorCode", "supplierArticle", "article", default=""),
             "nmId":            g("nmID", "nmId", default=None),
@@ -616,6 +617,44 @@ class WBClient:
             }
             time.sleep(0.3)
 
+        return result
+
+    def get_cards_vendor_codes(self) -> dict[int, str]:
+        """
+        Возвращает {nmID: vendorCode} по всем карточкам кабинета.
+        Нужна, потому что метод остатков (wb-warehouses) отдаёт только nmId, а воронка
+        продаж покрывает лишь товары с активностью за период — без этой карты остатки
+        «спящих» артикулов не привязываются к артикулу и теряются.
+        Источник: POST /content/v2/get/cards/list, пагинация по cursor.
+        """
+        result: dict[int, str] = {}
+        cursor: dict = {"limit": 100}
+        for _ in range(200):
+            r = self._request(
+                "POST",
+                f"{CONTENT_BASE}/content/v2/get/cards/list",
+                json={"settings": {"cursor": cursor, "filter": {"withPhoto": -1}}},
+            )
+            if not r.is_success:
+                logger.error(f"[WB:{self.cabinet}] cards/list {r.status_code}: {r.text[:200]}")
+                break
+            try:
+                data = r.json()
+            except Exception:
+                logger.error(f"[WB:{self.cabinet}] cards/list: bad JSON")
+                break
+            cards = data.get("cards") or []
+            for card in cards:
+                nm = card.get("nmID")
+                vc = str(card.get("vendorCode") or "").strip()
+                if nm and vc:
+                    result[int(nm)] = vc
+            resp_cursor = data.get("cursor") or {}
+            if not cards or resp_cursor.get("total", 0) < cursor.get("limit", 100):
+                break
+            cursor = {"limit": 100, "updatedAt": resp_cursor.get("updatedAt"),
+                      "nmID": resp_cursor.get("nmID")}
+            time.sleep(0.3)
         return result
 
     def get_card_photo(self, nm_id: int) -> str | None:
@@ -1200,11 +1239,28 @@ def collect_planfact_data(cabinet: str, date_from: date, date_to: date) -> dict:
         # 4. Расход на рекламу за период
         upd_rows = wb.get_upd(fmt_date(date_from), fmt_date(date_to))
 
+        # 5. Карта nmID→vendorCode из карточек — нужна только если в остатках есть
+        #    nmId, которых нет в воронке (иначе остаток такого товара потеряется).
+        funnel_nms = {str(get_product_field(x, "nmId")) for x in products
+                      if get_product_field(x, "nmId")}
+        unmapped = {str(x.get("nmId")) for x in stocks_raw
+                    if x.get("nmId") and not str(x.get("supplierArticle") or "").strip()
+                    and str(x.get("nmId")) not in funnel_nms}
+        cards_map: dict[int, str] = {}
+        if unmapped:
+            try:
+                cards_map = wb.get_cards_vendor_codes()
+                logger.info(f"[WB:{cabinet}] остатки: nmId вне воронки={len(unmapped)}, "
+                            f"карточек с vendorCode={len(cards_map)}")
+            except Exception as e:
+                logger.error(f"[WB:{cabinet}] cards/list для остатков не удался: {e}")
+
     sales_by_vc, _, _, sales_rub_by_vc = aggregate_sales_by_article(
         sales_raw, date_from, date_to
     )
-    # Новый метод остатков отдаёт nmId без vendorCode — карта nmId→vendorCode из воронки
-    nmid_to_vc = {}
+    # Новый метод остатков отдаёт nmId без vendorCode — карта nmId→vendorCode собирается
+    # из карточек (все товары кабинета) и уточняется воронкой (там имя актуальнее).
+    nmid_to_vc = {str(nm): vc for nm, vc in cards_map.items()}
     for p in products:
         nm = get_product_field(p, "nmId")
         vc = get_product_field(p, "vendorCode")
